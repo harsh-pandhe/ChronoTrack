@@ -21,5 +21,12 @@ dist-ssr
 *.ntvs*
 *.njsproj
 *.sln
-*.sw?
-.vercel
+*.vercel
+
+# Desktop & Telemetry builds
+dist-desktop
+data/*.db
+data/*.db-journal
+*.deb
+*.AppImage
+*.snap

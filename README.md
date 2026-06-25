@@ -1,75 +1,96 @@
-# ⏱️ ChronoTrack Enterprise
+# ⏱️ Civil Mantra: Transparent Telemetry & Workforce Optimization System
 
-**Live Demo:** [https://chrono-track-tau.vercel.app](https://chrono-track-tau.vercel.app)
-
-ChronoTrack is a high-performance time-tracking and analytics portal designed for scaling organizations of **1,600+ employees**. 
-
-This repository houses the **Strategic Product Roadmap** and an **Interactive Prototype Sandbox**, allowing stakeholders to explore the progression from Phase 1 (Minimum Viable Product) to Phase 2 (Fully Viable Product) features.
+Civil Mantra (ChronoTrack Enterprise) is an advanced Transparent Desktop Telemetry & Profitability Engine designed for desk-bound workforces of **1,600+ employees**. The system transitions organizations from manual, error-prone time tracking to a secure telemetry-backed architecture. It monitors hardware uptime and input densities to verify true utilization and prevent margin leaks.
 
 ---
 
-## 🚀 Key Features
+## 🏗️ Architecture & Component Split
 
-### 📊 Company Analytics Dashboard
-* **Project Allocations:** Interactive charting showing actual hours spent vs. budgeted/allocated hours per project.
-* **Role Distribution:** Percentage breakdowns of logged time by organizational departments (Engineering, Design, QA, Management).
-* **Project Cost Ledger:** Real-time billing estimations multiplying actual hours by role rates.
-* **Utilization Heatmaps:** Interactive capacity analysis to identify over-utilized (burnout risk) and under-utilized resources.
+The platform is split into two runtime environments connected to a telemetry tracking process:
 
-### 👤 Employee Time-Logging Portal
-* **Visual daily timeline:** Stacked interval representation showing the composition of daily logged blocks.
-* **Manual Data Entry:** Simple form for logging Date, Project, Task Description, and Duration.
-* **Live Stopwatch Widget (FVP Feature):** Start/stop/pause stopwatch to capture precise time and automatically populate timesheet logs.
-* **Smart Integration Mocks (FVP Feature):** Click-to-import suggestions detected from Google/Outlook Calendar, GitHub commits, and Slack channels.
+```
+                                +---------------------------+
+                                |  Central Cloud Backend    |
+                                +-------------+-------------+
+                                              ^
+                                              | (DB Synchronization)
+                                              |
++---------------------------------------------+---------------------------------------------+
+|                                  Employee Workspace PC                                     |
+|                                                                                           |
+|  +--------------------------+       +--------------------------+  +--------------------+  |
+|  |  Background Daemon (5050) | ----> |  Electron Desktop App    |  | SQLite Local DB    |  |
+|  |  (xinput / xprop polling) |       |  (Locked Agent Tool View)|  | (telemetry.db)     |  |
+|  +--------------------------+       +--------------------------+  +--------------------+  |
++-------------------------------------------------------------------------------------------+
+```
 
-### ⚙️ Manager & Admin Workflows
-* **Timesheet Approval Flow:** Manager weekly digest to approve, reject, or request revisions for employee logs.
-* **Automated Slack Nudge Bot:** Dispatch polite Slack reminders to employees below the 40-hour weekly threshold.
-* **Lock Dates Control:** Administrative override to prevent modifications of timesheets in locked billing periods.
-* **System Audit Logs:** Immutable logs tracking all administrative and user time block adjustments.
-* **5:00 PM Concurrency Rush Simulator:** Interactive database stress-test simulating 1,600 simultaneous logins, graphing response times and connection pool health.
+### 1. Download & Provisioning Landing Page (Web Portal)
+* **Installer Downloads**: Serves cross-platform packages: `.deb`/`AppImage` (Linux), NSIS installer `.exe` (Windows), and `.dmg` (macOS).
+* **Manager Provisioning Console**: Enables admins and managers to input employee candidates, generate secure 8-digit **Activation Codes**, and revoke unused tokens.
+
+### 2. Transparent Desktop Agent (Employee-Facing)
+* **Activation Wizard**: Displays a secure credential check. Employees authenticate using their corporate email and manager-generated activation code.
+* **Onboarding & Permissions Consent**: Walks employees through granting system-level authorizations: pointer/keyboard tracking (`xinput`), active window focus tracking (`xprop`), session auto-startup daemon, and local SQLite data caching.
+* **Background Telemetry Daemon (`telemetry_daemon.py`)**: A lightweight Python process that queries X11 active window titles via `xprop` and measures input densities (keystroke count and mouse motion events) using `xinput`. It logs to a local SQLite database (`data/telemetry.db`) and hosts a local REST API on port `5050`.
+
+### 3. Strategic Web Dashboard (Admin & Manager-Facing)
+* **Role Isolation**: Normal browser sessions default to the Landing page/Admin Console.
+* **Bento Grid Analytics Panel**: Summarizes Portfolio Revenue, Resource Costs, Net Profit Margins, and Idle Bench Latencies.
+* **Board Headcount & Margin Optimization Simulator**: A real-time slider interface projecting annual overhead saved (in Crores) and operating margin increases.
+* **Active Exceptions Console**: Displays flagged logs for manual overrides, inactivity gaps (>3h), and low telemetry activity.
+* **Productivity Rules Configurator**: Allows admins to define Whitelisted (productive) and Blacklisted (unproductive) application keywords.
 
 ---
 
-## 🏗️ Tech Stack Evolution
+## 🛠️ Installation & Deployment
 
-### Phase 1: MVP Architecture (Speed & Stability)
-* **Frontend:** React.js / Vite (SPA)
-* **Backend Monolith:** Node.js API (Express/NestJS)
-* **Database:** PostgreSQL (AWS RDS)
+### A. Multi-Platform Agent Installer Packaging
+Packaging configs are run via `electron-builder` under target platforms:
+```bash
+# Build production bundle and package installers for all systems
+npm run electron:build
+```
+* Builds **Linux** `.deb` packages and `AppImage` to `dist-desktop/`
+* Builds **Windows** NSIS `.exe` installers to `dist-desktop/`
+* Builds **macOS** `.dmg` disk images to `dist-desktop/`
 
-### Phase 2: FVP Architecture (Scale & Big Data)
-* **Caching Layer:** Redis (absorbing 90% of read loads)
-* **Analytics Warehouse:** Snowflake / BigQuery event-streams
-* **Notification & Analytics Engines:** Decoupled Microservices
+### B. Onboarding & Workspace Node Activation Flow
+1. **Provision Account**: Log in to the Manager Provisioning Console on the Web Portal. Create an activation record with the employee's name and corporate email.
+2. **Retrieve Code**: Copy the generated 8-digit Activation Key and deliver it to the employee.
+3. **Launch Desktop App**: The employee downloads and installs the package, starts the desktop app, and logs in with their credentials.
+4. **Grant Permissions**: Approve pointer activity, window tracking, autostart registration, and local cache creation on the onboarding screen to initiate tracking.
+
+### C. Over-The-Air (OTA) Updates
+Updates are verified securely at startup:
+* Client builds pull signed updates from the repository release endpoints configured under `publish` targets in `package.json`.
+* Electron updater (`electron-updater`) downloads updates in the background and applies them silently on application launch/restart.
+
+### D. Central Cloud Web Portal (Vercel Deployment)
+The workforce dashboard and manager provisioning console are hosted on **Vercel** with full serverless security and session authorization checks.
+
+#### 1. Setup Vercel Deployment
+1. Import this repository into Vercel.
+2. Vercel automatically detects **Vite**, configuring the build command (`npm run build`) and output directory (`dist`).
+
+#### 2. Configure Environment Variables
+To lock down administrative dashboards and secure team lead views, configure the following **Environment Variables** in Vercel's project dashboard:
+* `ADMIN_PASSWORD`: Secure password credential required to access the Administrator Board. (Defaults to `admin123` if not set).
+* `TL_PASSWORD`: Secure password credential required to access the Team Lead Board. (Defaults to `lead123` if not set).
+* `SESSION_SALT`: A random secret key string used to salt and sign daily session tokens (e.g. `some_random_cryptographic_salt`).
+
+#### 3. Serverless Routing & API Actions
+Vercel reads `vercel.json` to handle:
+* Serverless API endpoints (`/api/login`, `/api/verify`) served by the Node.js functions in `api/`.
+* React Single Page Application (SPA) routing, rewriting all other routes back to `/index.html`.
 
 ---
 
-## 🛠️ Local Installation & Setup
-
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/your-username/ChronoTrack.git
-   cd ChronoTrack
-   ```
-
-2. **Install dependencies:**
-   ```bash
-   npm install
-   ```
-
-3. **Start the development server:**
-   ```bash
-   npm run dev
-   ```
-
-4. **Build for production:**
-   ```bash
-   npm run build
-   ```
+## 🛡️ Telemetry & Transparency Principles
+* **Input Densities Only**: The daemon records keystroke/mouse counts within time intervals. It **never** logs actual keystroke characters, inputs, or passwords.
+* **Open Window Title Queries**: Retrieves names of active windows (e.g. `VS Code`, `Chrome`) to verify tasks against whitelisted categories. No screenshot buffers or tracking of individual browser tab URLs are recorded to respect employee privacy.
 
 ---
 
 ## 📄 License
-
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License.

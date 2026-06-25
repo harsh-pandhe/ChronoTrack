@@ -1,0 +1,18 @@
+{
+  "version": 2,
+  "framework": "vite",
+  "rewrites": [
+    {
+      "source": "/api/login",
+      "destination": "/api/login.js"
+    },
+    {
+      "source": "/api/verify",
+      "destination": "/api/verify.js"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
