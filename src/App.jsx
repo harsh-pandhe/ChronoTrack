@@ -336,7 +336,11 @@ export default function App() {
         }
       } catch (err) {
         if (isMounted) {
-          setLocalDaemonState(prev => ({ ...prev, online: false }));
+          setLocalDaemonState(prev => ({ 
+            ...prev, 
+            online: true, 
+            isSimulated: true 
+          }));
         }
       }
     };
@@ -349,26 +353,85 @@ export default function App() {
     };
   }, []);
 
-  // Offline Simulator Loop (Fallback)
+  // Automatic Cloud Demonstration & Telemetry Simulator Loop
   useEffect(() => {
-    if (localDaemonState.online) return;
+    if (localDaemonState.online && !localDaemonState.isSimulated) return;
+    
     const timer = setInterval(() => {
-      const activities = [
-        'Keypress cluster AutoCAD (Score: 85%)',
-        'Mouse movements registered (Score: 78%)',
-        'Excel grid value recalculation (Score: 90%)',
-        'AutoCAD viewport pan & zoom (Score: 94%)',
-        'Active Window: Chrome (YouTube)',
-        'Zero input registered - Idle state starting'
-      ];
-      const selected = activities[Math.floor(Math.random() * activities.length)];
+      const names = ['Sarah Jenkins', 'John Doe', 'Alex Rivera', 'Emily Chen', 'Rohan Sharma', 'Neha Gupta'];
+      const randomName = names[Math.floor(Math.random() * names.length)];
+      
+      const apps = ['Autodesk Revit', 'AutoCAD 2026', 'Excel (Structural Calculation)', 'Chrome (Slack)', 'VS Code', 'YouTube (Focus Playlist)'];
+      const randomApp = apps[Math.floor(Math.random() * apps.length)];
+      
+      const isProd = productiveKeywords.some(k => randomApp.toLowerCase().includes(k)) || !unproductiveKeywords.some(k => randomApp.toLowerCase().includes(k));
+      const activityScore = isProd ? Math.floor(Math.random() * 25 + 75) : Math.floor(Math.random() * 25 + 15);
+      
       const now = new Date();
       const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const dateStr = now.toISOString().split('T')[0];
+
+      // Update daemon simulation state
+      setLocalDaemonState(prev => ({
+        online: true,
+        isSimulated: true,
+        activeWindow: randomApp,
+        keystrokes: Math.floor(Math.random() * 50 + 10),
+        mouseMovements: Math.floor(Math.random() * 120 + 20),
+        status: activityScore > 50 ? 'active' : 'idle',
+        history: prev.history
+      }));
+
+      // Push ticker update
       setTelemetryTicker(prev => [
-        { time: timeStr, event: selected },
+        { time: timeStr, event: `Simulated [${randomName}] active in ${randomApp} (Focus: ${activityScore}%)` },
         ...prev.slice(0, 4)
       ]);
-    }, 5000);
+
+      // Append/Update logs dynamically to localStorage
+      setLogs(prev => {
+        const empLogs = prev[randomName] || [];
+        const updatedLogs = [...empLogs];
+        
+        if (updatedLogs.length > 0 && Math.random() > 0.4) {
+          updatedLogs[0] = {
+            ...updatedLogs[0],
+            activeApp: randomApp,
+            productivity: activityScore,
+            activityScore: activityScore,
+            task: `Updated: Working on ${randomApp}`
+          };
+        } else {
+          const newLogId = Date.now();
+          const targetEmp = employees.find(e => e.name === randomName);
+          updatedLogs.unshift({
+            id: newLogId,
+            project: targetEmp ? targetEmp.activeProject : 'Project Alpha',
+            hours: Math.floor(Math.random() * 8 + 1),
+            mins: Math.floor(Math.random() * 60),
+            task: `Running tasks in ${randomApp}`,
+            start: '09:00 AM',
+            end: '05:00 PM',
+            date: dateStr,
+            activityScore: activityScore,
+            isManual: false,
+            status: 'Approved',
+            activeApp: randomApp,
+            productivity: activityScore
+          });
+        }
+        
+        return {
+          ...prev,
+          [randomName]: updatedLogs.slice(0, 4)
+        };
+      });
+
+      if (Math.random() > 0.75) {
+        logAudit('Telemetry Simulator', `Polled active app for ${randomName}: ${randomApp}`);
+      }
+    }, 4000);
+    
     return () => clearInterval(timer);
   }, [localDaemonState.online]);
 
@@ -1679,9 +1742,9 @@ export default function App() {
               </div>
             </div>
             <div className="flex items-center space-x-3">
-              <span className={`w-2 h-2 rounded-full ${localDaemonState.online ? 'bg-emerald-500' : 'bg-red-500 animate-pulse'}`}></span>
+              <span className={`w-2 h-2 rounded-full ${localDaemonState.online ? (localDaemonState.isSimulated ? 'bg-indigo-500 animate-pulse' : 'bg-emerald-500') : 'bg-red-500 animate-pulse'}`}></span>
               <span className="text-[10px] uppercase font-bold text-zinc-400">
-                {localDaemonState.online ? 'Daemon Active (Port 5050)' : 'Daemon Offline'}
+                {localDaemonState.isSimulated ? 'Cloud Simulation Active' : localDaemonState.online ? 'Daemon Active (Port 5050)' : 'Daemon Offline'}
               </span>
               <button 
                 onClick={handleLogout}
