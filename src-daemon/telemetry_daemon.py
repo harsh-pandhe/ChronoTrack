@@ -428,6 +428,31 @@ def get_active_window():
         except Exception:
             return "System Desktop"
 
+# Sensitive window title patterns for privacy compliance (Phase 4 Data Minimization)
+SENSITIVE_PATTERNS = [
+    r"(?:icici|hdfc|sbi|paypal|stripe|venmo|chase|bank|card|checkout|payment|billing|credit-card|banking|investment|demat)",
+    r"(?:whatsapp|telegram|signal|discord|messenger|skype|imessage|hangouts|chat|messages)",
+    r"(?:gmail|outlook|yahoo|protonmail|inbox|email|mail)",
+    r"(?:facebook|instagram|twitter|reddit|tiktok|snapchat|pinterest|youtube)"
+]
+
+def sanitize_window_title(title):
+    if not title:
+        return "Unknown"
+    lower_title = title.lower()
+    for pattern in SENSITIVE_PATTERNS:
+        if re.search(pattern, lower_title):
+            if any(x in lower_title for x in ["whatsapp", "telegram", "signal", "discord", "messenger", "chat"]):
+                return "Private Messenger (Masked)"
+            elif any(x in lower_title for x in ["bank", "paypal", "card", "payment", "checkout", "billing", "icici", "hdfc", "sbi"]):
+                return "Sensitive Banking Portal (Masked)"
+            elif any(x in lower_title for x in ["gmail", "mail", "inbox", "outlook", "protonmail"]):
+                return "Private Mailbox (Masked)"
+            elif any(x in lower_title for x in ["youtube", "facebook", "instagram", "reddit", "twitter"]):
+                return "Personal Social Portal (Masked)"
+            return "Sensitive Content (Masked)"
+    return title
+
 # Periodic aggregator and database logger
 def db_logger_loop():
     global keystroke_count, mouse_count, current_window
@@ -436,7 +461,9 @@ def db_logger_loop():
     while True:
         time.sleep(10)
         
-        window = get_active_window()
+        raw_window = get_active_window()
+        window = sanitize_window_title(raw_window)
+        
         with stats_lock:
             keys = keystroke_count
             mouse = mouse_count
