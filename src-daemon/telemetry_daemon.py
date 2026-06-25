@@ -14,12 +14,18 @@ IS_LINUX = sys.platform.startswith("linux")
 IS_WINDOWS = sys.platform == "win32"
 IS_MACOS = sys.platform == "darwin"
 
-# Core imports for encryption
+# Core imports for encryption and secure keyring
 try:
     from cryptography.fernet import Fernet
     HAS_CRYPTOGRAPHY = True
 except ImportError:
     HAS_CRYPTOGRAPHY = False
+
+try:
+    import keyring
+    HAS_KEYRING = True
+except ImportError:
+    HAS_KEYRING = False
 
 # Cross-platform config and database paths
 def get_config_dir():
@@ -56,28 +62,55 @@ def get_or_create_config():
     token = None
     enc_key = None
     
-    if os.path.exists(config_path):
+    # Try Keyring first
+    if HAS_KEYRING:
         try:
-            with open(config_path, "r") as f:
-                data = json.load(f)
-                token = data.get("api_token")
-                enc_key = data.get("db_encryption_key")
-        except Exception:
-            pass
+            token = keyring.get_password("CivilMantra", "api_token")
+            enc_key = keyring.get_password("CivilMantra", "db_encryption_key")
+        except Exception as e:
+            print(f"[Keyring] Note: Keyring query skipped/unavailable ({e})")
             
-    needs_save = False
+    # Fallback to local config file cache
+    if not token or not enc_key:
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, "r") as f:
+                    data = json.load(f)
+                    if not token:
+                        token = data.get("api_token")
+                    if not enc_key:
+                        enc_key = data.get("db_encryption_key")
+            except Exception:
+                pass
+                
+    needs_save_keyring = False
+    needs_save_file = False
+    
     if not token:
         import secrets
         token = secrets.token_hex(16)
-        needs_save = True
+        needs_save_keyring = True
+        needs_save_file = True
     if not enc_key:
         if HAS_CRYPTOGRAPHY:
             enc_key = Fernet.generate_key().decode()
         else:
             enc_key = "fallback-plaintext"
-        needs_save = True
+        needs_save_keyring = True
+        needs_save_file = True
         
-    if needs_save:
+    # Set to Keyring if supported and new
+    if HAS_KEYRING and needs_save_keyring:
+        try:
+            keyring.set_password("CivilMantra", "api_token", token)
+            keyring.set_password("CivilMantra", "db_encryption_key", enc_key)
+            print("[Keyring] Config credentials saved securely to OS Keychain/Keyring.")
+        except Exception as e:
+            print(f"[Keyring] Failed writing to keyring: {e}")
+            needs_save_file = True
+            
+    # Save cache fallback file if needed
+    if needs_save_file:
         try:
             with open(config_path, "w") as f:
                 json.dump({
