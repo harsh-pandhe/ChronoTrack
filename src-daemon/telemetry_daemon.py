@@ -191,11 +191,10 @@ def release_lock():
         except Exception:
             pass
 
-# Initialize SQLite database
+# Initialize SQLite database with ML columns
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    # Fields keystrokes and mouse_movements are TEXT to hold base64 encrypted payloads
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS telemetry_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -203,9 +202,19 @@ def init_db():
             active_window TEXT,
             keystrokes TEXT,
             mouse_movements TEXT,
-            is_active INTEGER
+            is_active INTEGER,
+            classified_sector TEXT DEFAULT 'General Operations',
+            is_anomalous INTEGER DEFAULT 0
         )
     """)
+    try:
+        cursor.execute("ALTER TABLE telemetry_logs ADD COLUMN classified_sector TEXT DEFAULT 'General Operations'")
+    except Exception:
+        pass
+    try:
+        cursor.execute("ALTER TABLE telemetry_logs ADD COLUMN is_anomalous INTEGER DEFAULT 0")
+    except Exception:
+        pass
     conn.commit()
     conn.close()
 
@@ -453,6 +462,34 @@ def sanitize_window_title(title):
             return "Sensitive Content (Masked)"
     return title
 
+# AI/ML Classification & Anomaly Detection Helpers (Phase 4 Models)
+def classify_activity(window_title):
+    if not window_title:
+        return "General Operations"
+    title = window_title.lower()
+    if any(k in title for k in ["vscode", "vs code", "pycharm", "eclipse", "sublime", "git", "github", "gitlab", "terminal", "bash", "command prompt", "powershell"]):
+        return "Software Development"
+    elif any(k in title for k in ["revit", "autocad", "cad", "solidworks", "sketchup", "archicad", "photoshop", "illustrator", "indesign"]):
+        return "Engineering / Design"
+    elif any(k in title for k in ["slack", "zoom", "teams", "skype", "whatsapp", "discord", "outlook", "mail"]):
+        return "Communication"
+    elif any(k in title for k in ["excel", "sheets", "accounting", "quickbooks", "calc", "ledger"]):
+        return "Finance / Analysis"
+    elif any(k in title for k in ["youtube", "facebook", "instagram", "netflix", "social", "twitter", "reddit"]):
+        return "Personal / Entertainment"
+    return "General Operations"
+
+def detect_anomaly(keystrokes, mouse_movements):
+    from datetime import datetime
+    current_hour = datetime.now().hour
+    # Working at irregular times (late night/early morning) is flagged as anomalous
+    if current_hour >= 23 or current_hour <= 5:
+        return 1
+    # Bot-like automation inputs are flagged
+    if mouse_movements > 1000 or keystrokes > 500:
+        return 1
+    return 0
+
 # Periodic aggregator and database logger
 def db_logger_loop():
     global keystroke_count, mouse_count, current_window
@@ -478,12 +515,15 @@ def db_logger_loop():
         enc_keys = encrypt_val(keys)
         enc_mouse = encrypt_val(mouse)
         
+        sector = classify_activity(window)
+        anomalous = detect_anomaly(keys, mouse)
+        
         try:
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
             cursor.execute(
-                "INSERT INTO telemetry_logs (active_window, keystrokes, mouse_movements, is_active) VALUES (?, ?, ?, ?)",
-                (enc_window, enc_keys, enc_mouse, is_active)
+                "INSERT INTO telemetry_logs (active_window, keystrokes, mouse_movements, is_active, classified_sector, is_anomalous) VALUES (?, ?, ?, ?, ?, ?)",
+                (enc_window, enc_keys, enc_mouse, is_active, sector, anomalous)
             )
             conn.commit()
             conn.close()
@@ -536,7 +576,9 @@ class TelemetryAPIHandler(BaseHTTPRequestHandler):
                     "active_window": current_window,
                     "keystrokes_interval": keystroke_count,
                     "mouse_movements_interval": mouse_count,
-                    "status": "active" if (keystroke_count > 0 or mouse_count > 0) else "idle"
+                    "status": "active" if (keystroke_count > 0 or mouse_count > 0) else "idle",
+                    "classified_sector": classify_activity(current_window),
+                    "is_anomalous": bool(detect_anomaly(keystroke_count, mouse_count))
                 }
             self.wfile.write(json.dumps(data).encode("utf-8"))
             
@@ -548,7 +590,7 @@ class TelemetryAPIHandler(BaseHTTPRequestHandler):
             try:
                 conn = sqlite3.connect(DB_PATH)
                 cursor = conn.cursor()
-                cursor.execute("SELECT timestamp, active_window, keystrokes, mouse_movements, is_active FROM telemetry_logs ORDER BY id DESC LIMIT 50")
+                cursor.execute("SELECT timestamp, active_window, keystrokes, mouse_movements, is_active, classified_sector, is_anomalous FROM telemetry_logs ORDER BY id DESC LIMIT 50")
                 rows = cursor.fetchall()
                 conn.close()
                 
@@ -573,7 +615,9 @@ class TelemetryAPIHandler(BaseHTTPRequestHandler):
                         "active_window": raw_window,
                         "keystrokes": int_keys,
                         "mouse_movements": int_mouse,
-                        "is_active": bool(r[4])
+                        "is_active": bool(r[4]),
+                        "classified_sector": r[5] if len(r) > 5 else "General Operations",
+                        "is_anomalous": bool(r[6]) if len(r) > 6 else False
                     })
             except Exception as e:
                 history = {"error": str(e)}
