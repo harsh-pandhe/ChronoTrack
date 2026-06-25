@@ -114,8 +114,32 @@ export default function App() {
     return saved || 'landing';
   });
 
-  const [activeAdminTab, setActiveAdminTab] = useState('overview'); // 'overview' | 'users' | 'provision' | 'rules' | 'audit'
-  const [activeTlTab, setActiveTlTab] = useState('overview'); // 'overview' | 'members' | 'timesheets'
+  const [activeAdminTab, setActiveAdminTab] = useState('overview'); // 'overview' | 'users' | 'contribution' | 'provision' | 'rules' | 'audit'
+  const [activeTlTab, setActiveTlTab] = useState('overview'); // 'overview' | 'contribution' | 'members' | 'manage'
+  
+  // Custom Analytics & Team Lead State Variables
+  const [selectedAttributionProject, setSelectedAttributionProject] = useState('Project Alpha');
+  
+  // Team Lead Add Employee Form States
+  const [newEmpName, setNewEmpName] = useState('');
+  const [newEmpEmail, setNewEmpEmail] = useState('');
+  const [newEmpSalary, setNewEmpSalary] = useState('50000');
+  const [newEmpBenefits, setNewEmpBenefits] = useState('10000');
+  const [newEmpRole, setNewEmpRole] = useState('Assistant Civil Engineer');
+  const [newEmpDept, setNewEmpDept] = useState('Civil Engineering');
+  const [newEmpProject, setNewEmpProject] = useState('Project Alpha');
+  
+  // Team Lead Add Project Form States
+  const [newProjName, setNewProjName] = useState('');
+  const [newProjBudget, setNewProjBudget] = useState('50000000');
+  const [newProjMargin, setNewProjMargin] = useState('35');
+  const [newProjColor, setNewProjColor] = useState('#6366f1');
+
+  // Employee Validation Ping Prompt States
+  const [verificationTaskDescription, setVerificationTaskDescription] = useState('');
+  const [verificationTaskCategory, setVerificationTaskCategory] = useState('Engineering / Design');
+  const [verificationTaskDuration, setVerificationTaskDuration] = useState('2');
+  const [showVerificationPrompt, setShowVerificationPrompt] = useState(true);
 
   // Global Session Authentication State
   const [sessionToken, setSessionToken] = useState(() => localStorage.getItem('civil_session_token') || '');
@@ -660,6 +684,124 @@ export default function App() {
     showToast('Client activated successfully.', 'success');
   };
 
+  const renderContributionTab = () => {
+    const activeProj = projects.find(p => p.id === selectedAttributionProject) || projects[0];
+    const contractValue = activeProj ? activeProj.contractValue : 180000000;
+
+    let totalProjectHours = 0;
+    const statsList = employees.map(emp => {
+      const empLogs = logs[emp.name] || [];
+      const projectLogs = empLogs.filter(l => l.project === selectedAttributionProject);
+      
+      const totalHrs = projectLogs.reduce((acc, l) => acc + l.hours + (l.mins / 60), 0);
+      totalProjectHours += totalHrs;
+
+      const monthlyCost = (emp.baseSalary || 50000) + (emp.benefits || 10000);
+      const hourlyRate = monthlyCost / 160;
+      const adjustedCost = hourlyRate * totalHrs;
+
+      return {
+        emp,
+        totalHrs,
+        monthlyCost,
+        hourlyRate,
+        adjustedCost,
+        tasks: projectLogs.map(l => l.task)
+      };
+    });
+
+    return (
+      <div className="space-y-6">
+        <div className="border-b border-border pb-4 flex justify-between items-center flex-wrap gap-4">
+          <div>
+            <h2 className="text-xl font-black text-white uppercase tracking-wider">Contribution & ROI Attribution</h2>
+            <p className="text-xs text-zinc-400 mt-1">Calculates salary costs, logged hours, and revenue generation ratios per engineer.</p>
+          </div>
+          <div>
+            <select
+              value={selectedAttributionProject}
+              onChange={(e) => setSelectedAttributionProject(e.target.value)}
+              className="bg-card border border-border rounded-xl px-4 py-2 text-xs text-white outline-none"
+            >
+              {projects.map(p => (
+                <option key={p.id} value={p.id}>{p.name || p.id}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="p-6 rounded-3xl bg-card border border-border shadow-md">
+            <span className="text-[10px] font-black uppercase text-zinc-500 block">Project Contract Value</span>
+            <span className="text-2xl font-black text-white mt-2 block">Rs. {(contractValue / 10000000).toFixed(2)} Cr</span>
+          </div>
+          <div className="p-6 rounded-3xl bg-card border border-border shadow-md">
+            <span className="text-[10px] font-black uppercase text-zinc-500 block">Logged Project Hours</span>
+            <span className="text-2xl font-black text-primary mt-2 block">{totalProjectHours.toFixed(1)} hrs</span>
+          </div>
+          <div className="p-6 rounded-3xl bg-card border border-border shadow-md">
+            <span className="text-[10px] font-black uppercase text-zinc-500 block">Attributed Resource Cost</span>
+            <span className="text-2xl font-black text-emerald-400 mt-2 block">
+              Rs. {statsList.reduce((acc, s) => acc + s.adjustedCost, 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+            </span>
+          </div>
+        </div>
+
+        <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
+          <span className="text-xs font-black text-white uppercase tracking-wider block">Individual Financial Attribution Ledger</span>
+          <div className="border border-border rounded-2xl overflow-hidden">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-border bg-zinc-900/30 text-[9px] uppercase font-black tracking-wider text-zinc-500">
+                  <th className="p-3">Engineer & Designation</th>
+                  <th className="p-3">Logged Hours</th>
+                  <th className="p-3">Resource Cost</th>
+                  <th className="p-3">Contribution Weight</th>
+                  <th className="p-3">Attributed Value</th>
+                  <th className="p-3 text-right">ROI Return</th>
+                </tr>
+              </thead>
+              <tbody className="text-xs text-zinc-300 divide-y divide-border">
+                {statsList.filter(s => s.totalHrs > 0 || s.emp.activeProject === selectedAttributionProject).map(item => {
+                  const contribWeight = totalProjectHours > 0 ? (item.totalHrs / totalProjectHours) : 0;
+                  const attributedVal = contractValue * contribWeight;
+                  const roiMultiple = item.adjustedCost > 0 ? (attributedVal / item.adjustedCost) : 0;
+
+                  return (
+                    <tr key={item.emp.id} className="hover:bg-zinc-900/10">
+                      <td className="p-3">
+                        <div className="font-extrabold text-white">{item.emp.name}</div>
+                        <div className="text-[10px] text-zinc-500 uppercase">{item.emp.role}</div>
+                      </td>
+                      <td className="p-3 font-semibold">{item.totalHrs.toFixed(1)} hrs</td>
+                      <td className="p-3 font-medium">Rs. {item.adjustedCost.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
+                      <td className="p-3">
+                        <div className="flex items-center space-x-2">
+                          <span className="font-bold text-indigo-400">{(contribWeight * 100).toFixed(1)}%</span>
+                          <div className="w-16 bg-zinc-900 h-1.5 rounded-full overflow-hidden border border-border/50">
+                            <div className="bg-primary h-full" style={{ width: `${contribWeight * 100}%` }}></div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="p-3 font-extrabold text-zinc-400">Rs. {(attributedVal / 100000).toFixed(2)} Lacs</td>
+                      <td className="p-3 text-right">
+                        <span className={`inline-flex px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
+                          roiMultiple > 10 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'
+                        }`}>
+                          {roiMultiple > 0 ? `${roiMultiple.toFixed(1)}x ROI` : '0x'}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-background text-foreground selection:bg-primary/30 selection:text-white font-sans antialiased">
       
@@ -984,6 +1126,7 @@ export default function App() {
               {[
                 { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
                 { id: 'users', label: 'User Directory', icon: Users },
+                { id: 'contribution', label: 'Contribution ROI', icon: TrendingUp },
                 { id: 'provision', label: 'Provision Keys', icon: Key },
                 { id: 'rules', label: 'Productivity Rules', icon: Sliders },
                 { id: 'audit', label: 'Immutable Audit', icon: Terminal }
@@ -1390,6 +1533,8 @@ export default function App() {
               </div>
             )}
 
+            {activeAdminTab === 'contribution' && renderContributionTab()}
+
             {/* Account Provisioning (Activation code generator) */}
             {activeAdminTab === 'provision' && (
               <div className="space-y-6">
@@ -1600,7 +1745,9 @@ export default function App() {
             <nav className="flex-1 p-4 space-y-1">
               {[
                 { id: 'overview', label: 'Team Live Board', icon: LayoutDashboard },
-                { id: 'members', label: 'Telemetry Logs', icon: Clock }
+                { id: 'contribution', label: 'Contribution ROI', icon: TrendingUp },
+                { id: 'members', label: 'Telemetry Logs', icon: Clock },
+                { id: 'manage', label: 'Manage Team & Projects', icon: Users }
               ].map(tab => (
                 <button
                   key={tab.id}
@@ -1725,35 +1872,291 @@ export default function App() {
               </div>
             )}
 
+            {activeTlTab === 'contribution' && renderContributionTab()}
+
+            {activeTlTab === 'manage' && (
+              <div className="space-y-6 animate-fade-in">
+                <div className="border-b border-border pb-4">
+                  <h2 className="text-xl font-black text-white uppercase tracking-wider">Manage Team & Projects</h2>
+                  <p className="text-xs text-zinc-400 mt-1">Provision new employee nodes, generate workspace access credentials, and register contracts.</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Register Employee Form */}
+                  <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
+                    <span className="text-[10px] font-black uppercase text-zinc-450 block">Provision New Employee Account</span>
+                    <form onSubmit={(e) => {
+                      e.preventDefault();
+                      if (!newEmpName || !newEmpEmail) {
+                        showToast('Please fill out all fields.', 'error');
+                        return;
+                      }
+                      const empId = `EMP${Math.floor(100 + Math.random() * 900)}`;
+                      const actCode = `CM-${Math.floor(1000 + Math.random() * 9000)}-A`;
+                      const newEmp = {
+                        id: empId,
+                        name: newEmpName,
+                        role: newEmpRole,
+                        dept: newEmpDept,
+                        teamLeadId: 'TL-01',
+                        activeProject: newEmpProject,
+                        baseSalary: parseFloat(newEmpSalary),
+                        benefits: parseFloat(newEmpBenefits),
+                        avgHours: 160,
+                        status: 'Active'
+                      };
+                      setEmployees(prev => [...prev, newEmp]);
+                      logAudit('Team Lead', `Created employee account ${newEmpName} (${empId}). Act key: ${actCode}`);
+                      showToast(`Registered! Key: ${actCode}`, 'success');
+                      
+                      // Provision code
+                      const savedCodes = JSON.parse(localStorage.getItem('civil_activation_codes') || '[]');
+                      savedCodes.push({ code: actCode, empName: newEmpName, role: newEmpRole, dept: newEmpDept });
+                      localStorage.setItem('civil_activation_codes', JSON.stringify(savedCodes));
+
+                      setNewEmpName('');
+                      setNewEmpEmail('');
+                    }} className="space-y-3">
+                      <div className="space-y-1">
+                        <label className="text-[9px] uppercase font-black text-zinc-500">Employee Name</label>
+                        <input
+                          type="text"
+                          required
+                          value={newEmpName}
+                          onChange={(e) => setNewEmpName(e.target.value)}
+                          placeholder="e.g. Rajesh Kumar"
+                          className="w-full bg-background border border-border rounded-xl px-4 py-2 text-xs text-white outline-none"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] uppercase font-black text-zinc-550">Corporate Email</label>
+                        <input
+                          type="email"
+                          required
+                          value={newEmpEmail}
+                          onChange={(e) => setNewEmpEmail(e.target.value)}
+                          placeholder="e.g. rajesh@civilmantra.com"
+                          className="w-full bg-background border border-border rounded-xl px-4 py-2 text-xs text-white outline-none"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                          <label className="text-[9px] uppercase font-black text-zinc-550">Base Salary (Rs/mo)</label>
+                          <input
+                            type="number"
+                            required
+                            value={newEmpSalary}
+                            onChange={(e) => setNewEmpSalary(e.target.value)}
+                            className="w-full bg-background border border-border rounded-xl px-4 py-2 text-xs text-white outline-none"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[9px] uppercase font-black text-zinc-550">Benefits (Rs/mo)</label>
+                          <input
+                            type="number"
+                            required
+                            value={newEmpBenefits}
+                            onChange={(e) => setNewEmpBenefits(e.target.value)}
+                            className="w-full bg-background border border-border rounded-xl px-4 py-2 text-xs text-white outline-none"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                          <label className="text-[9px] uppercase font-black text-zinc-550">Role Designation</label>
+                          <input
+                            type="text"
+                            value={newEmpRole}
+                            onChange={(e) => setNewEmpRole(e.target.value)}
+                            className="w-full bg-background border border-border rounded-xl px-4 py-2 text-xs text-white outline-none"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[9px] uppercase font-black text-zinc-550">Active Project</label>
+                          <select
+                            value={newEmpProject}
+                            onChange={(e) => setNewEmpProject(e.target.value)}
+                            className="w-full bg-background border border-border rounded-xl px-4 py-2 text-xs text-white outline-none"
+                          >
+                            {projects.map(p => (
+                              <option key={p.id} value={p.id}>{p.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                      <button type="submit" className="w-full py-3 bg-primary hover:bg-primary/90 text-primary-foreground font-black text-xs uppercase tracking-widest rounded-xl transition-all">
+                        Generate ID & Activate Key
+                      </button>
+                    </form>
+                  </div>
+
+                  {/* Create Project Form */}
+                  <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
+                    <span className="text-[10px] font-black uppercase text-zinc-550 block">Register Project Contract</span>
+                    <form onSubmit={(e) => {
+                      e.preventDefault();
+                      if (!newProjName) {
+                        showToast('Enter project name.', 'error');
+                        return;
+                      }
+                      const newProj = {
+                        id: newProjName,
+                        name: newProjName,
+                        contractValue: parseFloat(newProjBudget),
+                        margin: parseInt(newProjMargin),
+                        bgColor: 'bg-indigo-500/20',
+                        borderCol: 'border-indigo-500/30',
+                        color: '#6366f1'
+                      };
+                      setProjects(prev => [...prev, newProj]);
+                      logAudit('Team Lead', `Created project contract ${newProjName} (Budget: Rs. ${newProjBudget})`);
+                      showToast('Project Contract Registered!', 'success');
+                      setNewProjName('');
+                    }} className="space-y-3">
+                      <div className="space-y-1">
+                        <label className="text-[9px] uppercase font-black text-zinc-500">Project Contract Name</label>
+                        <input
+                          type="text"
+                          required
+                          value={newProjName}
+                          onChange={(e) => setNewProjName(e.target.value)}
+                          placeholder="e.g. NHAI Delhi Bypass Road"
+                          className="w-full bg-background border border-border rounded-xl px-4 py-2 text-xs text-white outline-none"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] uppercase font-black text-zinc-550">Contract Value (Rs.)</label>
+                        <input
+                          type="number"
+                          required
+                          value={newProjBudget}
+                          onChange={(e) => setNewProjBudget(e.target.value)}
+                          className="w-full bg-background border border-border rounded-xl px-4 py-2 text-xs text-white outline-none"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] uppercase font-black text-zinc-550">Project Profit Margin Target (%)</label>
+                        <input
+                          type="number"
+                          required
+                          value={newProjMargin}
+                          onChange={(e) => setNewProjMargin(e.target.value)}
+                          className="w-full bg-background border border-border rounded-xl px-4 py-2 text-xs text-white outline-none"
+                        />
+                      </div>
+                      <button type="submit" className="w-full py-3 bg-zinc-900 border border-border text-white hover:bg-zinc-800 font-black text-xs uppercase tracking-widest rounded-xl transition-all">
+                        Register Contract
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            )}
+
           </main>
         </div>
       )}
 
       {/* EMPLOYEE CLIENT INTERACTION BOARD (STANDALONE DESKTOP VIEW) */}
-      {currentRole === 'employee' && (
-        <div className="min-h-screen flex flex-col bg-zinc-950">
-          {/* Header */}
-          <header className="px-6 h-16 border-b border-border bg-card flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <Laptop className="w-5 h-5 text-primary" />
-              <div className="flex flex-col">
-                <span className="font-extrabold text-xs text-white uppercase tracking-wider">CivilMantra Desktop Agent</span>
-                <span className="text-[8px] text-zinc-550 font-bold uppercase tracking-widest">Version 1.0.0</span>
+      {currentRole === 'employee' && (() => {
+        const isElectron = window.navigator.userAgent.toLowerCase().includes('electron') || !!window.electronAPI;
+        return (
+          <div className="min-h-screen flex flex-col bg-zinc-950">
+            {!isElectron ? (
+              /* WEB DOWNLOADER PORTAL FOR EMPLOYEE ONBOARDING */
+              <div className="flex-grow flex flex-col">
+                {/* Web Header */}
+                <header className="px-6 h-16 border-b border-border bg-card flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <Laptop className="w-5 h-5 text-primary" />
+                    <span className="font-extrabold text-xs text-white uppercase tracking-wider">CivilMantra Web Portal</span>
+                  </div>
+                  <button onClick={handleLogout} className="px-3 py-1 bg-zinc-900 hover:bg-zinc-850 border border-border text-zinc-400 hover:text-white rounded-lg text-[9px] font-black uppercase tracking-wider transition-all">
+                    Sign Out
+                  </button>
+                </header>
+
+                <main className="flex-grow max-w-4xl mx-auto w-full p-6 md:p-8 flex flex-col justify-center space-y-8 my-auto">
+                  <div className="text-center space-y-3">
+                    <div className="inline-flex p-3.5 bg-primary/10 border border-primary/20 rounded-2xl text-primary">
+                      <Download className="w-6 h-6 animate-bounce" />
+                    </div>
+                    <h1 className="text-2xl font-black text-white uppercase tracking-wider">Workstation Onboarding Portal</h1>
+                    <p className="text-xs text-zinc-400 max-w-md mx-auto leading-relaxed">
+                      To start syncing logged timesheet hours and accessing project details, please download and run the background telemetry agent.
+                    </p>
+                  </div>
+
+                  {/* Activation Key Banner */}
+                  <div className="p-6 rounded-3xl bg-indigo-500/10 border border-indigo-500/25 flex flex-col sm:flex-row justify-between items-center gap-4">
+                    <div className="space-y-1 text-center sm:text-left">
+                      <span className="text-[10px] font-black uppercase text-indigo-400 block tracking-wider">Step 1: Secure Activation Key</span>
+                      <p className="text-xs text-zinc-350">Use this unique key when launching the desktop app for the first time.</p>
+                    </div>
+                    <div className="bg-zinc-950 border border-border/80 px-6 py-3 rounded-2xl font-mono text-sm font-black text-white tracking-widest select-all">
+                      CM-4912-A
+                    </div>
+                  </div>
+
+                  {/* Downloader Section */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {[
+                      { os: 'Windows Agent', ext: 'Setup.exe', size: '48 MB', icon: Laptop, desc: 'Includes automated background installer and system services.' },
+                      { os: 'macOS Agent', ext: 'Client.dmg', size: '52 MB', icon: Globe, desc: 'Includes Apple Silicon and Intel universal bundle configurations.' },
+                      { os: 'Linux Agent', ext: 'Client.AppImage', size: '42 MB', icon: HardDrive, desc: 'Standalone executable with standard desktop integration hooks.' }
+                    ].map(dl => (
+                      <div key={dl.os} className="p-6 rounded-3xl bg-card border border-border hover:border-zinc-800 transition-all flex flex-col justify-between h-56">
+                        <div className="space-y-2">
+                          <div className="flex items-center space-x-2 text-primary">
+                            <dl.icon className="w-4 h-4" />
+                            <span className="text-xs font-black uppercase text-white tracking-wider">{dl.os}</span>
+                          </div>
+                          <p className="text-[11px] text-zinc-450 leading-relaxed">{dl.desc}</p>
+                        </div>
+                        <button 
+                          type="button"
+                          onClick={() => showToast(`Starting download for CivilMantra ${dl.os} Installer...`)}
+                          className="w-full py-2.5 bg-zinc-900 border border-border hover:bg-zinc-800 hover:text-white text-zinc-300 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center space-x-2"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Download .{dl.ext}</span>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="p-4 bg-zinc-900/40 border border-border/60 rounded-2xl flex items-start space-x-3 text-[11px] text-zinc-400">
+                    <Info className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+                    <p className="leading-relaxed">
+                      <strong>Auto-Start Policy:</strong> Once installed, the client app configures a local startup lock task. The agent daemon boots automatically on system launch, verifying connectivity on local loopback port 5050.
+                    </p>
+                  </div>
+                </main>
               </div>
-            </div>
-            <div className="flex items-center space-x-3">
-              <span className={`w-2 h-2 rounded-full ${localDaemonState.online ? (localDaemonState.isSimulated ? 'bg-indigo-500 animate-pulse' : 'bg-emerald-500') : 'bg-red-500 animate-pulse'}`}></span>
-              <span className="text-[10px] uppercase font-bold text-zinc-400">
-                {localDaemonState.isSimulated ? 'Cloud Simulation Active' : localDaemonState.online ? 'Daemon Active (Port 5050)' : 'Daemon Offline'}
-              </span>
-              <button 
-                onClick={handleLogout}
-                className="px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-border text-zinc-400 hover:text-white rounded-lg text-[9px] font-black uppercase tracking-wider transition-all"
-              >
-                Exit Agent
-              </button>
-            </div>
-          </header>
+            ) : (
+              <div className="flex-grow flex flex-col">
+                {/* Header */}
+                <header className="px-6 h-16 border-b border-border bg-card flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <Laptop className="w-5 h-5 text-primary" />
+                    <div className="flex flex-col">
+                      <span className="font-extrabold text-xs text-white uppercase tracking-wider">CivilMantra Desktop Agent</span>
+                      <span className="text-[8px] text-zinc-550 font-bold uppercase tracking-widest">Version 1.0.0</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <span className={`w-2 h-2 rounded-full ${localDaemonState.online ? (localDaemonState.isSimulated ? 'bg-indigo-500 animate-pulse' : 'bg-emerald-500') : 'bg-red-500 animate-pulse'}`}></span>
+                    <span className="text-[10px] uppercase font-bold text-zinc-400">
+                      {localDaemonState.isSimulated ? 'Cloud Simulation Active' : localDaemonState.online ? 'Daemon Active (Port 5050)' : 'Daemon Offline'}
+                    </span>
+                    <button 
+                      onClick={handleLogout}
+                      className="px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-border text-zinc-400 hover:text-white rounded-lg text-[9px] font-black uppercase tracking-wider transition-all"
+                    >
+                      Exit Agent
+                    </button>
+                  </div>
+                </header>
 
           {!desktopActivated ? (
             /* ONBOARDING ACTIVATION CARD */
@@ -1869,26 +2272,135 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Right Cloud Database Sync Log status */}
-                <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
-                  <span className="text-xs font-black text-white uppercase tracking-wider flex items-center space-x-2">
-                    <Server className="w-4 h-4 text-indigo-400" />
-                    <span>PostgreSQL Cloud Sync</span>
-                  </span>
-
-                  <div className="space-y-3 font-mono text-[9px] text-zinc-400">
-                    {syncLogs.map(l => (
-                      <div key={l.id} className="p-3 bg-zinc-900/50 border border-border/40 rounded-xl space-y-1">
-                        <div className="flex justify-between font-bold">
-                          <span className="text-white">{l.batch}</span>
-                          <span className="text-emerald-400">{l.status}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>{l.time}</span>
-                          <span>Pushed {l.records} events</span>
-                        </div>
+                {/* Right Column: Validation & Cloud Sync */}
+                <div className="space-y-6">
+                  {/* Active Validation Ping Prompt */}
+                  {showVerificationPrompt ? (
+                    <div className="p-6 rounded-3xl bg-indigo-500/10 border border-indigo-500/30 space-y-4">
+                      <div className="flex items-center space-x-2 text-indigo-400">
+                        <AlertTriangle className="w-4 h-4 animate-bounce" />
+                        <span className="text-xs font-black uppercase tracking-wider">Active Telemetry Validation Ping</span>
                       </div>
-                    ))}
+                      <p className="text-[11px] text-zinc-350 leading-relaxed">
+                        Your supervisor Rajesh Kumar has requested validation of your activity for the past 2 hours.
+                      </p>
+
+                      <form onSubmit={(e) => {
+                        e.preventDefault();
+                        if (!verificationTaskDescription.trim()) {
+                          showToast('Please type your task description.', 'error');
+                          return;
+                        }
+                        
+                        const loggedInUser = "Sarah Jenkins";
+                        const newLog = {
+                          id: Date.now(),
+                          project: 'Project Alpha',
+                          hours: parseInt(verificationTaskDuration),
+                          mins: 0,
+                          task: verificationTaskDescription,
+                          start: '12:00 PM',
+                          end: '02:00 PM',
+                          date: new Date().toISOString().split('T')[0],
+                          activityScore: 95,
+                          isManual: true,
+                          status: 'Approved',
+                          activeApp: 'AutoCAD 2026 (Manual Verification)',
+                          productivity: 90
+                        };
+                        
+                        setLogs(prev => {
+                          const userLogs = prev[loggedInUser] || [];
+                          return {
+                            ...prev,
+                            [loggedInUser]: [newLog, ...userLogs]
+                          };
+                        });
+
+                        logAudit('Employee Desktop', `Submitted manual verification: "${verificationTaskDescription}" (${verificationTaskDuration}h)`);
+                        showToast('Activity verification synced to Vercel cloud!', 'success');
+                        setShowVerificationPrompt(false);
+                        setVerificationTaskDescription('');
+                      }} className="space-y-3">
+                        <div className="space-y-1">
+                          <label className="text-[9px] uppercase font-black text-zinc-450">What have you been working on?</label>
+                          <textarea
+                            required
+                            rows={2}
+                            value={verificationTaskDescription}
+                            onChange={(e) => setVerificationTaskDescription(e.target.value)}
+                            placeholder="e.g. Drafting NHAI Section D blueprint alignments..."
+                            className="w-full bg-background border border-border/80 focus:border-indigo-500 rounded-xl p-2.5 text-xs text-white outline-none resize-none"
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[9px] uppercase font-black text-zinc-450">Sector</label>
+                            <select
+                              value={verificationTaskCategory}
+                              onChange={(e) => setVerificationTaskCategory(e.target.value)}
+                              className="w-full bg-background border border-border rounded-lg p-2 text-xs text-white outline-none animate-none"
+                            >
+                              <option value="Engineering / Design">Engineering / Design</option>
+                              <option value="Software Development">Software Development</option>
+                              <option value="Finance / Analysis">Finance / Analysis</option>
+                              <option value="Communication">Communication</option>
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] uppercase font-black text-zinc-450">Duration</label>
+                            <select
+                              value={verificationTaskDuration}
+                              onChange={(e) => setVerificationTaskDuration(e.target.value)}
+                              className="w-full bg-background border border-border rounded-lg p-2 text-xs text-white outline-none"
+                            >
+                              <option value="1">1 Hour</option>
+                              <option value="2">2 Hours</option>
+                              <option value="3">3 Hours</option>
+                              <option value="4">4 Hours</option>
+                            </select>
+                          </div>
+                        </div>
+                        <button type="submit" className="w-full py-2.5 bg-primary hover:bg-primary/95 text-primary-foreground font-black text-[10px] uppercase tracking-widest rounded-xl transition-all">
+                          Sync Verified Hours
+                        </button>
+                      </form>
+                    </div>
+                  ) : (
+                    <div className="p-6 rounded-3xl bg-zinc-900/40 border border-border/60 text-center space-y-2">
+                      <CheckCircle2 className="w-6 h-6 text-emerald-400 mx-auto" />
+                      <span className="text-xs font-black text-white uppercase tracking-wider block">Activity Verified</span>
+                      <p className="text-[10px] text-zinc-400">All recent hours synced and verified with Vercel.</p>
+                      <button 
+                        onClick={() => setShowVerificationPrompt(true)}
+                        className="text-[9px] text-primary hover:underline uppercase font-black"
+                      >
+                        Trigger New Validation
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Right Cloud Database Sync Log status */}
+                  <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
+                    <span className="text-xs font-black text-white uppercase tracking-wider flex items-center space-x-2">
+                      <Server className="w-4 h-4 text-indigo-400" />
+                      <span>PostgreSQL Cloud Sync</span>
+                    </span>
+
+                    <div className="space-y-3 font-mono text-[9px] text-zinc-400">
+                      {syncLogs.map(l => (
+                        <div key={l.id} className="p-3 bg-zinc-900/50 border border-border/40 rounded-xl space-y-1">
+                          <div className="flex justify-between font-bold">
+                            <span className="text-white">{l.batch}</span>
+                            <span className="text-emerald-400">{l.status}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>{l.time}</span>
+                            <span>Pushed {l.records} events</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
@@ -1896,8 +2408,11 @@ export default function App() {
 
             </main>
           )}
-        </div>
-      )}
+          </div>
+          )}
+          </div>
+        );
+      })()}
 
     </div>
   );
