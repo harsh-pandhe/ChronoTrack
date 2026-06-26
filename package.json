@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "electron:dev": "electron .",
-    "electron:build": "npm run build && electron-builder",
+    "build:daemon": "bash src-daemon/build_daemon.sh",
+    "electron:build": "npm run build && npm run build:daemon && electron-builder",
     "migrate": "node scripts/migrate.js",
     "seed:admin": "node scripts/seed-admin.js",
     "test:api": "node scripts/test-api.js",
@@ -49,14 +50,15 @@
     },
     "files": [
       "dist/**/*",
-      "main.cjs"
+      "main.cjs",
+      "preload.cjs"
     ],
     "extraResources": [
       {
-        "from": "src-daemon",
-        "to": "src-daemon",
+        "from": "dist-daemon",
+        "to": "daemon",
         "filter": [
-          "**/*"
+          "CivilMantraDaemon*"
         ]
       }
     ],

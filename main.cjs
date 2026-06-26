@@ -6,39 +6,44 @@ let daemonProcess = null;
 
 function startTelemetryDaemon() {
   const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
-  
-  let daemonPath = '';
-  if (isDev) {
-    daemonPath = path.join(__dirname, 'src-daemon', 'telemetry_daemon.py');
-  } else {
-    daemonPath = path.join(process.resourcesPath, 'src-daemon', 'telemetry_daemon.py');
+
+  // Packaged builds ship a self-contained PyInstaller binary (no Python needed
+  // on the target machine). Dev runs the .py directly via the local interpreter.
+  if (!isDev) {
+    const binName = process.platform === 'win32' ? 'CivilMantraDaemon.exe' : 'CivilMantraDaemon';
+    const binPath = path.join(process.resourcesPath, 'daemon', binName);
+    console.log('[ELECTRON] Spawning bundled Telemetry Daemon:', binPath);
+    try {
+      daemonProcess = spawn(binPath, [], { detached: false, stdio: 'ignore' });
+      daemonProcess.on('error', (err) =>
+        console.error('[ELECTRON] Failed to start bundled daemon:', err.message)
+      );
+      if (daemonProcess && daemonProcess.pid) {
+        console.log(`[ELECTRON] Bundled daemon spawned (PID: ${daemonProcess.pid})`);
+      }
+    } catch (err) {
+      console.error('[ELECTRON] Exception spawning bundled daemon:', err);
+    }
+    return;
   }
 
-  console.log('[ELECTRON] Spawning Telemetry Daemon:', daemonPath);
-
+  // --- Dev mode: run the Python source directly ---
+  const daemonPath = path.join(__dirname, 'src-daemon', 'telemetry_daemon.py');
   const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
-  
+  console.log('[ELECTRON] Spawning Telemetry Daemon (dev):', daemonPath);
   try {
-    daemonProcess = spawn(pythonCmd, [daemonPath], {
-      detached: false,
-      stdio: 'ignore'
-    });
-
+    daemonProcess = spawn(pythonCmd, [daemonPath], { detached: false, stdio: 'ignore' });
     daemonProcess.on('error', (err) => {
       console.error('[ELECTRON] Failed to start telemetry daemon:', err.message);
       if (pythonCmd === 'python3') {
         console.log('[ELECTRON] Retrying with "python"...');
         try {
-          daemonProcess = spawn('python', [daemonPath], {
-            detached: false,
-            stdio: 'ignore'
-          });
+          daemonProcess = spawn('python', [daemonPath], { detached: false, stdio: 'ignore' });
         } catch (retryErr) {
           console.error('[ELECTRON] Retry failed:', retryErr.message);
         }
       }
     });
-
     if (daemonProcess && daemonProcess.pid) {
       console.log(`[ELECTRON] Telemetry Daemon spawned successfully (PID: ${daemonProcess.pid})`);
     }

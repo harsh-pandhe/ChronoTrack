@@ -1,10 +1,13 @@
 // POST /api/auth/login — email + password → JWT. Replaces hardcoded-password login.
 import { handler, readBody, send, HttpError } from '../../lib/http.js';
 import { verifyPassword, signToken } from '../../lib/auth.js';
+import { rateLimit } from '../../lib/ratelimit.js';
 import { query } from '../../lib/db.js';
 
 export default handler(async (req, res) => {
   if (req.method !== 'POST') throw new HttpError(405, 'Method Not Allowed');
+  // Brute-force guard: 10 attempts / minute / IP.
+  rateLimit(req, 'login', 10, 60_000);
   const { email, password } = await readBody(req);
   if (!email || !password) throw new HttpError(400, 'Missing email or password');
 

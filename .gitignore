@@ -25,6 +25,9 @@ dist-ssr
 
 # Desktop & Telemetry builds
 dist-desktop
+dist-daemon
+build/
+.build-venv
 data/*.db
 data/*.db-journal
 data/*.pid
