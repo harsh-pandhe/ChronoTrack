@@ -10,10 +10,16 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "electron:dev": "electron .",
-    "electron:build": "npm run build && electron-builder"
+    "electron:build": "npm run build && electron-builder",
+    "migrate": "node scripts/migrate.js",
+    "seed:admin": "node scripts/seed-admin.js",
+    "test:api": "node scripts/test-api.js"
   },
   "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.3",
     "lucide-react": "^1.21.0",
+    "pg": "^8.22.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "recharts": "^3.8.1"
@@ -48,7 +54,9 @@
       {
         "from": "src-daemon",
         "to": "src-daemon",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "publish": [
