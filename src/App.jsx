@@ -230,6 +230,7 @@ export default function App() {
         localStorage.setItem('civil_role', route);
         setSessionToken(api.getToken());
         setCurrentRole(route);
+        if (route !== 'employee') loadServerData();
       } catch (err) {
         // Invalid/expired token → clear and return to landing.
         api.clearSession();
@@ -371,10 +372,14 @@ export default function App() {
     };
   }, []);
 
-  // Automatic Cloud Demonstration & Telemetry Simulator Loop
+  // Automatic Cloud Demonstration & Telemetry Simulator Loop.
+  // DISABLED by default — real telemetry now flows daemon -> /api/ingest -> DB.
+  // Set VITE_DEMO_MODE=true only for sales demos with no live agents.
+  const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true';
   useEffect(() => {
+    if (!DEMO_MODE) return;
     if (localDaemonState.online && !localDaemonState.isSimulated) return;
-    
+
     const timer = setInterval(() => {
       const names = ['Sarah Jenkins', 'John Doe', 'Alex Rivera', 'Emily Chen', 'Rohan Sharma', 'Neha Gupta'];
       const randomName = names[Math.floor(Math.random() * names.length)];
@@ -453,8 +458,9 @@ export default function App() {
     return () => clearInterval(timer);
   }, [localDaemonState.online]);
 
-  // Cloud Sync Simulation Loop
+  // Cloud Sync Simulation Loop — demo-only (real sync happens in the daemon).
   useEffect(() => {
+    if (import.meta.env.VITE_DEMO_MODE !== 'true') return;
     if (!localDaemonState.online) return;
     const interval = setInterval(() => {
       const now = new Date();
@@ -494,6 +500,7 @@ export default function App() {
       setLoginPassword('');
       showToast(`Logged in as ${user.name || user.email}.`, 'success');
       logAudit('Authentication', `Logged in as ${user.role}`);
+      if (route !== 'employee') loadServerData();
     } catch (err) {
       setLoginError(err.message || 'Authentication failed');
     }
@@ -506,6 +513,66 @@ export default function App() {
     setSessionToken('');
     setCurrentRole('landing');
     showToast('Logged out successfully.', 'info');
+  };
+
+  // Map backend rows -> existing UI shapes and load real data from the server.
+  // Source of truth is now the API; localStorage is only a transient cache.
+  const loadServerData = async () => {
+    try {
+      const [srvUsers, srvProjects] = await Promise.all([
+        api.users.list(),
+        api.projects.list(),
+      ]);
+
+      const mappedProjects = srvProjects.map((p, i) => ({
+        id: p.id,
+        name: p.name,
+        contractValue: Number(p.billed_revenue) || Number(p.budget) || 0,
+        margin: p.roi != null ? Math.round(p.roi * 100) : 0,
+        cost: Number(p.cost) || 0,
+        totalHours: Number(p.total_hours) || 0,
+        color: ['#6366f1', '#3b82f6', '#10b981', '#f59e0b', '#ef4444'][i % 5],
+        bgColor: 'bg-indigo-500/20',
+        borderCol: 'border-indigo-500/30',
+      }));
+
+      const leads = srvUsers
+        .filter((u) => u.role === 'lead')
+        .map((u) => ({
+          id: u.id,
+          name: u.name,
+          dept: u.dept || '—',
+          activeSubordinates: srvUsers.filter((e) => e.team_lead_id === u.id).length,
+          activeBenchHours: 0,
+          telemetryScore: 0,
+          email: u.email,
+          canManage: u.can_manage_employees,
+        }));
+
+      const emps = srvUsers
+        .filter((u) => u.role === 'employee')
+        .map((u) => ({
+          id: u.id,
+          name: u.name,
+          email: u.email,
+          role: u.title || 'Employee',
+          dept: u.dept || '—',
+          teamLeadId: u.team_lead_id,
+          activeProject: u.active_project_id,
+          baseSalary: Number(u.base_salary) || 0,
+          benefits: Number(u.benefits) || 0,
+          avgHours: u.avg_hours || 160,
+          hourlyCost: Number(u.hourly_cost) || 0,
+          status: u.status === 'active' ? 'Active' : u.status === 'disabled' ? 'Archived' : 'Inactive',
+        }));
+
+      setProjects(mappedProjects);
+      setTeamLeads(leads);
+      setEmployees(emps);
+    } catch (err) {
+      // Keep last-known data on transient failure; surface once.
+      console.warn('[data] server load failed:', err.message);
+    }
   };
 
   // Interactive CRUD State for User Management
@@ -523,62 +590,78 @@ export default function App() {
     status: 'Active'
   });
 
-  const handleAddEmployee = (e) => {
+  const handleAddEmployee = async (e) => {
     e.preventDefault();
     if (!empForm.name || !empForm.role) {
       showToast('Please fill in name and role.', 'error');
       return;
     }
-    const newId = 'EMP' + String(employees.length + 1).padStart(3, '0');
-    const newEmp = {
-      id: newId,
-      ...empForm,
-      avgHours: 160
-    };
-    const updatedList = [...employees, newEmp];
-    setEmployees(updatedList);
-    setShowAddForm(false);
-    setEmpForm({
-      name: '',
-      role: '',
-      dept: 'Civil Engineering',
-      teamLeadId: 'TL-01',
-      activeProject: 'Project Alpha',
-      baseSalary: 50000,
-      benefits: 10000,
-      status: 'Active'
-    });
-    logAudit('Admin', `Added new employee account ${newId} (${newEmp.name})`);
-    showToast(`Added ${newEmp.name} successfully.`, 'success');
+    const email =
+      empForm.email ||
+      `${empForm.name.toLowerCase().replace(/[^a-z0-9]+/g, '.')}@civilmantra.com`;
+    try {
+      await api.users.create({
+        name: empForm.name,
+        email,
+        role: 'employee',
+        title: empForm.role,
+        dept: empForm.dept,
+        team_lead_id: empForm.teamLeadId || (teamLeads[0] && teamLeads[0].id) || null,
+        active_project_id: empForm.activeProject || null,
+        base_salary: Number(empForm.baseSalary) || 0,
+        benefits: Number(empForm.benefits) || 0,
+        avg_hours: 160,
+      });
+      await loadServerData();
+      setShowAddForm(false);
+      setEmpForm({
+        name: '', email: '', role: '', dept: 'Civil Engineering',
+        teamLeadId: '', activeProject: '', baseSalary: 50000, benefits: 10000, status: 'Active',
+      });
+      logAudit('Admin', `Created employee ${empForm.name}`);
+      showToast(`Added ${empForm.name} successfully.`, 'success');
+    } catch (err) {
+      showToast(err.message || 'Failed to create employee.', 'error');
+    }
   };
 
-  const handleEditEmployee = (e) => {
+  const handleEditEmployee = async (e) => {
     e.preventDefault();
     if (!empForm.name || !empForm.role) {
       showToast('Please fill in name and role.', 'error');
       return;
     }
-    const updatedList = employees.map(emp => {
-      if (emp.id === selectedEmp.id) {
-        return { ...emp, ...empForm };
-      }
-      return emp;
-    });
-    setEmployees(updatedList);
-    setShowEditForm(false);
-    setSelectedEmp(null);
-    logAudit('Admin', `Modified employee account ${selectedEmp.id}`);
-    showToast('Employee account updated successfully.', 'success');
+    try {
+      await api.users.update(selectedEmp.id, {
+        name: empForm.name,
+        title: empForm.role,
+        dept: empForm.dept,
+        base_salary: Number(empForm.baseSalary) || 0,
+        benefits: Number(empForm.benefits) || 0,
+        status: empForm.status === 'Active' ? 'active' : 'disabled',
+      });
+      await loadServerData();
+      setShowEditForm(false);
+      setSelectedEmp(null);
+      logAudit('Admin', `Modified employee account ${selectedEmp.id}`);
+      showToast('Employee account updated successfully.', 'success');
+    } catch (err) {
+      showToast(err.message || 'Update failed.', 'error');
+    }
   };
 
-  const handleDeleteEmployee = (id) => {
-    const confirmDelete = window.confirm('Are you sure you want to remove this employee account?');
+  const handleDeleteEmployee = async (id) => {
+    const confirmDelete = window.confirm('Are you sure you want to disable this employee account?');
     if (!confirmDelete) return;
-    const target = employees.find(e => e.id === id);
-    const updated = employees.filter(emp => emp.id !== id);
-    setEmployees(updated);
-    logAudit('Admin', `Removed employee account ${id} (${target?.name})`);
-    showToast('Employee account removed.', 'info');
+    const target = employees.find((e) => e.id === id);
+    try {
+      await api.users.disable(id);
+      await loadServerData();
+      logAudit('Admin', `Disabled employee account ${id} (${target?.name})`);
+      showToast('Employee account disabled.', 'info');
+    } catch (err) {
+      showToast(err.message || 'Disable failed.', 'error');
+    }
   };
 
   const openEditForm = (emp) => {
@@ -604,24 +687,37 @@ export default function App() {
     { name: 'David Miller', email: 'david.miller@civilmantra.com', code: 'CM-1029-B', status: 'Pending' }
   ]);
 
-  const generateActivationCode = (e) => {
+  const generateActivationCode = async (e) => {
     e.preventDefault();
     if (!provisionEmail || !provisionName) {
       showToast('Please fill name and corporate email.', 'error');
       return;
     }
-    const randCode = 'CM-' + Math.floor(Math.random() * 9000 + 1000) + '-' + String.fromCharCode(65 + Math.floor(Math.random() * 26));
-    const newActivation = {
-      name: provisionName,
-      email: provisionEmail,
-      code: randCode,
-      status: 'Pending'
-    };
-    setPendingActivations([newActivation, ...pendingActivations]);
-    setProvisionEmail('');
-    setProvisionName('');
-    logAudit('Admin', `Generated activation code ${randCode} for ${provisionName}`);
-    showToast(`Activation code created: ${randCode}`, 'success');
+    try {
+      // Ensure the employee account exists, then mint a real 8-digit code for it.
+      let emp = employees.find((u) => u.email && u.email.toLowerCase() === provisionEmail.toLowerCase());
+      if (!emp) {
+        const created = await api.users.create({
+          name: provisionName,
+          email: provisionEmail,
+          role: 'employee',
+          team_lead_id: teamLeads[0] ? teamLeads[0].id : null,
+        });
+        emp = { id: created.id };
+      }
+      const { code, expires_at } = await api.activation.generate(emp.id);
+      setPendingActivations([
+        { name: provisionName, email: provisionEmail, code, status: 'Pending', expires_at },
+        ...pendingActivations,
+      ]);
+      await loadServerData();
+      setProvisionEmail('');
+      setProvisionName('');
+      logAudit('Admin', `Generated activation code for ${provisionName}`);
+      showToast(`Activation code (shown once): ${code}`, 'success');
+    } catch (err) {
+      showToast(err.message || 'Failed to generate code.', 'error');
+    }
   };
 
   // Contact Form State

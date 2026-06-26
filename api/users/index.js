@@ -10,18 +10,17 @@ export default handler(async (req, res) => {
   if (req.method === 'GET') {
     // Admin sees the whole company; a lead sees only their own team (+ themselves).
     let rows;
+    const cols = `id, name, email, role, team_lead_id, can_manage_employees,
+                  hourly_cost, status, emp_code, dept, title, base_salary,
+                  benefits, active_project_id, avg_hours, created_at`;
     if (actor.role === 'admin') {
       ({ rows } = await query(
-        `SELECT id, name, email, role, team_lead_id, can_manage_employees,
-                hourly_cost, status, created_at
-           FROM users WHERE company_id = $1 ORDER BY created_at DESC`,
+        `SELECT ${cols} FROM users WHERE company_id = $1 ORDER BY created_at DESC`,
         [actor.company_id]
       ));
     } else if (actor.role === 'lead') {
       ({ rows } = await query(
-        `SELECT id, name, email, role, team_lead_id, can_manage_employees,
-                hourly_cost, status, created_at
-           FROM users
+        `SELECT ${cols} FROM users
           WHERE company_id = $1 AND (team_lead_id = $2 OR id = $2)
           ORDER BY created_at DESC`,
         [actor.company_id, actor.id]
@@ -34,8 +33,18 @@ export default handler(async (req, res) => {
 
   if (req.method === 'POST') {
     const body = await readBody(req);
-    const { name, email, role, password, hourly_cost = 0, team_lead_id } = body;
+    const {
+      name, email, role, password, team_lead_id,
+      emp_code = null, dept = null, title = null,
+      base_salary = 0, benefits = 0, active_project_id = null, avg_hours = 160,
+    } = body;
     if (!name || !email || !role) throw new HttpError(400, 'Missing name, email or role');
+    // hourly_cost authoritative for ROI; derive from salary+benefits if not given.
+    const hours = Number(avg_hours) || 160;
+    const hourly_cost =
+      body.hourly_cost != null
+        ? Number(body.hourly_cost)
+        : (Number(base_salary) + Number(benefits)) / hours;
     if (!['lead', 'employee'].includes(role))
       throw new HttpError(400, 'role must be lead or employee');
 
@@ -61,10 +70,14 @@ export default handler(async (req, res) => {
     let created;
     try {
       ({ rows: [created] } = await query(
-        `INSERT INTO users (company_id, name, email, password_hash, role, team_lead_id, hourly_cost, status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-         RETURNING id, name, email, role, team_lead_id, hourly_cost, status, created_at`,
-        [actor.company_id, name, email, password_hash, role, leadId, hourly_cost, status]
+        `INSERT INTO users
+           (company_id, name, email, password_hash, role, team_lead_id, hourly_cost,
+            status, emp_code, dept, title, base_salary, benefits, active_project_id, avg_hours)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+         RETURNING id, name, email, role, team_lead_id, hourly_cost, status, emp_code,
+                   dept, title, base_salary, benefits, active_project_id, avg_hours, created_at`,
+        [actor.company_id, name, email, password_hash, role, leadId, hourly_cost, status,
+         emp_code, dept, title, base_salary, benefits, active_project_id, hours]
       ));
     } catch (err) {
       if (err.code === '23505') throw new HttpError(409, 'Email already exists in this company');
