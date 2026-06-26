@@ -215,6 +215,11 @@ def init_db():
         cursor.execute("ALTER TABLE telemetry_logs ADD COLUMN is_anomalous INTEGER DEFAULT 0")
     except Exception:
         pass
+    # Cloud sync bookkeeping: 0 = not yet uploaded to central backend.
+    try:
+        cursor.execute("ALTER TABLE telemetry_logs ADD COLUMN synced INTEGER DEFAULT 0")
+    except Exception:
+        pass
     conn.commit()
     conn.close()
 
@@ -235,6 +240,166 @@ def prune_db():
         print(f"[Database] Error pruning table: {e}")
 
 init_db()
+
+# ==================== CLOUD SYNC (central backend) ====================
+# The daemon buffers every sample in local SQLite (offline-safe) and pushes
+# unsynced rows to the central ingest endpoint. Auth = per-device bearer token
+# issued at activation. Uses only stdlib urllib so the binary bundles cleanly.
+import urllib.request
+import urllib.error
+
+CLOUD_CONFIG_PATH = os.path.join(CONFIG_DIR, "cloud.json")
+SYNC_INTERVAL = 30          # seconds between upload attempts
+SYNC_BATCH = 200            # rows per request (server cap is 500)
+
+cloud_lock = threading.Lock()
+CLOUD = {"cloud_url": None, "device_token": None, "activated": False, "revoked": False}
+
+
+def load_cloud_config():
+    # Device token preferentially from OS keyring; URL + flags from cloud.json.
+    token = None
+    if HAS_KEYRING:
+        try:
+            token = keyring.get_password("CivilMantra", "device_token")
+        except Exception:
+            token = None
+    data = {}
+    if os.path.exists(CLOUD_CONFIG_PATH):
+        try:
+            with open(CLOUD_CONFIG_PATH, "r") as f:
+                data = json.load(f)
+        except Exception:
+            data = {}
+    with cloud_lock:
+        CLOUD["cloud_url"] = data.get("cloud_url")
+        CLOUD["device_token"] = token or data.get("device_token")
+        CLOUD["revoked"] = bool(data.get("revoked", False))
+        CLOUD["activated"] = bool(CLOUD["cloud_url"] and CLOUD["device_token"] and not CLOUD["revoked"])
+
+
+def save_cloud_config(cloud_url, device_token, revoked=False):
+    if HAS_KEYRING and device_token:
+        try:
+            keyring.set_password("CivilMantra", "device_token", device_token)
+        except Exception:
+            pass
+    try:
+        with open(CLOUD_CONFIG_PATH, "w") as f:
+            # Mirror to file as fallback when keyring is unavailable.
+            json.dump({"cloud_url": cloud_url, "device_token": device_token,
+                       "revoked": revoked}, f, indent=2)
+    except Exception as e:
+        print(f"[Cloud] Error writing cloud config: {e}")
+    load_cloud_config()
+
+
+def _to_int(val, default=0):
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        return default
+
+
+def get_unsynced(limit=SYNC_BATCH):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT id, timestamp, active_window, keystrokes, mouse_movements, "
+        "is_active, classified_sector, is_anomalous FROM telemetry_logs "
+        "WHERE synced = 0 ORDER BY id ASC LIMIT ?", (limit,))
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
+
+def mark_synced(ids):
+    if not ids:
+        return
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.executemany("UPDATE telemetry_logs SET synced = 1 WHERE id = ?", [(i,) for i in ids])
+    conn.commit()
+    conn.close()
+
+
+def row_to_sample(row):
+    # Map local (encrypted) row -> cloud ingest contract. Window titles were
+    # already sanitized at write time; densities decrypted back to ints.
+    _id, ts, window, keys, mouse, is_active, sector, anomalous = row
+    keys_i = _to_int(decrypt_val(keys, "0"))
+    mouse_i = _to_int(decrypt_val(mouse, "0"))
+    density = keys_i + mouse_i
+    active = bool(is_active)
+    return {
+        "ts": ts,
+        "window_title": decrypt_val(window, "Unknown"),
+        "app_category": sector or "General Operations",
+        "input_density": density,
+        "focus_score": min(100, density) if active else 0,
+        "is_idle": not active,
+        "ai_label": "anomaly" if anomalous else "normal",
+        "anomaly_flag": bool(anomalous),
+    }
+
+
+def cloud_post(url, token, payload):
+    body = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(url, data=body, method="POST")
+    req.add_header("Content-Type", "application/json")
+    req.add_header("Authorization", f"Bearer {token}")
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        return resp.status, resp.read().decode("utf-8")
+
+
+def sync_once():
+    """Upload one batch. Returns (uploaded_count, status_code). Non-throwing."""
+    with cloud_lock:
+        url = CLOUD["cloud_url"]
+        token = CLOUD["device_token"]
+        activated = CLOUD["activated"]
+    if not activated:
+        return 0, "inactive"
+
+    rows = get_unsynced()
+    if not rows:
+        return 0, 204
+    samples = [row_to_sample(r) for r in rows]
+    ingest_url = url.rstrip("/") + "/api/ingest"
+    try:
+        status, _ = cloud_post(ingest_url, token, {"samples": samples})
+        if status == 200:
+            mark_synced([r[0] for r in rows])
+            return len(rows), 200
+        return 0, status
+    except urllib.error.HTTPError as e:
+        if e.code == 403:
+            # Device revoked (e.g. employee withdrew consent) -> stop collecting.
+            print("[Cloud] Device revoked by server. Halting telemetry collection.")
+            with cloud_lock:
+                CLOUD["activated"] = False
+                CLOUD["revoked"] = True
+            save_cloud_config(url, token, revoked=True)
+        return 0, e.code
+    except (urllib.error.URLError, OSError) as e:
+        # Offline / unreachable: keep rows buffered, retry next cycle.
+        print(f"[Cloud] Sync deferred (offline): {e}")
+        return 0, "offline"
+
+
+def cloud_sync_loop():
+    print("Starting cloud sync thread (interval %ss)..." % SYNC_INTERVAL)
+    while True:
+        try:
+            n, status = sync_once()
+            if n:
+                print(f"[Cloud] Uploaded {n} samples (status {status}).")
+        except Exception as e:
+            print(f"[Cloud] Sync loop error: {e}")
+        time.sleep(SYNC_INTERVAL)
+
+
+load_cloud_config()
 
 # ==================== LINUX TELEMETRY METHODS ====================
 # Auto-detect device IDs from xinput
@@ -497,7 +662,15 @@ def db_logger_loop():
     
     while True:
         time.sleep(10)
-        
+
+        # DPDP: if the device was revoked (consent withdrawn), stop collecting.
+        with cloud_lock:
+            if CLOUD["revoked"]:
+                with stats_lock:
+                    keystroke_count = 0
+                    mouse_count = 0
+                continue
+
         raw_window = get_active_window()
         window = sanitize_window_title(raw_window)
         
@@ -536,13 +709,39 @@ def db_logger_loop():
 class TelemetryAPIHandler(BaseHTTPRequestHandler):
     def end_headers(self):
         self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, OPTIONS')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
         super().end_headers()
-        
+
     def do_OPTIONS(self):
         self.send_response(200)
         self.end_headers()
+
+    def _json(self, status, obj):
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(json.dumps(obj).encode("utf-8"))
+
+    def do_POST(self):
+        # Activation handoff from the Electron app after the user activates in
+        # the cloud: stores cloud_url + device_token so the sync thread starts.
+        if not self.is_authenticated():
+            return self._json(401, {"error": "Unauthorized"})
+        if self.path != "/api/activate":
+            return self._json(404, {"error": "Not found"})
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length) or "{}")
+        except Exception:
+            return self._json(400, {"error": "Invalid JSON"})
+
+        cloud_url = body.get("cloud_url")
+        device_token = body.get("device_token")
+        if not cloud_url or not device_token:
+            return self._json(400, {"error": "Missing cloud_url or device_token"})
+        save_cloud_config(cloud_url, device_token, revoked=False)
+        return self._json(200, {"activated": True})
         
     def is_authenticated(self):
         if not API_TOKEN:
@@ -625,10 +824,27 @@ class TelemetryAPIHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps(history).encode("utf-8"))
             
         elif self.path == "/api/status":
+            try:
+                conn = sqlite3.connect(DB_PATH)
+                cur = conn.cursor()
+                cur.execute("SELECT COUNT(*) FROM telemetry_logs WHERE synced = 0")
+                pending = cur.fetchone()[0]
+                conn.close()
+            except Exception:
+                pending = None
+            with cloud_lock:
+                cloud_state = {
+                    "activated": CLOUD["activated"],
+                    "revoked": CLOUD["revoked"],
+                    "cloud_url": CLOUD["cloud_url"],
+                }
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(json.dumps({"online": True, "db_path": DB_PATH}).encode("utf-8"))
+            self.wfile.write(json.dumps({
+                "online": True, "db_path": DB_PATH,
+                "pending_sync": pending, "cloud": cloud_state,
+            }).encode("utf-8"))
             
         else:
             self.send_response(404)
@@ -657,7 +873,11 @@ if __name__ == "__main__":
     # Start Database logging thread
     log_thread = threading.Thread(target=db_logger_loop, daemon=True)
     log_thread.start()
-    
+
+    # Start cloud sync thread (uploads buffered telemetry to central backend)
+    sync_thread = threading.Thread(target=cloud_sync_loop, daemon=True)
+    sync_thread.start()
+
     # Start REST API server in main thread
     try:
         run_server()

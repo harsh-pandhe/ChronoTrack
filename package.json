@@ -13,7 +13,8 @@
     "electron:build": "npm run build && electron-builder",
     "migrate": "node scripts/migrate.js",
     "seed:admin": "node scripts/seed-admin.js",
-    "test:api": "node scripts/test-api.js"
+    "test:api": "node scripts/test-api.js",
+    "test:daemon": "bash scripts/test-daemon-e2e.sh"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
