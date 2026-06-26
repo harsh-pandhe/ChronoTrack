@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Check, 
+import api from './api.js';
+import {
+  Check,
   X, 
   ChevronRight, 
   Shield, 
@@ -143,6 +144,7 @@ export default function App() {
 
   // Global Session Authentication State
   const [sessionToken, setSessionToken] = useState(() => localStorage.getItem('civil_session_token') || '');
+  const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginRole, setLoginRole] = useState('admin'); // 'admin' | 'tl' | 'employee'
   const [loginError, setLoginError] = useState('');
@@ -221,27 +223,19 @@ export default function App() {
   useEffect(() => {
     if (isEmployeeOnlyMode) return;
     const verifySession = async () => {
-      const savedToken = localStorage.getItem('civil_session_token');
-      const savedRole = localStorage.getItem('civil_role');
-      if (savedToken && (savedRole === 'admin' || savedRole === 'tl')) {
-        try {
-          const res = await fetch('/api/verify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: savedToken, role: savedRole })
-          });
-          const data = await res.json();
-          if (!data.valid) {
-            localStorage.removeItem('civil_session_token');
-            setSessionToken('');
-            setCurrentRole('landing');
-            showToast('Session expired. Please log in again.', 'info');
-          } else {
-            setCurrentRole(savedRole);
-          }
-        } catch (err) {
-          console.warn('Session verification skipped offline.');
-        }
+      if (!api.getToken()) return;
+      try {
+        const { user } = await api.auth.me();
+        const route = user.role === 'lead' ? 'tl' : user.role;
+        localStorage.setItem('civil_role', route);
+        setSessionToken(api.getToken());
+        setCurrentRole(route);
+      } catch (err) {
+        // Invalid/expired token → clear and return to landing.
+        api.clearSession();
+        localStorage.removeItem('civil_session_token');
+        setSessionToken('');
+        setCurrentRole('landing');
       }
     };
     verifySession();
@@ -478,48 +472,35 @@ export default function App() {
     return () => clearInterval(interval);
   }, [localDaemonState.online]);
 
-  // Authentication Submission
+  // Map backend role (admin|lead|employee) to UI route (admin|tl|employee).
+  const roleToRoute = (role) => (role === 'lead' ? 'tl' : role);
+
+  // Authentication Submission — real backend, email + password, no fallback.
   const handleLoginSubmit = async (e) => {
     if (e) e.preventDefault();
     setLoginError('');
 
-    try {
-      const res = await fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role: loginRole, password: loginPassword })
-      });
-      const data = await res.json();
+    if (!loginEmail || !loginPassword) {
+      setLoginError('Enter email and password.');
+      return;
+    }
 
-      if (res.ok && data.success) {
-        localStorage.setItem('civil_session_token', data.token);
-        localStorage.setItem('civil_role', loginRole);
-        setSessionToken(data.token);
-        setCurrentRole(loginRole);
-        setLoginPassword('');
-        showToast(`Logged in successfully as ${loginRole === 'admin' ? 'Administrator' : 'Team Lead'}.`, 'success');
-        logAudit('Authentication', `Logged in successfully as ${loginRole}`);
-      } else {
-        setLoginError(data.error || 'Authentication failed');
-      }
+    try {
+      const user = await api.auth.login(loginEmail.trim(), loginPassword);
+      const route = roleToRoute(user.role);
+      localStorage.setItem('civil_role', route);
+      setSessionToken(api.getToken());
+      setCurrentRole(route);
+      setLoginPassword('');
+      showToast(`Logged in as ${user.name || user.email}.`, 'success');
+      logAudit('Authentication', `Logged in as ${user.role}`);
     } catch (err) {
-      // Local Dev Mode Fallback
-      const fallbackPass = loginRole === 'admin' ? 'admin123' : 'lead123';
-      if (loginPassword === fallbackPass) {
-        const dummyToken = `local-token-${loginRole}-${Date.now()}`;
-        localStorage.setItem('civil_session_token', dummyToken);
-        localStorage.setItem('civil_role', loginRole);
-        setSessionToken(dummyToken);
-        setCurrentRole(loginRole);
-        setLoginPassword('');
-        showToast(`Logged in (Local Fallback) as ${loginRole === 'admin' ? 'Administrator' : 'Team Lead'}.`, 'info');
-      } else {
-        setLoginError('Incorrect password credentials.');
-      }
+      setLoginError(err.message || 'Authentication failed');
     }
   };
 
   const handleLogout = () => {
+    api.clearSession();
     localStorage.removeItem('civil_session_token');
     localStorage.removeItem('civil_role');
     setSessionToken('');
@@ -1063,17 +1044,31 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Password input */}
+              {/* Email + Password input */}
               {loginRole !== 'employee' ? (
-                <div className="space-y-1.5">
-                  <label className="text-[10px] uppercase font-black tracking-wider text-zinc-400">Security Password</label>
-                  <input 
-                    type="password" 
-                    value={loginPassword} 
-                    onChange={(e) => setLoginPassword(e.target.value)} 
-                    placeholder="••••••••"
-                    className="w-full bg-background border border-border focus:border-primary rounded-xl px-4 py-3 text-xs text-white placeholder-zinc-700 outline-none transition-colors"
-                  />
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] uppercase font-black tracking-wider text-zinc-400">Corporate Email</label>
+                    <input
+                      type="email"
+                      value={loginEmail}
+                      onChange={(e) => setLoginEmail(e.target.value)}
+                      placeholder="you@company.com"
+                      autoComplete="username"
+                      className="w-full bg-background border border-border focus:border-primary rounded-xl px-4 py-3 text-xs text-white placeholder-zinc-700 outline-none transition-colors"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] uppercase font-black tracking-wider text-zinc-400">Security Password</label>
+                    <input
+                      type="password"
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                      placeholder="••••••••"
+                      autoComplete="current-password"
+                      className="w-full bg-background border border-border focus:border-primary rounded-xl px-4 py-3 text-xs text-white placeholder-zinc-700 outline-none transition-colors"
+                    />
+                  </div>
                 </div>
               ) : (
                 <div className="bg-zinc-950 border border-border p-4 rounded-xl text-center space-y-2">
