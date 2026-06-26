@@ -27,6 +27,13 @@ dist-ssr
 dist-desktop
 data/*.db
 data/*.db-journal
+data/*.pid
+data/*.log
 *.deb
 *.AppImage
 *.snap
+*.cert
+*.pem
+*.key
+__pycache__/
+*.pyc
