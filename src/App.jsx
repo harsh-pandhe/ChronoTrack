@@ -140,6 +140,7 @@ export default function App() {
   const [verificationTaskDescription, setVerificationTaskDescription] = useState('');
   const [verificationTaskCategory, setVerificationTaskCategory] = useState('Engineering / Design');
   const [verificationTaskDuration, setVerificationTaskDuration] = useState('2');
+  const [verificationProject, setVerificationProject] = useState('');
   const [showVerificationPrompt, setShowVerificationPrompt] = useState(true);
 
   // Global Session Authentication State
@@ -1976,37 +1977,34 @@ export default function App() {
                   {/* Register Employee Form */}
                   <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
                     <span className="text-[10px] font-black uppercase text-zinc-450 block">Provision New Employee Account</span>
-                    <form onSubmit={(e) => {
+                    <form onSubmit={async (e) => {
                       e.preventDefault();
                       if (!newEmpName || !newEmpEmail) {
                         showToast('Please fill out all fields.', 'error');
                         return;
                       }
-                      const empId = `EMP${Math.floor(100 + Math.random() * 900)}`;
-                      const actCode = `CM-${Math.floor(1000 + Math.random() * 9000)}-A`;
-                      const newEmp = {
-                        id: empId,
-                        name: newEmpName,
-                        role: newEmpRole,
-                        dept: newEmpDept,
-                        teamLeadId: 'TL-01',
-                        activeProject: newEmpProject,
-                        baseSalary: parseFloat(newEmpSalary),
-                        benefits: parseFloat(newEmpBenefits),
-                        avgHours: 160,
-                        status: 'Active'
-                      };
-                      setEmployees(prev => [...prev, newEmp]);
-                      logAudit('Team Lead', `Created employee account ${newEmpName} (${empId}). Act key: ${actCode}`);
-                      showToast(`Registered! Key: ${actCode}`, 'success');
-                      
-                      // Provision code
-                      const savedCodes = JSON.parse(localStorage.getItem('civil_activation_codes') || '[]');
-                      savedCodes.push({ code: actCode, empName: newEmpName, role: newEmpRole, dept: newEmpDept });
-                      localStorage.setItem('civil_activation_codes', JSON.stringify(savedCodes));
-
-                      setNewEmpName('');
-                      setNewEmpEmail('');
+                      try {
+                        // Backend assigns this employee under the logged-in lead.
+                        const created = await api.users.create({
+                          name: newEmpName,
+                          email: newEmpEmail,
+                          role: 'employee',
+                          title: newEmpRole,
+                          dept: newEmpDept,
+                          active_project_id: newEmpProject || null,
+                          base_salary: parseFloat(newEmpSalary) || 0,
+                          benefits: parseFloat(newEmpBenefits) || 0,
+                          avg_hours: 160,
+                        });
+                        const { code } = await api.activation.generate(created.id);
+                        await loadServerData();
+                        logAudit('Team Lead', `Created employee ${newEmpName}. Activation key issued.`);
+                        showToast(`Registered! Activation key (shown once): ${code}`, 'success');
+                        setNewEmpName('');
+                        setNewEmpEmail('');
+                      } catch (err) {
+                        showToast(err.message || 'Failed to register employee.', 'error');
+                      }
                     }} className="space-y-3">
                       <div className="space-y-1">
                         <label className="text-[9px] uppercase font-black text-zinc-500">Employee Name</label>
@@ -2084,25 +2082,25 @@ export default function App() {
                   {/* Create Project Form */}
                   <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
                     <span className="text-[10px] font-black uppercase text-zinc-550 block">Register Project Contract</span>
-                    <form onSubmit={(e) => {
+                    <form onSubmit={async (e) => {
                       e.preventDefault();
                       if (!newProjName) {
                         showToast('Enter project name.', 'error');
                         return;
                       }
-                      const newProj = {
-                        id: newProjName,
-                        name: newProjName,
-                        contractValue: parseFloat(newProjBudget),
-                        margin: parseInt(newProjMargin),
-                        bgColor: 'bg-indigo-500/20',
-                        borderCol: 'border-indigo-500/30',
-                        color: '#6366f1'
-                      };
-                      setProjects(prev => [...prev, newProj]);
-                      logAudit('Team Lead', `Created project contract ${newProjName} (Budget: Rs. ${newProjBudget})`);
-                      showToast('Project Contract Registered!', 'success');
-                      setNewProjName('');
+                      try {
+                        await api.projects.create({
+                          name: newProjName,
+                          budget: parseFloat(newProjBudget) || 0,
+                          billed_revenue: parseFloat(newProjBudget) || 0,
+                        });
+                        await loadServerData();
+                        logAudit('Team Lead', `Created project ${newProjName} (Budget: Rs. ${newProjBudget})`);
+                        showToast('Project Contract Registered!', 'success');
+                        setNewProjName('');
+                      } catch (err) {
+                        showToast(err.message || 'Failed to create project.', 'error');
+                      }
                     }} className="space-y-3">
                       <div className="space-y-1">
                         <label className="text-[9px] uppercase font-black text-zinc-500">Project Contract Name</label>
@@ -2376,42 +2374,37 @@ export default function App() {
                         Your supervisor Rajesh Kumar has requested validation of your activity for the past 2 hours.
                       </p>
 
-                      <form onSubmit={(e) => {
+                      <form onSubmit={async (e) => {
                         e.preventDefault();
                         if (!verificationTaskDescription.trim()) {
                           showToast('Please type your task description.', 'error');
                           return;
                         }
-                        
-                        const loggedInUser = "Sarah Jenkins";
-                        const newLog = {
-                          id: Date.now(),
-                          project: 'Project Alpha',
-                          hours: parseInt(verificationTaskDuration),
-                          mins: 0,
-                          task: verificationTaskDescription,
-                          start: '12:00 PM',
-                          end: '02:00 PM',
-                          date: new Date().toISOString().split('T')[0],
-                          activityScore: 95,
-                          isManual: true,
-                          status: 'Approved',
-                          activeApp: 'AutoCAD 2026 (Manual Verification)',
-                          productivity: 90
-                        };
-                        
-                        setLogs(prev => {
-                          const userLogs = prev[loggedInUser] || [];
-                          return {
-                            ...prev,
-                            [loggedInUser]: [newLog, ...userLogs]
-                          };
-                        });
-
-                        logAudit('Employee Desktop', `Submitted manual verification: "${verificationTaskDescription}" (${verificationTaskDuration}h)`);
-                        showToast('Activity verification synced to Vercel cloud!', 'success');
-                        setShowVerificationPrompt(false);
-                        setVerificationTaskDescription('');
+                        const hrs = parseInt(verificationTaskDuration) || 1;
+                        const end = new Date();
+                        const start = new Date(end.getTime() - hrs * 3600000);
+                        const projectId = verificationProject || (projects[0] && projects[0].id);
+                        try {
+                          if (api.getToken() && projectId) {
+                            // Real ROI attribution -> /api/time-entries.
+                            await api.timeEntries.create({
+                              project_id: projectId,
+                              start_ts: start.toISOString(),
+                              end_ts: end.toISOString(),
+                              hours: hrs,
+                              source: 'prompt',
+                              note: verificationTaskDescription,
+                            });
+                            showToast('Activity logged to project ledger.', 'success');
+                          } else {
+                            showToast('Logged locally (no session/project).', 'info');
+                          }
+                          logAudit('Employee Desktop', `Logged ${hrs}h: "${verificationTaskDescription}"`);
+                          setShowVerificationPrompt(false);
+                          setVerificationTaskDescription('');
+                        } catch (err) {
+                          showToast(err.message || 'Failed to log activity.', 'error');
+                        }
                       }} className="space-y-3">
                         <div className="space-y-1">
                           <label className="text-[9px] uppercase font-black text-zinc-450">What have you been working on?</label>
@@ -2423,6 +2416,19 @@ export default function App() {
                             placeholder="e.g. Drafting NHAI Section D blueprint alignments..."
                             className="w-full bg-background border border-border/80 focus:border-indigo-500 rounded-xl p-2.5 text-xs text-white outline-none resize-none"
                           />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[9px] uppercase font-black text-zinc-450">Project</label>
+                          <select
+                            value={verificationProject}
+                            onChange={(e) => setVerificationProject(e.target.value)}
+                            className="w-full bg-background border border-border rounded-lg p-2 text-xs text-white outline-none"
+                          >
+                            <option value="">Select project…</option>
+                            {projects.map((p) => (
+                              <option key={p.id} value={p.id}>{p.name}</option>
+                            ))}
+                          </select>
                         </div>
                         <div className="grid grid-cols-2 gap-3">
                           <div className="space-y-1">
