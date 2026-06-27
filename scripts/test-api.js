@@ -16,6 +16,7 @@ import activationVerify from '../api/activation/verify.js';
 import ingest from '../api/ingest.js';
 import timeEntries from '../api/time-entries.js';
 import consent from '../api/consent.js';
+import analytics from '../api/analytics.js';
 
 // --- tiny router matching Vercel's file layout ---------------------------
 const routes = [
@@ -30,6 +31,7 @@ const routes = [
   [/^\/api\/ingest$/, ingest],
   [/^\/api\/time-entries$/, timeEntries],
   [/^\/api\/consent$/, consent],
+  [/^\/api\/analytics$/, analytics],
 ];
 
 const server = http.createServer((req, res) => {
@@ -74,8 +76,10 @@ async function resetSchema() {
   const path = await import('path');
   const { fileURLToPath } = await import('url');
   const dir = path.dirname(fileURLToPath(import.meta.url));
-  const sql = fs.readFileSync(path.join(dir, '..', 'deployment', 'migrations', '001_init.sql'), 'utf8');
-  await query(sql);
+  const migDir = path.join(dir, '..', 'deployment', 'migrations');
+  for (const f of fs.readdirSync(migDir).filter((x) => x.endsWith('.sql')).sort()) {
+    await query(fs.readFileSync(path.join(migDir, f), 'utf8'));
+  }
 }
 
 async function main() {
@@ -182,6 +186,24 @@ async function main() {
   // 11. Tenant/role isolation: employee cannot list users
   r = await call('GET', '/api/users', { token: empToken });
   ok(r.status === 403, 'employee cannot list users');
+
+  // 12. Analytics from REAL telemetry + time_entries
+  r = await call('GET', '/api/analytics?scope=overview&days=7', { token: adminToken });
+  ok(r.status === 200 && r.json.telemetry.samples === 3, 'admin overview reads real telemetry (3 samples)');
+  ok(r.json.projects.some((p) => p.id === projectId && Math.round(p.roi) === 99), 'overview project ROI real');
+
+  r = await call('GET', '/api/analytics?scope=team&days=7', { token: leadToken });
+  ok(r.status === 200 && r.json.members.some((m) => m.id === empId && m.active_pct === 100),
+     'lead team analytics shows employee active%');
+
+  r = await call('GET', `/api/analytics?scope=employee&user_id=${empId}&days=7`, { token: leadToken });
+  ok(r.status === 200 && r.json.rollup.samples === 3, 'lead sees own member employee analytics');
+
+  r = await call('GET', '/api/analytics?scope=employee', { token: empToken });
+  ok(r.status === 200 && r.json.rollup.samples === 3, 'employee sees own analytics');
+
+  r = await call('GET', '/api/analytics?scope=overview', { token: leadToken });
+  ok(r.status === 403, 'lead cannot access admin overview');
 
   console.log(`\n${passed} passed, ${failed} failed`);
   server.close();

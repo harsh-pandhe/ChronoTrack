@@ -147,6 +147,8 @@ export default function App() {
   const [sessionToken, setSessionToken] = useState(() => localStorage.getItem('civil_session_token') || '');
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  // Real analytics from /api/analytics (overview/team/self), loaded after login.
+  const [serverAnalytics, setServerAnalytics] = useState(null);
   const [loginRole, setLoginRole] = useState('admin'); // 'admin' | 'tl' | 'employee'
   const [loginError, setLoginError] = useState('');
 
@@ -585,6 +587,20 @@ export default function App() {
       setProjects(mappedProjects);
       setTeamLeads(leads);
       setEmployees(emps);
+
+      // Real analytics (telemetry + time entries), role-scoped.
+      const role = (api.getUser() && api.getUser().role) || '';
+      try {
+        if (role === 'admin') {
+          setServerAnalytics({ overview: await api.analytics.overview(7), team: await api.analytics.team(7) });
+        } else if (role === 'lead') {
+          setServerAnalytics({ team: await api.analytics.team(7) });
+        } else if (role === 'employee') {
+          setServerAnalytics({ self: await api.analytics.employee(null, 7) });
+        }
+      } catch (e) {
+        console.warn('[analytics] load failed:', e.message);
+      }
     } catch (err) {
       // Keep last-known data on transient failure; surface once.
       console.warn('[data] server load failed:', err.message);
@@ -860,12 +876,12 @@ export default function App() {
           </div>
           <div className="p-6 rounded-3xl bg-card border border-border shadow-md">
             <span className="text-[10px] font-black uppercase text-zinc-500 block">Logged Project Hours</span>
-            <span className="text-2xl font-black text-primary mt-2 block">{totalProjectHours.toFixed(1)} hrs</span>
+            <span className="text-2xl font-black text-primary mt-2 block">{Number(activeProj?.totalHours || 0).toFixed(1)} hrs</span>
           </div>
           <div className="p-6 rounded-3xl bg-card border border-border shadow-md">
             <span className="text-[10px] font-black uppercase text-zinc-500 block">Attributed Resource Cost</span>
             <span className="text-2xl font-black text-emerald-400 mt-2 block">
-              Rs. {statsList.reduce((acc, s) => acc + s.adjustedCost, 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+              Rs. {Number(activeProj?.cost || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
             </span>
           </div>
         </div>
@@ -1320,8 +1336,8 @@ export default function App() {
                   <div className="p-6 rounded-3xl bg-card border border-border space-y-3 hover:border-zinc-800 transition-all">
                     <span className="text-[10px] uppercase font-black tracking-widest text-zinc-500 block">Total Portfolio Revenue</span>
                     <div className="flex items-baseline space-x-1.5">
-                      <span className="text-2xl font-black text-white">Rs. 30.0 Cr</span>
-                      <span className="text-[10px] text-emerald-400 font-bold">+12%</span>
+                      <span className="text-2xl font-black text-white">{serverAnalytics?.overview ? `Rs. ${(serverAnalytics.overview.portfolio.revenue/1e7).toFixed(2)} Cr` : '—'}</span>
+                      <span className="text-[10px] text-emerald-400 font-bold">real</span>
                     </div>
                     <div className="w-full bg-zinc-900 h-1 rounded-full overflow-hidden">
                       <div className="bg-primary h-full w-3/4"></div>
@@ -1331,8 +1347,8 @@ export default function App() {
                   <div className="p-6 rounded-3xl bg-card border border-border space-y-3 hover:border-zinc-800 transition-all">
                     <span className="text-[10px] uppercase font-black tracking-widest text-zinc-500 block">Total Resource Costs</span>
                     <div className="flex items-baseline space-x-1.5">
-                      <span className="text-2xl font-black text-white">Rs. 19.8 Cr</span>
-                      <span className="text-[10px] text-zinc-500 font-semibold">Budgeted</span>
+                      <span className="text-2xl font-black text-white">{serverAnalytics?.overview ? `Rs. ${(serverAnalytics.overview.portfolio.cost/1e7).toFixed(2)} Cr` : '—'}</span>
+                      <span className="text-[10px] text-zinc-500 font-semibold">Actual (logged)</span>
                     </div>
                     <div className="w-full bg-zinc-900 h-1 rounded-full overflow-hidden">
                       <div className="bg-indigo-500 h-full w-[66%]"></div>
@@ -1342,8 +1358,8 @@ export default function App() {
                   <div className="p-6 rounded-3xl bg-card border border-border space-y-3 hover:border-zinc-800 transition-all">
                     <span className="text-[10px] uppercase font-black tracking-widest text-zinc-500 block">Net Profit Margin</span>
                     <div className="flex items-baseline space-x-1.5">
-                      <span className="text-2xl font-black text-white">34.0%</span>
-                      <span className="text-[10px] text-emerald-400 font-bold">+6.2%</span>
+                      <span className="text-2xl font-black text-white">{serverAnalytics?.overview ? `${serverAnalytics.overview.portfolio.margin_pct}%` : '—'}</span>
+                      <span className="text-[10px] text-emerald-400 font-bold">real</span>
                     </div>
                     <div className="w-full bg-zinc-900 h-1 rounded-full overflow-hidden">
                       <div className="bg-emerald-500 h-full w-[85%]"></div>
@@ -1353,8 +1369,8 @@ export default function App() {
                   <div className="p-6 rounded-3xl bg-card border border-border space-y-3 hover:border-zinc-800 transition-all">
                     <span className="text-[10px] uppercase font-black tracking-widest text-zinc-500 block">Idle Bench Latency</span>
                     <div className="flex items-baseline space-x-1.5">
-                      <span className="text-2xl font-black text-white">4.0%</span>
-                      <span className="text-[10px] text-emerald-400 font-bold">-8% Anomaly</span>
+                      <span className="text-2xl font-black text-white">{serverAnalytics?.overview ? `${serverAnalytics.overview.portfolio.bench_pct}%` : '—'}</span>
+                      <span className="text-[10px] text-emerald-400 font-bold">{serverAnalytics?.overview ? `${serverAnalytics.overview.telemetry.active_hours}h active` : ''}</span>
                     </div>
                     <div className="w-full bg-zinc-900 h-1 rounded-full overflow-hidden">
                       <div className="bg-emerald-400 h-full w-[96%]"></div>
@@ -1919,47 +1935,34 @@ export default function App() {
                   <p className="text-xs text-zinc-400 mt-1">Real-time application polling and timesheet validations for assigned engineers.</p>
                 </div>
 
-                {/* Team member status grid */}
+                {/* Team member status grid — real telemetry rollup (last 7 days) */}
+                {(!serverAnalytics?.team?.members || serverAnalytics.team.members.length === 0) && (
+                  <p className="text-xs text-zinc-500">No team telemetry yet. Provision employees and have them activate the desktop agent.</p>
+                )}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {employees.filter(e => e.teamLeadId === 'TL-01').map(emp => {
-                    const empLogs = logs[emp.name] || [];
-                    const activeLog = empLogs[0];
-                    return (
-                      <div key={emp.id} className="p-6 rounded-3xl bg-card border border-border space-y-4 hover:border-zinc-800 transition-all">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <h3 className="text-sm font-extrabold text-white">{emp.name}</h3>
-                            <span className="text-[10px] text-zinc-500 uppercase font-semibold">{emp.role}</span>
-                          </div>
-                          <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
-                            emp.status === 'Active' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-zinc-800'
-                          }`}>{emp.status}</span>
+                  {(serverAnalytics?.team?.members || []).map(m => (
+                    <div key={m.id} className="p-6 rounded-3xl bg-card border border-border space-y-4 hover:border-zinc-800 transition-all">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <h3 className="text-sm font-extrabold text-white">{m.name}</h3>
+                          <span className="text-[10px] text-zinc-500 uppercase font-semibold">{m.title || 'Employee'}</span>
                         </div>
-
-                        <div className="space-y-2 border-t border-b border-border/40 py-3 font-mono text-[10px] text-zinc-400">
-                          <div className="flex justify-between">
-                            <span>Tracked Window:</span>
-                            <span className="text-white truncate max-w-[150px] font-sans font-semibold">{activeLog?.activeApp || 'N/A'}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Activity Score:</span>
-                            <span className={`font-bold ${activeLog?.activityScore > 70 ? 'text-emerald-400' : 'text-amber-400'}`}>{activeLog?.activityScore || 0}%</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Active Project:</span>
-                            <span className="text-white font-sans">{emp.activeProject}</span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center justify-between text-[10px]">
-                          <span className="text-zinc-550 font-bold uppercase">Timesheet Status</span>
-                          <span className={`font-black uppercase tracking-wider ${
-                            activeLog?.status === 'Approved' ? 'text-emerald-400' : 'text-amber-400'
-                          }`}>{activeLog?.status || 'Pending'}</span>
-                        </div>
+                        <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
+                          m.active_pct >= 50 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'
+                        }`}>{m.active_pct}% active</span>
                       </div>
-                    );
-                  })}
+                      <div className="space-y-2 border-t border-b border-border/40 py-3 font-mono text-[10px] text-zinc-400">
+                        <div className="flex justify-between"><span>Active hours (7d):</span><span className="text-white font-semibold">{m.active_hours}h</span></div>
+                        <div className="flex justify-between"><span>Samples:</span><span className="text-white">{m.samples}</span></div>
+                        <div className="flex justify-between"><span>Anomalies:</span><span className={m.anomalies > 0 ? 'text-amber-400' : 'text-emerald-400'}>{m.anomalies}</span></div>
+                        <div className="flex justify-between"><span>Last seen:</span><span className="text-white font-sans">{m.last_seen ? new Date(m.last_seen).toLocaleString() : 'never'}</span></div>
+                      </div>
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="text-zinc-550 font-bold uppercase">Cost rate</span>
+                        <span className="font-black text-white">Rs. {Math.round(m.hourly_cost)}/hr</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}

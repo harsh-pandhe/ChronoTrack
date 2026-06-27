@@ -13,6 +13,7 @@ import activationVerify from '../api/activation/verify.js';
 import ingest from '../api/ingest.js';
 import timeEntries from '../api/time-entries.js';
 import consent from '../api/consent.js';
+import analytics from '../api/analytics.js';
 
 const routes = [
   [/^\/api\/auth\/login$/, login],
@@ -26,6 +27,7 @@ const routes = [
   [/^\/api\/ingest$/, ingest],
   [/^\/api\/time-entries$/, timeEntries],
   [/^\/api\/consent$/, consent],
+  [/^\/api\/analytics$/, analytics],
 ];
 
 const port = Number(process.env.API_PORT || 3001);

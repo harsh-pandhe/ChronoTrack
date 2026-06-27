@@ -126,6 +126,20 @@ export const timeEntries = {
   },
 };
 
+// --- Analytics (real telemetry + time entries) ---------------------------
+export const analytics = {
+  overview(days = 7) {
+    return request('GET', `/api/analytics?scope=overview&days=${days}`);
+  },
+  team(days = 7) {
+    return request('GET', `/api/analytics?scope=team&days=${days}`);
+  },
+  employee(userId, days = 7) {
+    const q = userId ? `&user_id=${userId}` : '';
+    return request('GET', `/api/analytics?scope=employee&days=${days}${q}`);
+  },
+};
+
 // --- Consent (DPDP) ------------------------------------------------------
 export const consent = {
   status() {
@@ -136,4 +150,4 @@ export const consent = {
   },
 };
 
-export default { auth, users, projects, activation, timeEntries, consent, getUser, getToken, clearSession };
+export default { auth, users, projects, activation, timeEntries, consent, analytics, getUser, getToken, clearSession };
