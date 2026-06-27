@@ -260,41 +260,51 @@ export default function App() {
 
   const [newKeyword, setNewKeyword] = useState('');
   const [keywordTarget, setKeywordTarget] = useState('whitelist');
+  // keyword -> rule id, for server-backed deletion.
+  const [ruleIdByKeyword, setRuleIdByKeyword] = useState({});
 
-  const addKeyword = () => {
-    if (!newKeyword.trim()) return;
-    const cleanKey = newKeyword.trim().toLowerCase();
-    if (keywordTarget === 'whitelist') {
-      if (productiveKeywords.includes(cleanKey)) return;
-      const updated = [...productiveKeywords, cleanKey];
-      setProductiveKeywords(updated);
-      localStorage.setItem('civil_productive_keys', JSON.stringify(updated));
-      logAudit('Admin', `Added "${cleanKey}" to Whitelist rules.`);
-      showToast(`Added "${cleanKey}" to Whitelist.`, 'success');
-    } else {
-      if (unproductiveKeywords.includes(cleanKey)) return;
-      const updated = [...unproductiveKeywords, cleanKey];
-      setUnproductiveKeywords(updated);
-      localStorage.setItem('civil_unproductive_keys', JSON.stringify(updated));
-      logAudit('Admin', `Added "${cleanKey}" to Blacklist rules.`);
-      showToast(`Added "${cleanKey}" to Blacklist.`, 'success');
+  // Load productivity rules from the server into the keyword lists.
+  const loadRules = async () => {
+    try {
+      const list = await api.rules.list();
+      const wl = [], bl = [], ids = {};
+      for (const r of list) {
+        ids[r.keyword] = r.id;
+        (r.category === 'whitelist' ? wl : bl).push(r.keyword);
+      }
+      setProductiveKeywords(wl);
+      setUnproductiveKeywords(bl);
+      setRuleIdByKeyword(ids);
+    } catch (e) {
+      console.warn('[rules] load failed:', e.message);
     }
-    setNewKeyword('');
   };
 
-  const removeKeyword = (key, target) => {
-    if (target === 'whitelist') {
-      const updated = productiveKeywords.filter(k => k !== key);
-      setProductiveKeywords(updated);
-      localStorage.setItem('civil_productive_keys', JSON.stringify(updated));
-      logAudit('Admin', `Removed "${key}" from Whitelist rules.`);
-    } else {
-      const updated = unproductiveKeywords.filter(k => k !== key);
-      setUnproductiveKeywords(updated);
-      localStorage.setItem('civil_unproductive_keys', JSON.stringify(updated));
-      logAudit('Admin', `Removed "${key}" from Blacklist rules.`);
+  const addKeyword = async () => {
+    if (!newKeyword.trim()) return;
+    const cleanKey = newKeyword.trim().toLowerCase();
+    try {
+      await api.rules.add(cleanKey, keywordTarget);
+      await loadRules();
+      logAudit('Admin', `Added "${cleanKey}" to ${keywordTarget}.`);
+      showToast(`Added "${cleanKey}" to ${keywordTarget}.`, 'success');
+      setNewKeyword('');
+    } catch (err) {
+      showToast(err.message || 'Failed to add rule.', 'error');
     }
-    showToast(`Removed rule: ${key}`, 'info');
+  };
+
+  const removeKeyword = async (key) => {
+    const id = ruleIdByKeyword[key];
+    if (!id) return;
+    try {
+      await api.rules.remove(id);
+      await loadRules();
+      logAudit('Admin', `Removed rule "${key}".`);
+      showToast(`Removed rule: ${key}`, 'info');
+    } catch (err) {
+      showToast(err.message || 'Failed to remove rule.', 'error');
+    }
   };
 
   // Local Daemon Polling Loop — neutral defaults (no fake data until daemon replies)
@@ -592,6 +602,7 @@ export default function App() {
 
       // Real analytics (telemetry + time entries), role-scoped.
       const role = (api.getUser() && api.getUser().role) || '';
+      try { await loadRules(); } catch { /* ignore */ }
       try { setTimeEntriesData(await api.timeEntries.list()); } catch { /* ignore */ }
       try {
         if (role === 'admin') {

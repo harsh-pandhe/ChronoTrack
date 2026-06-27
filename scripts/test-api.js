@@ -17,6 +17,7 @@ import ingest from '../api/ingest.js';
 import timeEntries from '../api/time-entries.js';
 import consent from '../api/consent.js';
 import analytics from '../api/analytics.js';
+import rules from '../api/rules.js';
 
 // --- tiny router matching Vercel's file layout ---------------------------
 const routes = [
@@ -32,6 +33,7 @@ const routes = [
   [/^\/api\/time-entries$/, timeEntries],
   [/^\/api\/consent$/, consent],
   [/^\/api\/analytics$/, analytics],
+  [/^\/api\/rules$/, rules],
 ];
 
 const server = http.createServer((req, res) => {
@@ -212,6 +214,17 @@ async function main() {
   ok(Array.isArray(r.json.categories) && r.json.categories.length >= 1, 'overview returns category breakdown');
   r = await call('GET', `/api/analytics?scope=employee&user_id=${empId}`, { token: adminToken });
   ok(Array.isArray(r.json.trend), 'employee analytics returns trend');
+
+  // 14. Productivity rules (admin only)
+  r = await call('POST', '/api/rules', { token: adminToken, body: { keyword: 'AutoCAD', category: 'whitelist' } });
+  ok(r.status === 201 && r.json.rule.keyword === 'autocad', 'admin adds whitelist rule (lowercased)');
+  const ruleId = r.json.rule.id;
+  r = await call('POST', '/api/rules', { token: leadToken, body: { keyword: 'x', category: 'blacklist' } });
+  ok(r.status === 403, 'non-admin cannot add rule');
+  r = await call('GET', '/api/rules', { token: adminToken });
+  ok(r.json.rules.some((x) => x.keyword === 'autocad'), 'rules list returns added rule');
+  r = await call('DELETE', `/api/rules?id=${ruleId}`, { token: adminToken });
+  ok(r.status === 200, 'admin deletes rule');
 
   console.log(`\n${passed} passed, ${failed} failed`);
   server.close();

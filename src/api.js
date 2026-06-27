@@ -140,6 +140,19 @@ export const analytics = {
   },
 };
 
+// --- Productivity rules --------------------------------------------------
+export const rules = {
+  list() {
+    return request('GET', '/api/rules').then((d) => d.rules);
+  },
+  add(keyword, category) {
+    return request('POST', '/api/rules', { keyword, category }).then((d) => d.rule);
+  },
+  remove(id) {
+    return request('DELETE', `/api/rules?id=${id}`);
+  },
+};
+
 // --- Consent (DPDP) ------------------------------------------------------
 export const consent = {
   status() {
@@ -150,4 +163,4 @@ export const consent = {
   },
 };
 
-export default { auth, users, projects, activation, timeEntries, consent, analytics, getUser, getToken, clearSession };
+export default { auth, users, projects, activation, timeEntries, consent, analytics, rules, getUser, getToken, clearSession };
