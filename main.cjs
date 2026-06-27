@@ -31,6 +31,10 @@ function startStaticServer() {
       let urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
       if (urlPath === '/') urlPath = '/index.html';
       let filePath = path.join(root, urlPath);
+      // Confine to dist/ (block path traversal e.g. /../../etc/passwd).
+      if (!path.resolve(filePath).startsWith(path.resolve(root) + path.sep)) {
+        filePath = path.join(root, 'index.html');
+      }
       // SPA fallback: unknown non-asset routes serve index.html.
       if (!fs.existsSync(filePath)) filePath = path.join(root, 'index.html');
       fs.readFile(filePath, (err, data) => {
