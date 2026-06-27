@@ -149,6 +149,8 @@ export default function App() {
   const [loginPassword, setLoginPassword] = useState('');
   // Real analytics from /api/analytics (overview/team/self), loaded after login.
   const [serverAnalytics, setServerAnalytics] = useState(null);
+  // Real project time entries for the ROI attribution ledger.
+  const [timeEntriesData, setTimeEntriesData] = useState([]);
   const [loginRole, setLoginRole] = useState('admin'); // 'admin' | 'tl' | 'employee'
   const [loginError, setLoginError] = useState('');
 
@@ -590,6 +592,7 @@ export default function App() {
 
       // Real analytics (telemetry + time entries), role-scoped.
       const role = (api.getUser() && api.getUser().role) || '';
+      try { setTimeEntriesData(await api.timeEntries.list()); } catch { /* ignore */ }
       try {
         if (role === 'admin') {
           setServerAnalytics({ overview: await api.analytics.overview(7), team: await api.analytics.team(7) });
@@ -827,27 +830,27 @@ export default function App() {
     const activeProj = projects.find(p => p.id === selectedAttributionProject) || projects[0];
     const contractValue = activeProj ? activeProj.contractValue : 180000000;
 
+    // Per-employee attribution from REAL time entries for the selected project.
+    const projId = activeProj ? activeProj.id : null;
+    const projEntries = timeEntriesData.filter(e => e.project_id === projId);
     let totalProjectHours = 0;
-    const statsList = employees.map(emp => {
-      const empLogs = logs[emp.name] || [];
-      const projectLogs = empLogs.filter(l => l.project === selectedAttributionProject);
-      
-      const totalHrs = projectLogs.reduce((acc, l) => acc + l.hours + (l.mins / 60), 0);
-      totalProjectHours += totalHrs;
-
-      const monthlyCost = (emp.baseSalary || 50000) + (emp.benefits || 10000);
-      const hourlyRate = monthlyCost / 160;
-      const adjustedCost = hourlyRate * totalHrs;
-
-      return {
-        emp,
-        totalHrs,
-        monthlyCost,
-        hourlyRate,
-        adjustedCost,
-        tasks: projectLogs.map(l => l.task)
-      };
-    });
+    const byUser = new Map();
+    for (const e of projEntries) {
+      const cur = byUser.get(e.user_id) || { hrs: 0, notes: [] };
+      cur.hrs += Number(e.hours) || 0;
+      if (e.note) cur.notes.push(e.note);
+      byUser.set(e.user_id, cur);
+    }
+    const statsList = employees
+      .filter(emp => byUser.has(emp.id))
+      .map(emp => {
+        const agg = byUser.get(emp.id);
+        const totalHrs = agg.hrs;
+        totalProjectHours += totalHrs;
+        const hourlyRate = emp.hourlyCost || ((emp.baseSalary || 0) + (emp.benefits || 0)) / (emp.avgHours || 160);
+        const adjustedCost = hourlyRate * totalHrs;
+        return { emp, totalHrs, hourlyRate, adjustedCost, tasks: agg.notes };
+      });
 
     return (
       <div className="space-y-6">
