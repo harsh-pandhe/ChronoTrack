@@ -293,18 +293,17 @@ export default function App() {
     showToast(`Removed rule: ${key}`, 'info');
   };
 
-  // Local Daemon Polling Loop
+  // Local Daemon Polling Loop — neutral defaults (no fake data until daemon replies)
   const [localDaemonState, setLocalDaemonState] = useState({
     online: false,
-    activeWindow: "AutoCAD 2026",
-    keystrokes: 42,
-    mouseMovements: 120,
-    status: "active",
+    activeWindow: "Awaiting telemetry…",
+    keystrokes: 0,
+    mouseMovements: 0,
+    status: "connecting",
     history: []
   });
   const [telemetryTicker, setTelemetryTicker] = useState([
-    { time: '10:44:12 AM', event: 'Active Window: AutoCAD 2026' },
-    { time: '10:44:09 AM', event: 'Local Input: 12 keys, 45 mouse motions' }
+    { time: '', event: 'Waiting for local daemon on port 5050…' }
   ]);
 
   useEffect(() => {
@@ -322,9 +321,22 @@ export default function App() {
         const res = await fetch('http://localhost:5050/api/telemetry', { headers });
         if (!res.ok) throw new Error();
         const data = await res.json();
-        
+
         const historyRes = await fetch('http://localhost:5050/api/history', { headers });
         const historyData = historyRes.ok ? await historyRes.json() : [];
+
+        // If the daemon is already cloud-activated, skip the activation screen
+        // (survives restarts even if localStorage was cleared).
+        try {
+          const st = await fetch('http://localhost:5050/api/status', { headers });
+          if (st.ok) {
+            const sj = await st.json();
+            if (sj.cloud && sj.cloud.activated && isMounted) {
+              setDesktopActivated(true);
+              localStorage.setItem('civil_desktop_activated', 'true');
+            }
+          }
+        } catch { /* ignore */ }
 
         if (isMounted) {
           setLocalDaemonState({
@@ -355,11 +367,14 @@ export default function App() {
           }
         }
       } catch (err) {
+        // Daemon unreachable — show honest offline state, never fake data.
         if (isMounted) {
-          setLocalDaemonState(prev => ({ 
-            ...prev, 
-            online: true, 
-            isSimulated: true 
+          setLocalDaemonState(prev => ({
+            ...prev,
+            online: false,
+            isSimulated: false,
+            status: 'offline',
+            activeWindow: 'Daemon offline',
           }));
         }
       }
@@ -743,6 +758,7 @@ export default function App() {
     return localStorage.getItem('civil_desktop_activated') === 'true';
   });
   const [activationCodeInput, setActivationCodeInput] = useState('');
+  const [activationEmailInput, setActivationEmailInput] = useState('');
   const [grantedPermissions, setGrantedPermissions] = useState({
     input: false,
     startup: false,
@@ -750,16 +766,45 @@ export default function App() {
     storage: false
   });
 
-  const handleActivateDesktop = (e) => {
+  const handleActivateDesktop = async (e) => {
     e.preventDefault();
-    if (!activationCodeInput.trim()) {
-      showToast('Enter activation code.', 'error');
+    if (!activationEmailInput.trim() || !activationCodeInput.trim()) {
+      showToast('Enter your corporate email and activation code.', 'error');
       return;
     }
-    localStorage.setItem('civil_desktop_activated', 'true');
-    setDesktopActivated(true);
-    logAudit('Employee Desktop', 'Desktop Agent client activated successfully.');
-    showToast('Client activated successfully.', 'success');
+    try {
+      // 1) Real cloud activation (records DPDP consent, issues device + user tokens).
+      const platform = /win/i.test(navigator.platform) ? 'win32'
+        : /mac/i.test(navigator.platform) ? 'darwin' : 'linux';
+      const resp = await api.activation.verify({
+        email: activationEmailInput.trim(),
+        code: activationCodeInput.trim(),
+        consent: true,
+        platform,
+        hostname: 'desktop-agent',
+      });
+      // 2) Persist the employee session so the "what project?" prompt can log time.
+      localStorage.setItem('ct_token', resp.user_token);
+      localStorage.setItem('ct_user', JSON.stringify(resp.user));
+      // 3) Hand the device token to the local daemon so it starts cloud sync.
+      const apiBase = import.meta.env.VITE_API_BASE || '';
+      try {
+        const daemonToken = window.electronAPI ? window.electronAPI.getApiToken() : '';
+        await fetch('http://localhost:5050/api/activate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(daemonToken ? { Authorization: `Bearer ${daemonToken}` } : {}) },
+          body: JSON.stringify({ cloud_url: apiBase || 'http://localhost:3031', device_token: resp.device_token }),
+        });
+      } catch (daemonErr) {
+        console.warn('Daemon handoff failed (daemon may not be running):', daemonErr);
+      }
+      localStorage.setItem('civil_desktop_activated', 'true');
+      setDesktopActivated(true);
+      logAudit('Employee Desktop', 'Desktop Agent activated; telemetry sync started.');
+      showToast('Activated! Telemetry now syncing to the cloud.', 'success');
+    } catch (err) {
+      showToast(err.message || 'Activation failed. Check email + code.', 'error');
+    }
   };
 
   const renderContributionTab = () => {
@@ -2190,9 +2235,10 @@ export default function App() {
                   {/* Downloader Section */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     {[
-                      { os: 'Windows Agent', ext: 'Setup.exe', size: '48 MB', icon: Laptop, desc: 'Includes automated background installer and system services.' },
-                      { os: 'macOS Agent', ext: 'Client.dmg', size: '52 MB', icon: Globe, desc: 'Includes Apple Silicon and Intel universal bundle configurations.' },
-                      { os: 'Linux Agent', ext: 'Client.AppImage', size: '42 MB', icon: HardDrive, desc: 'Standalone executable with standard desktop integration hooks.' }
+                      { os: 'Windows Agent', ext: 'Setup.exe', size: '48 MB', icon: Laptop, desc: 'Includes automated background installer and system services.', file: null },
+                      { os: 'macOS Agent', ext: 'Client.dmg', size: '52 MB', icon: Globe, desc: 'Includes Apple Silicon and Intel universal bundle configurations.', file: null },
+                      { os: 'Linux (AppImage)', ext: 'AppImage', size: '132 MB', icon: HardDrive, desc: 'Self-contained portable executable. chmod +x and run — no install needed.', file: '/downloads/CivilMantraAgent.AppImage' },
+                      { os: 'Linux (.deb)', ext: 'deb', size: '94 MB', icon: HardDrive, desc: 'Debian/Ubuntu package. Installs to your app menu like any native app.', file: '/downloads/CivilMantraAgent.deb' }
                     ].map(dl => (
                       <div key={dl.os} className="p-6 rounded-3xl bg-card border border-border hover:border-zinc-800 transition-all flex flex-col justify-between h-56">
                         <div className="space-y-2">
@@ -2202,9 +2248,21 @@ export default function App() {
                           </div>
                           <p className="text-[11px] text-zinc-450 leading-relaxed">{dl.desc}</p>
                         </div>
-                        <button 
+                        <button
                           type="button"
-                          onClick={() => showToast(`Starting download for CivilMantra ${dl.os} Installer...`)}
+                          onClick={() => {
+                            if (!dl.file) {
+                              showToast(`${dl.os} build not available in this demo (Linux only).`, 'info');
+                              return;
+                            }
+                            const a = document.createElement('a');
+                            a.href = dl.file;
+                            a.download = dl.file.split('/').pop();
+                            document.body.appendChild(a);
+                            a.click();
+                            a.remove();
+                            showToast(`Downloading CivilMantra ${dl.os}…`, 'success');
+                          }}
                           className="w-full py-2.5 bg-zinc-900 border border-border hover:bg-zinc-800 hover:text-white text-zinc-300 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center space-x-2"
                         >
                           <Download className="w-3.5 h-3.5" />
@@ -2291,13 +2349,24 @@ export default function App() {
 
                 <form onSubmit={handleActivateDesktop} className="space-y-3">
                   <div className="space-y-1">
-                    <label className="text-[9px] uppercase font-black text-zinc-500 tracking-wider">8-Digit Activation Code</label>
-                    <input 
-                      type="text" 
+                    <label className="text-[9px] uppercase font-black text-zinc-500 tracking-wider">Corporate Email</label>
+                    <input
+                      type="email"
                       required
-                      value={activationCodeInput} 
-                      onChange={(e) => setActivationCodeInput(e.target.value)} 
-                      placeholder="CM-XXXX-X"
+                      value={activationEmailInput}
+                      onChange={(e) => setActivationEmailInput(e.target.value)}
+                      placeholder="you@civilmantra.com"
+                      className="w-full bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-white placeholder-zinc-700 outline-none"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] uppercase font-black text-zinc-500 tracking-wider">8-Digit Activation Code</label>
+                    <input
+                      type="text"
+                      required
+                      value={activationCodeInput}
+                      onChange={(e) => setActivationCodeInput(e.target.value)}
+                      placeholder="00000000"
                       className="w-full bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-white placeholder-zinc-700 outline-none uppercase font-mono"
                     />
                   </div>

@@ -1,8 +1,55 @@
 const { app, BrowserWindow } = require('electron');
 const path = require('path');
+const fs = require('fs');
+const http = require('http');
 const { spawn } = require('child_process');
 
+// NOTE: do NOT force --no-sandbox. On some kernels the unsandboxed path fails to
+// create /dev/shm shared memory (ESRCH) and the renderer aborts. The .deb ships
+// chrome-sandbox setuid-root (like Discord/VS Code), so the normal sandbox works.
+
 let daemonProcess = null;
+let staticServer = null;
+
+// Serve the built SPA over loopback HTTP. Loading Vite's ES-module
+// <script type="module"> over file:// is blocked by Chromium (CORS, null
+// origin) and leaves a blank window; HTTP loads modules exactly like the dev
+// server does. Returns the chosen port.
+const MIME = {
+  '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css',
+  '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png',
+  '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.woff': 'font/woff',
+};
+// Fixed port so the renderer origin (http://127.0.0.1:PORT) stays constant across
+// restarts — otherwise localStorage (which holds the activation state) resets
+// every launch and the app re-prompts for an activation code.
+const STATIC_PORT = 47615;
+function startStaticServer() {
+  const root = path.join(__dirname, 'dist');
+  return new Promise((resolve) => {
+    staticServer = http.createServer((req, res) => {
+      let urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
+      if (urlPath === '/') urlPath = '/index.html';
+      let filePath = path.join(root, urlPath);
+      // SPA fallback: unknown non-asset routes serve index.html.
+      if (!fs.existsSync(filePath)) filePath = path.join(root, 'index.html');
+      fs.readFile(filePath, (err, data) => {
+        if (err) {
+          res.statusCode = 404;
+          res.end('Not found');
+          return;
+        }
+        res.setHeader('Content-Type', MIME[path.extname(filePath)] || 'application/octet-stream');
+        res.end(data);
+      });
+    });
+    staticServer.on('error', () => {
+      // Port busy (another instance) — fall back to an ephemeral port.
+      staticServer.listen(0, '127.0.0.1', () => resolve(staticServer.address().port));
+    });
+    staticServer.listen(STATIC_PORT, '127.0.0.1', () => resolve(STATIC_PORT));
+  });
+}
 
 function startTelemetryDaemon() {
   const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
@@ -80,24 +127,33 @@ function createWindow() {
     backgroundColor: "#030712",
     webPreferences: {
       nodeIntegration: false,
-      contextBridge: true,
-      sandbox: true,
+      contextIsolation: true,
+      // sandbox:false so preload.cjs can use Node (fs) to read the daemon token.
+      // Still safe: contextIsolation on, nodeIntegration off, only a tiny bridge.
+      sandbox: false,
       preload: path.join(__dirname, 'preload.cjs')
     }
   });
 
   win.setMenu(null);
 
+  // The packaged desktop app IS the employee agent → default to the employee view.
+  const employeeMode = process.env.CT_EMPLOYEE === '1' || app.isPackaged;
+  const query = employeeMode ? '?app=employee' : '';
   if (isDev) {
-    win.loadURL('http://localhost:5173/');
-    win.webContents.openDevTools({ mode: 'detach' });
+    win.loadURL('http://localhost:5173/' + query);
   } else {
-    const indexPath = path.join(__dirname, 'dist', 'index.html');
-    win.loadFile(indexPath);
+    win.loadURL(`http://127.0.0.1:${staticPort}/index.html${query}`);
   }
 }
 
-app.whenReady().then(() => {
+let staticPort = 0;
+
+app.whenReady().then(async () => {
+  const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+  if (!isDev) {
+    staticPort = await startStaticServer();
+  }
   startTelemetryDaemon();
   createWindow();
 

@@ -7,6 +7,7 @@ import threading
 import sqlite3
 import json
 import re
+import signal
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # System checks
@@ -50,6 +51,7 @@ keystroke_count = 0
 mouse_count = 0
 current_window = "Unknown"
 monitored_device_ids = set()
+monitored_lock = threading.Lock()
 
 # Ensure directories exist
 os.makedirs(DB_DIR, exist_ok=True)
@@ -109,17 +111,18 @@ def get_or_create_config():
             print(f"[Keyring] Failed writing to keyring: {e}")
             needs_save_file = True
             
-    # Save cache fallback file if needed
-    if needs_save_file:
-        try:
-            with open(config_path, "w") as f:
-                json.dump({
-                    "api_token": token,
-                    "db_encryption_key": enc_key
-                }, f, indent=2)
-        except Exception as e:
-            print(f"[Config] Error writing config: {e}")
-            
+    # Always write config.json with the resolved token so the Electron preload
+    # reads the SAME api_token the daemon enforces (else local /api/* -> 401 and
+    # the live panel falls back to placeholder data).
+    try:
+        with open(config_path, "w") as f:
+            json.dump({
+                "api_token": token,
+                "db_encryption_key": enc_key
+            }, f, indent=2)
+    except Exception as e:
+        print(f"[Config] Error writing config: {e}")
+
     return token, enc_key
 
 # Load config values
@@ -412,45 +415,83 @@ def get_device_ids():
     
     keyboards = []
     pointers = []
-    
+
+    # Classify by the authoritative "[slave  pointer]" / "[slave  keyboard]" tag
+    # (works for any device name e.g. "Gaming Mouse"); skip master/virtual cores.
     for line in output.split("\n"):
         match = re.search(r"id=(\d+)", line)
-        if match:
-            dev_id = int(match.group(1))
-            if "Virtual core" in line:
-                continue
-            if "keyboard" in line.lower():
-                keyboards.append(dev_id)
-            elif "mouse" in line.lower() or "pointer" in line.lower() or "pointer" in line:
-                pointers.append(dev_id)
-                
+        if not match:
+            continue
+        dev_id = int(match.group(1))
+        if "master" in line.lower() or "Virtual core" in line or "XTEST" in line:
+            continue
+        if "slave  pointer" in line or re.search(r"slave\s+pointer", line):
+            pointers.append(dev_id)
+        elif "slave  keyboard" in line or re.search(r"slave\s+keyboard", line):
+            keyboards.append(dev_id)
+        # Fallback to name keywords if tag missing.
+        elif "keyboard" in line.lower():
+            keyboards.append(dev_id)
+        elif "mouse" in line.lower() or "pointer" in line.lower():
+            pointers.append(dev_id)
+
     return list(set(keyboards)), list(set(pointers))
+
+# Track xinput child procs so we can kill them on exit (else they orphan and
+# leak X11 client connections -> "Maximum number of clients reached").
+monitor_procs = []
+monitor_procs_lock = threading.Lock()
 
 # Reader thread for xinput device events
 def monitor_device(device_id, dev_type):
     global keystroke_count, mouse_count
     print(f"Starting telemetry listener for device ID {device_id} ({dev_type})")
-    
+
     try:
         proc = subprocess.Popen(
             ["xinput", "test", str(device_id)],
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             text=True,
-            bufsize=1
+            bufsize=1,
+            start_new_session=True,  # own process group for clean teardown
         )
     except Exception as e:
         print(f"Failed to start xinput test for device {device_id}: {e}")
+        with monitored_lock:
+            monitored_device_ids.discard(device_id)
         return
-        
+
+    with monitor_procs_lock:
+        monitor_procs.append(proc)
+
     for line in proc.stdout:
         with stats_lock:
             if "key press" in line.lower():
                 keystroke_count += 1
             elif "motion" in line.lower() or "button press" in line.lower():
                 mouse_count += 1
-                
+
     proc.wait()
+    # Subprocess ended (device unplugged / X gone) -> allow rediscovery + cleanup.
+    with monitor_procs_lock:
+        if proc in monitor_procs:
+            monitor_procs.remove(proc)
+    with monitored_lock:
+        monitored_device_ids.discard(device_id)
+
+
+def stop_all_monitors():
+    with monitor_procs_lock:
+        for proc in monitor_procs:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            except Exception:
+                try:
+                    proc.terminate()
+                except Exception:
+                    pass
+        monitor_procs.clear()
 
 # Hotplug discovery thread
 def device_discovery_loop():
@@ -460,12 +501,14 @@ def device_discovery_loop():
         all_devices = keyboards + pointers
         
         for dev_id in all_devices:
-            if dev_id not in monitored_device_ids:
+            with monitored_lock:
+                if dev_id in monitored_device_ids:
+                    continue
                 monitored_device_ids.add(dev_id)
-                dev_type = "keyboard" if dev_id in keyboards else "pointer"
-                t = threading.Thread(target=monitor_device, args=(dev_id, dev_type), daemon=True)
-                t.start()
-                
+            dev_type = "keyboard" if dev_id in keyboards else "pointer"
+            t = threading.Thread(target=monitor_device, args=(dev_id, dev_type), daemon=True)
+            t.start()
+
         time.sleep(60)
 
 # ==================== WINDOWS TELEMETRY METHODS ====================
@@ -855,9 +898,21 @@ def run_server():
     print(f"Secure Telemetry API Server running locally on http://127.0.0.1:{PORT}")
     server.serve_forever()
 
+def _graceful_exit(signum, frame):
+    # Kill child xinput monitors so they don't orphan + leak X11 clients.
+    try:
+        stop_all_monitors()
+    except Exception:
+        pass
+    release_lock()
+    sys.exit(0)
+
+
 if __name__ == "__main__":
     print(f"Initializing Civil Mantra: Local Telemetry Daemon (Platform: {sys.platform})...")
     acquire_lock()
+    signal.signal(signal.SIGTERM, _graceful_exit)
+    signal.signal(signal.SIGINT, _graceful_exit)
     
     # Platform-specific input listener routing
     if IS_WINDOWS:
@@ -884,5 +939,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\nStopping Local Telemetry Daemon.")
     finally:
+        stop_all_monitors()
         release_lock()
         sys.exit(0)
