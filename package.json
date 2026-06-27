@@ -70,22 +70,22 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "civilmantra",
-        "repo": "agent-client"
+        "owner": "harsh-pandhe",
+        "repo": "ChronoTrack"
       }
     ],
     "win": {
       "target": [
         "nsis"
       ],
-      "icon": "public/logo.png"
+      "icon": "public/icon.ico"
     },
     "mac": {
       "target": [
         "dmg"
       ],
       "category": "public.app-category.utilities",
-      "icon": "public/logo.png"
+      "icon": "public/icon.png"
     },
     "linux": {
       "target": [
@@ -93,7 +93,7 @@
         "deb"
       ],
       "category": "Utility",
-      "icon": "public/logo.png"
+      "icon": "public/icon.png"
     }
   }
 }
