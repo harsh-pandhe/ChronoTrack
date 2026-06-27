@@ -1,96 +1,97 @@
-# ⏱️ Civil Mantra: Transparent Telemetry & Workforce Optimization System
+# ⏱️ ChronoTrack — Civil Mantra Transparent Telemetry & Workforce ROI
 
-Civil Mantra (ChronoTrack Enterprise) is an advanced Transparent Desktop Telemetry & Profitability Engine designed for desk-bound workforces of **1,600+ employees**. The system transitions organizations from manual, error-prone time tracking to a secure telemetry-backed architecture. It monitors hardware uptime and input densities to verify true utilization and prevent margin leaks.
+ChronoTrack is a privacy-respecting workforce telemetry + project-ROI platform for
+desk-bound teams. A lightweight desktop agent records **input densities** (keystroke/
+mouse *counts*, never content) and **active window titles** (sanitised), syncs them to
+a secure multi-tenant cloud, and turns them into per-employee utilisation and
+per-project cost/ROI for team leads and admins.
 
----
-
-## 🏗️ Architecture & Component Split
-
-The platform is split into two runtime environments connected to a telemetry tracking process:
-
-```
-                                +---------------------------+
-                                |  Central Cloud Backend    |
-                                +-------------+-------------+
-                                              ^
-                                              | (DB Synchronization)
-                                              |
-+---------------------------------------------+---------------------------------------------+
-|                                  Employee Workspace PC                                     |
-|                                                                                           |
-|  +--------------------------+       +--------------------------+  +--------------------+  |
-|  |  Background Daemon (5050) | ----> |  Electron Desktop App    |  | SQLite Local DB    |  |
-|  |  (xinput / xprop polling) |       |  (Locked Agent Tool View)|  | (telemetry.db)     |  |
-|  +--------------------------+       +--------------------------+  +--------------------+  |
-+-------------------------------------------------------------------------------------------+
-```
-
-### 1. Download & Provisioning Landing Page (Web Portal)
-* **Installer Downloads**: Serves cross-platform packages: `.deb`/`AppImage` (Linux), NSIS installer `.exe` (Windows), and `.dmg` (macOS).
-* **Manager Provisioning Console**: Enables admins and managers to input employee candidates, generate secure 8-digit **Activation Codes**, and revoke unused tokens.
-
-### 2. Transparent Desktop Agent (Employee-Facing)
-* **Activation Wizard**: Displays a secure credential check. Employees authenticate using their corporate email and manager-generated activation code.
-* **Onboarding & Permissions Consent**: Walks employees through granting system-level authorizations: pointer/keyboard tracking (`xinput`), active window focus tracking (`xprop`), session auto-startup daemon, and local SQLite data caching.
-* **Background Telemetry Daemon (`telemetry_daemon.py`)**: A lightweight Python process that queries X11 active window titles via `xprop` and measures input densities (keystroke count and mouse motion events) using `xinput`. It logs to a local SQLite database (`data/telemetry.db`) and hosts a local REST API on port `5050`.
-
-### 3. Strategic Web Dashboard (Admin & Manager-Facing)
-* **Role Isolation**: Normal browser sessions default to the Landing page/Admin Console.
-* **Bento Grid Analytics Panel**: Summarizes Portfolio Revenue, Resource Costs, Net Profit Margins, and Idle Bench Latencies.
-* **Board Headcount & Margin Optimization Simulator**: A real-time slider interface projecting annual overhead saved (in Crores) and operating margin increases.
-* **Active Exceptions Console**: Displays flagged logs for manual overrides, inactivity gaps (>3h), and low telemetry activity.
-* **Productivity Rules Configurator**: Allows admins to define Whitelisted (productive) and Blacklisted (unproductive) application keywords.
+> Built for Civil Mantra (≈1,600 employees) to measure true utilisation and project
+> profitability. DPDP-aware (India), consent-based, human-in-the-loop.
 
 ---
 
-## 🛠️ Installation & Deployment
+## Architecture
 
-### A. Multi-Platform Agent Installer Packaging
-Packaging configs are run via `electron-builder` under target platforms:
+```
+ Employee PC                          Vercel (cloud)              Neon Postgres
+┌───────────────────────┐           ┌──────────────────┐        ┌──────────────┐
+│ Electron desktop agent │           │  React SPA       │        │ companies    │
+│  ├ onboarding+consent  │           │  serverless API  │◄──────►│ users        │
+│  └ display only        │           │  (JWT, RBAC,     │        │ projects     │
+│ Telemetry daemon       │  HTTPS    │   multi-tenant)  │        │ telemetry    │
+│  ├ xinput/xprop/hooks  │  device   │                  │        │ time_entries │
+│  ├ local SQLite buffer │  token    │  /api/ingest     │        │ consents     │
+│  └ batch cloud sync ───┼──────────►│  /api/analytics  │        │ audit_logs   │
+└───────────────────────┘           └──────────────────┘        └──────────────┘
+```
+
+- **Backend:** Vercel serverless functions (`api/`), JWT + bcrypt auth, role-based
+  (admin / lead / employee), per-row `company_id` tenant isolation.
+- **DB:** Neon Postgres. Versioned migrations in `deployment/migrations/`.
+- **Desktop agent:** Electron shell + Python telemetry daemon (bundled as a
+  self-contained binary via PyInstaller — no Python needed on target machines).
+- **Privacy:** densities + sanitised window titles only; explicit consent at
+  activation; consent withdrawal revokes the device and halts collection.
+
+## Repository layout
+```
+api/            serverless endpoints (auth, users, projects, activation, ingest,
+                time-entries, consent, analytics)
+lib/            db pool, auth (bcrypt/JWT), http guard, rate limit, audit
+deployment/     SQL migrations + corporate deploy scripts
+src/            React SPA (admin / team-lead / employee web + desktop agent UI)
+src-daemon/     Python telemetry daemon + PyInstaller build script
+scripts/        migrate, seed-admin, integration + daemon E2E tests, dev API
+tests/e2e/      Playwright browser ("preview") tests
+main.cjs        Electron main (spawns daemon, serves SPA over loopback)
+```
+
+## Quick start (local, all-in-one)
 ```bash
-# Build production bundle and package installers for all systems
-npm run electron:build
+npm install
+
+# 1. Postgres
+docker run -d --name ct_pg -e POSTGRES_PASSWORD=test -e POSTGRES_DB=chronotrack \
+  -p 5544:5432 postgres:16-alpine
+export DATABASE_URL="postgres://postgres:test@localhost:5544/chronotrack" PGSSL=disable \
+       JWT_SECRET="$(openssl rand -hex 32)"
+
+# 2. Schema + first admin
+npm run migrate
+COMPANY="Civil Mantra" ADMIN_EMAIL=admin@cm.com ADMIN_PASSWORD=change-me-strong npm run seed:admin
+
+# 3. Backend API + web
+API_PORT=3031 node scripts/dev-api.js &
+VITE_API_BASE="http://localhost:3031" npm run dev   # http://localhost:5173
 ```
-* Builds **Linux** `.deb` packages and `AppImage` to `dist-desktop/`
-* Builds **Windows** NSIS `.exe` installers to `dist-desktop/`
-* Builds **macOS** `.dmg` disk images to `dist-desktop/`
 
-### B. Onboarding & Workspace Node Activation Flow
-1. **Provision Account**: Log in to the Manager Provisioning Console on the Web Portal. Create an activation record with the employee's name and corporate email.
-2. **Retrieve Code**: Copy the generated 8-digit Activation Key and deliver it to the employee.
-3. **Launch Desktop App**: The employee downloads and installs the package, starts the desktop app, and logs in with their credentials.
-4. **Grant Permissions**: Approve pointer activity, window tracking, autostart registration, and local cache creation on the onboarding screen to initiate tracking.
+## Build the desktop agent
+```bash
+npm run build           # SPA
+npm run build:daemon    # PyInstaller daemon binary (needs a venv w/ pyinstaller)
+npm run electron:build  # electron-builder -> dist-desktop/ (AppImage, deb; win via CI)
+```
+Windows `.exe` is produced by the **GitHub Actions release workflow** (Windows runner)
+— see `.github/workflows/release.yml`. Cross-building Windows from Linux is not used.
 
-### C. Over-The-Air (OTA) Updates
-Updates are verified securely at startup:
-* Client builds pull signed updates from the repository release endpoints configured under `publish` targets in `package.json`.
-* Electron updater (`electron-updater`) downloads updates in the background and applies them silently on application launch/restart.
+## Tests
+| Command | Coverage | Needs |
+|---|---|---|
+| `npm run test:api` | backend, auth, RBAC, analytics, activation, ingest (29 checks) | Docker Postgres |
+| `npm run test:daemon` | daemon→cloud sync, offline buffer, consent revoke (9 checks) | Docker Postgres |
+| `npm run test:e2e` | Playwright web flows (login, dashboards, ROI) | browser + live stack |
 
-### D. Central Cloud Web Portal (Vercel Deployment)
-The workforce dashboard and manager provisioning console are hosted on **Vercel** with full serverless security and session authorization checks.
+## Deploy
+See **[DEPLOY.md](DEPLOY.md)** for the full Neon + Vercel + signing + pilot runbook,
+and **[docs/DPIA-brief.md](docs/DPIA-brief.md)** for the privacy/legal brief to give counsel.
 
-#### 1. Setup Vercel Deployment
-1. Import this repository into Vercel.
-2. Vercel automatically detects **Vite**, configuring the build command (`npm run build`) and output directory (`dist`).
+## Security & privacy
+- bcrypt(12) passwords, signed JWT (8h), per-request auth, per-device revocable tokens.
+- Multi-tenant `company_id` scoping; server-side role + authority enforcement.
+- Activation codes hashed, single-use, expiring. Rate-limited login + ingest.
+- DPDP: consent recorded at activation, withdrawal honoured; audit trail on mutations.
+- See [PLAN.md](PLAN.md) for the threat model and roadmap.
 
-#### 2. Configure Environment Variables
-To lock down administrative dashboards and secure team lead views, configure the following **Environment Variables** in Vercel's project dashboard:
-* `ADMIN_PASSWORD`: Secure password credential required to access the Administrator Board. (Defaults to `admin123` if not set).
-* `TL_PASSWORD`: Secure password credential required to access the Team Lead Board. (Defaults to `lead123` if not set).
-* `SESSION_SALT`: A random secret key string used to salt and sign daily session tokens (e.g. `some_random_cryptographic_salt`).
-
-#### 3. Serverless Routing & API Actions
-Vercel reads `vercel.json` to handle:
-* Serverless API endpoints (`/api/login`, `/api/verify`) served by the Node.js functions in `api/`.
-* React Single Page Application (SPA) routing, rewriting all other routes back to `/index.html`.
-
----
-
-## 🛡️ Telemetry & Transparency Principles
-* **Input Densities Only**: The daemon records keystroke/mouse counts within time intervals. It **never** logs actual keystroke characters, inputs, or passwords.
-* **Open Window Title Queries**: Retrieves names of active windows (e.g. `VS Code`, `Chrome`) to verify tasks against whitelisted categories. No screenshot buffers or tracking of individual browser tab URLs are recorded to respect employee privacy.
-
----
-
-## 📄 License
-This project is licensed under the MIT License.
+## License
+MIT — see [LICENSE](LICENSE).

@@ -1,0 +1,79 @@
+name: Release (build installers)
+
+# Builds the desktop agent installers and attaches them to a GitHub Release.
+# Trigger: push a tag like v3.0.0, or run manually (Actions -> Release -> Run).
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  # Production cloud API the installed agent talks to. Set as a repo variable:
+  # Settings -> Secrets and variables -> Actions -> Variables -> VITE_API_BASE
+  VITE_API_BASE: ${{ vars.VITE_API_BASE }}
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: npm ci
+      - name: Bundle telemetry daemon (PyInstaller)
+        run: |
+          python -m pip install --upgrade pip pyinstaller cryptography keyring pywin32
+          pyinstaller --onefile --name CivilMantraDaemon --distpath dist-daemon `
+            --hidden-import keyring.backends.Windows `
+            --hidden-import cryptography.fernet `
+            src-daemon/telemetry_daemon.py
+      - name: Build SPA
+        run: npm run build
+      - name: Build Windows installer (NSIS)
+        run: npx electron-builder --win nsis --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: dist-desktop/*.exe
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist-desktop/*.exe
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: npm ci
+      - name: Bundle telemetry daemon (PyInstaller)
+        run: |
+          python -m pip install --upgrade pip pyinstaller cryptography keyring
+          PYINSTALLER="$(python -c 'import sys,os;print(os.path.join(os.path.dirname(sys.executable),"pyinstaller"))')" \
+            bash src-daemon/build_daemon.sh
+      - name: Build SPA
+        run: npm run build
+      - name: Build Linux installers
+        run: npx electron-builder --linux AppImage deb --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-installers
+          path: |
+            dist-desktop/*.AppImage
+            dist-desktop/*.deb
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist-desktop/*.AppImage
+            dist-desktop/*.deb

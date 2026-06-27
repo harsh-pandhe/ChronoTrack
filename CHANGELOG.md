@@ -4,6 +4,41 @@ All notable changes to the **ChronoTrack Enterprise** portal will be documented 
 
 ---
 
+## [3.0.0] - 2026-06-27
+Full rewrite from localStorage prototype to a real, secure, multi-tenant platform.
+
+### Added
+- **Secure backend (Neon Postgres):** JWT + bcrypt(12) auth, role-based access
+  (admin/lead/employee), per-row `company_id` tenant isolation, audit trail.
+  Versioned SQL migrations + one-time admin seed.
+- **Org & projects API:** users/projects CRUD with admin-granted `can_manage_employees`
+  authority enforced server-side; activation codes (hashed, single-use, expiring).
+- **Real telemetry pipeline:** daemon buffers to local SQLite (offline-safe) and
+  batch-syncs to `/api/ingest` with per-device tokens; consent withdrawal revokes the
+  device and halts collection (DPDP).
+- **Real analytics (`/api/analytics`):** role-scoped employee/team/overview rollups —
+  active %, active hours, top categories, anomalies, per-project cost/hours/ROI,
+  portfolio revenue/cost/margin/bench. Dashboards (overview, Contribution ROI ledger,
+  TL live board) now read real data.
+- **Self-contained desktop agent:** PyInstaller-bundled daemon (no Python on target);
+  installable AppImage + `.deb`; activation flow (email+code → consent → device token).
+- **Tests:** `test:api` (29 checks), `test:daemon` (9 checks), Playwright e2e specs.
+- **Tooling/docs:** dev API server, DEPLOY runbook, DPIA brief, CI/release workflows.
+
+### Changed
+- SPA served over loopback HTTP in packaged builds (fixes blank window; stable origin
+  for persisted activation). Demo simulators gated behind `VITE_DEMO_MODE`.
+
+### Security
+- Removed hardcoded `admin123`/`lead123` defaults; app refuses to boot without
+  `JWT_SECRET` in production. Rate-limited login + ingest. Fixed a path-traversal in
+  the in-app static server (confined to `dist/`). DPDP consent + withdrawal + audit.
+
+### Removed
+- localStorage-as-database; client-side cloud/telemetry simulators (prod).
+
+---
+
 ## [2.1.0] - 2026-06-24
 ### Added
 - **Multi-Platform Installer Downloads**: Provisioned a download hub on the Landing Page serving Linux `.deb`/`AppImage`, Windows NSIS `.exe` installers, and macOS `.dmg` signed packages.
