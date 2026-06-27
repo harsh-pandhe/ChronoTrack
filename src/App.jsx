@@ -1405,36 +1405,36 @@ export default function App() {
                 {/* Recharts Area / Bar Graphs */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
-                    <span className="text-xs font-black text-white uppercase tracking-wider">Telemetry Transition Trajectory (Historical vs Projected)</span>
+                    <span className="text-xs font-black text-white uppercase tracking-wider">Daily Active Hours (last {serverAnalytics?.overview?.days || 7}d)</span>
                     <div className="h-64 w-full">
                       <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={TRANSITION_TRENDS}>
+                        <AreaChart data={serverAnalytics?.overview?.trend || []}>
                           <defs>
                             <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2}/>
+                              <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
                               <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
                             </linearGradient>
                           </defs>
                           <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-                          <XAxis dataKey="year" stroke="#4b5563" fontSize={10} />
+                          <XAxis dataKey="day" stroke="#4b5563" fontSize={10} />
                           <YAxis stroke="#4b5563" fontSize={10} />
                           <Tooltip contentStyle={{ backgroundColor: '#09090b', borderColor: '#1f2937', borderRadius: '12px', fontSize: '10px' }} />
-                          <Area type="monotone" dataKey="revenue" stroke="#6366f1" fillOpacity={1} fill="url(#colorRev)" strokeWidth={2} name="Forecast Revenue (Rs.)" />
+                          <Area type="monotone" dataKey="active_hours" stroke="#6366f1" fillOpacity={1} fill="url(#colorRev)" strokeWidth={2} name="Active Hours" />
                         </AreaChart>
                       </ResponsiveContainer>
                     </div>
                   </div>
 
                   <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
-                    <span className="text-xs font-black text-white uppercase tracking-wider">Bench Latency Ratios (%)</span>
+                    <span className="text-xs font-black text-white uppercase tracking-wider">Activity by Category (samples)</span>
                     <div className="h-64 w-full">
                       <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={TRANSITION_TRENDS}>
+                        <BarChart data={serverAnalytics?.overview?.categories || []}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-                          <XAxis dataKey="year" stroke="#4b5563" fontSize={10} />
+                          <XAxis dataKey="category" stroke="#4b5563" fontSize={9} interval={0} angle={-20} textAnchor="end" height={50} />
                           <YAxis stroke="#4b5563" fontSize={10} />
                           <Tooltip contentStyle={{ backgroundColor: '#09090b', borderColor: '#1f2937', borderRadius: '12px', fontSize: '10px' }} />
-                          <Bar dataKey="benchRatio" fill="#10b981" radius={[4, 4, 0, 0]} name="Bench Ratio %" />
+                          <Bar dataKey="samples" fill="#10b981" radius={[4, 4, 0, 0]} name="Samples" />
                         </BarChart>
                       </ResponsiveContainer>
                     </div>
@@ -1936,6 +1936,44 @@ export default function App() {
                 <div className="border-b border-border pb-4">
                   <h2 className="text-xl font-black text-white uppercase tracking-wider">Team Activity & Uptime Live Board</h2>
                   <p className="text-xs text-zinc-400 mt-1">Real-time application polling and timesheet validations for assigned engineers.</p>
+                </div>
+
+                {/* Team charts — real telemetry */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
+                    <span className="text-xs font-black text-white uppercase tracking-wider">Team Daily Active Hours</span>
+                    <div className="h-56 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={serverAnalytics?.team?.trend || []}>
+                          <defs>
+                            <linearGradient id="tlRev" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+                              <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                          <XAxis dataKey="day" stroke="#4b5563" fontSize={10} />
+                          <YAxis stroke="#4b5563" fontSize={10} />
+                          <Tooltip contentStyle={{ backgroundColor: '#09090b', borderColor: '#1f2937', borderRadius: '12px', fontSize: '10px' }} />
+                          <Area type="monotone" dataKey="active_hours" stroke="#3b82f6" fillOpacity={1} fill="url(#tlRev)" strokeWidth={2} name="Active Hours" />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                  <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
+                    <span className="text-xs font-black text-white uppercase tracking-wider">Per-Employee Active %</span>
+                    <div className="h-56 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={(serverAnalytics?.team?.members || []).map(m => ({ name: m.name.split(' ')[0], active_pct: m.active_pct }))}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                          <XAxis dataKey="name" stroke="#4b5563" fontSize={9} interval={0} angle={-20} textAnchor="end" height={50} />
+                          <YAxis stroke="#4b5563" fontSize={10} domain={[0, 100]} />
+                          <Tooltip contentStyle={{ backgroundColor: '#09090b', borderColor: '#1f2937', borderRadius: '12px', fontSize: '10px' }} />
+                          <Bar dataKey="active_pct" fill="#10b981" radius={[4, 4, 0, 0]} name="Active %" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Team member status grid — real telemetry rollup (last 7 days) */}

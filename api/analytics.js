@@ -35,6 +35,27 @@ async function userRollup(companyId, userId, sinceSql) {
   };
 }
 
+// Daily time-series for charts. scopeFilter is extra SQL (e.g. "AND user_id=$2").
+async function dailyTrend(companyId, sinceSql, extra = '', params = []) {
+  const { rows } = await query(
+    `SELECT to_char(date_trunc('day', ts), 'YYYY-MM-DD') AS day,
+            count(*)::int AS samples,
+            COALESCE(sum(CASE WHEN NOT is_idle THEN 1 ELSE 0 END),0)::int AS active_samples,
+            COALESCE(round(avg(input_density)),0)::int AS avg_density
+       FROM telemetry_logs
+      WHERE company_id=$1 AND ts > ${sinceSql} ${extra}
+      GROUP BY 1 ORDER BY 1`,
+    [companyId, ...params]
+  );
+  return rows.map((r) => ({
+    day: r.day,
+    samples: r.samples,
+    active_hours: Math.round((r.active_samples * SAMPLE_SECONDS) / 360) / 10,
+    active_pct: r.samples > 0 ? Math.round((100 * r.active_samples) / r.samples) : 0,
+    avg_density: r.avg_density,
+  }));
+}
+
 async function topApps(companyId, userId, sinceSql) {
   const { rows } = await query(
     `SELECT app_category AS category, count(*)::int AS samples
@@ -87,11 +108,12 @@ export default handler(async (req, res) => {
       if (actor.role === 'lead' && rows[0].team_lead_id !== actor.id)
         throw new HttpError(403, 'Not your team member');
     }
-    const [rollup, apps] = await Promise.all([
+    const [rollup, apps, trend] = await Promise.all([
       userRollup(actor.company_id, targetId, sinceSql),
       topApps(actor.company_id, targetId, sinceSql),
+      dailyTrend(actor.company_id, sinceSql, 'AND user_id=$2', [targetId]),
     ]);
-    return send(res, 200, { scope, user_id: targetId, days, rollup, top_apps: apps });
+    return send(res, 200, { scope, user_id: targetId, days, rollup, top_apps: apps, trend });
   }
 
   if (scope === 'team') {
@@ -111,7 +133,12 @@ export default handler(async (req, res) => {
       const r = await userRollup(actor.company_id, m.id, sinceSql);
       list.push({ id: m.id, name: m.name, title: m.title, hourly_cost: Number(m.hourly_cost), ...r });
     }
-    return send(res, 200, { scope, days, members: list });
+    const teamExtra = actor.role === 'lead'
+      ? 'AND user_id IN (SELECT id FROM users WHERE team_lead_id=$2)'
+      : `AND user_id IN (SELECT id FROM users WHERE company_id=$1 AND role='employee')`;
+    const trend = await dailyTrend(actor.company_id, sinceSql, teamExtra,
+      actor.role === 'lead' ? [actor.id] : []);
+    return send(res, 200, { scope, days, members: list, trend });
   }
 
   if (scope === 'overview') {
@@ -132,12 +159,20 @@ export default handler(async (req, res) => {
     const margin = totalRevenue > 0 ? Math.round((100 * (totalRevenue - totalCost)) / totalRevenue) : 0;
     const t = tele[0];
     const activePct = t.samples > 0 ? Math.round((100 * t.active_samples) / t.samples) : 0;
+    const [trend, catRows] = await Promise.all([
+      dailyTrend(actor.company_id, sinceSql),
+      query(`SELECT app_category AS category, count(*)::int AS samples
+               FROM telemetry_logs WHERE company_id=$1 AND ts > ${sinceSql} AND NOT is_idle
+               GROUP BY 1 ORDER BY 2 DESC LIMIT 8`, [actor.company_id]),
+    ]);
     return send(res, 200, {
       scope, days,
       headcount: hc[0],
       portfolio: { revenue: totalRevenue, cost: totalCost, margin_pct: margin, bench_pct: 100 - activePct },
       projects,
       telemetry: { samples: t.samples, active_pct: activePct, active_hours: activeHours(t.samples, t.active_samples) },
+      trend,
+      categories: catRows.rows,
     });
   }
 

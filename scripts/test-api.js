@@ -205,6 +205,14 @@ async function main() {
   r = await call('GET', '/api/analytics?scope=overview', { token: leadToken });
   ok(r.status === 403, 'lead cannot access admin overview');
 
+  // 13. Time-series + categories for charts
+  r = await call('GET', '/api/analytics?scope=overview&days=7', { token: adminToken });
+  ok(Array.isArray(r.json.trend) && r.json.trend.length >= 1 && r.json.trend[0].active_hours >= 0,
+     'overview returns daily trend for charts');
+  ok(Array.isArray(r.json.categories) && r.json.categories.length >= 1, 'overview returns category breakdown');
+  r = await call('GET', `/api/analytics?scope=employee&user_id=${empId}`, { token: adminToken });
+  ok(Array.isArray(r.json.trend), 'employee analytics returns trend');
+
   console.log(`\n${passed} passed, ${failed} failed`);
   server.close();
   process.exit(failed ? 1 : 0);
