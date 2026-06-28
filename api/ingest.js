@@ -1,7 +1,7 @@
 // POST /api/ingest — daemon pushes a batch of telemetry samples.
 // Auth: device bearer token (hashed match against devices table). Revocable.
 import { handler, readBody, send, HttpError } from '../lib/http.js';
-import { rateLimit } from '../lib/ratelimit.js';
+import { rateLimitKey } from '../lib/ratelimit.js';
 import { query } from '../lib/db.js';
 import { sha256 } from '../lib/auth.js';
 
@@ -22,9 +22,10 @@ async function authDevice(req) {
 
 export default handler(async (req, res) => {
   if (req.method !== 'POST') throw new HttpError(405, 'Method Not Allowed');
-  // Abuse/backpressure guard: 60 batches / minute / IP (daemon syncs every 30s).
-  rateLimit(req, 'ingest', 60, 60_000);
   const device = await authDevice(req);
+  // Abuse/backpressure guard PER DEVICE (not IP — many agents share an office
+  // NAT IP). 30 batches/min/device is generous (real daemon syncs every 30s).
+  rateLimitKey(`ingest:${device.id}`, 30, 60_000);
   const body = await readBody(req);
   const samples = Array.isArray(body.samples) ? body.samples : [];
   if (samples.length === 0) return send(res, 200, { accepted: 0 });

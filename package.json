@@ -20,7 +20,8 @@
     "seed:admin": "node scripts/seed-admin.js",
     "test:api": "node scripts/test-api.js",
     "test:daemon": "bash scripts/test-daemon-e2e.sh",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:load": "node scripts/load-test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
