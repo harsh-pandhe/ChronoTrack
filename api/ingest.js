@@ -59,5 +59,14 @@ export default handler(async (req, res) => {
   );
   await query(`UPDATE devices SET last_seen = now() WHERE id = $1`, [device.id]);
 
-  return send(res, 200, { accepted: samples.length });
+  // Return the company's productivity rules so the daemon classifies
+  // productive/unproductive from admin-defined keywords (not just built-ins).
+  const { rows: ruleRows } = await query(
+    `SELECT keyword, category FROM productivity_rules WHERE company_id = $1`,
+    [device.company_id]
+  );
+  const rules = { whitelist: [], blacklist: [] };
+  for (const r of ruleRows) rules[r.category]?.push(r.keyword);
+
+  return send(res, 200, { accepted: samples.length, rules });
 });

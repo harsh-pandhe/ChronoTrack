@@ -258,6 +258,25 @@ SYNC_BATCH = 200            # rows per request (server cap is 500)
 cloud_lock = threading.Lock()
 CLOUD = {"cloud_url": None, "device_token": None, "activated": False, "revoked": False}
 
+# Productivity rules pushed from the server (admin-defined whitelist/blacklist),
+# refreshed on each sync. Used to label samples productive/unproductive.
+rules_lock = threading.Lock()
+RULES_CACHE = {"whitelist": [], "blacklist": []}
+
+
+def classify_productivity(window_title):
+    if not window_title:
+        return "neutral"
+    t = window_title.lower()
+    with rules_lock:
+        wl = list(RULES_CACHE["whitelist"])
+        bl = list(RULES_CACHE["blacklist"])
+    if any(k in t for k in bl):
+        return "unproductive"
+    if any(k in t for k in wl):
+        return "productive"
+    return "neutral"
+
 
 def load_cloud_config():
     # Device token preferentially from OS keyring; URL + flags from cloud.json.
@@ -341,7 +360,8 @@ def row_to_sample(row):
         "input_density": density,
         "focus_score": min(100, density) if active else 0,
         "is_idle": not active,
-        "ai_label": "anomaly" if anomalous else "normal",
+        # Productivity label from admin-defined rules (server-pushed).
+        "ai_label": classify_productivity(decrypt_val(window, "")),
         "anomaly_flag": bool(anomalous),
     }
 
@@ -370,9 +390,18 @@ def sync_once():
     samples = [row_to_sample(r) for r in rows]
     ingest_url = url.rstrip("/") + "/api/ingest"
     try:
-        status, _ = cloud_post(ingest_url, token, {"samples": samples})
+        status, body = cloud_post(ingest_url, token, {"samples": samples})
         if status == 200:
             mark_synced([r[0] for r in rows])
+            # Refresh productivity rules pushed back by the server.
+            try:
+                resp = json.loads(body or "{}")
+                if isinstance(resp.get("rules"), dict):
+                    with rules_lock:
+                        RULES_CACHE["whitelist"] = [k.lower() for k in resp["rules"].get("whitelist", [])]
+                        RULES_CACHE["blacklist"] = [k.lower() for k in resp["rules"].get("blacklist", [])]
+            except Exception:
+                pass
             return len(rows), 200
         return 0, status
     except urllib.error.HTTPError as e:
