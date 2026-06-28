@@ -11,15 +11,12 @@ import usersIndex from '../api/users/index.js';
 import userById from '../api/users/[id].js';
 import projectsIndex from '../api/projects/index.js';
 import projectById from '../api/projects/[id].js';
-import activationGenerate from '../api/activation/generate.js';
-import activationVerify from '../api/activation/verify.js';
+import activation from '../api/activation.js';
 import ingest from '../api/ingest.js';
 import timeEntries from '../api/time-entries.js';
 import consent from '../api/consent.js';
 import analytics from '../api/analytics.js';
-import rules from '../api/rules.js';
-import auditLogs from '../api/audit-logs.js';
-import telemetryFeed from '../api/telemetry-feed.js';
+import reports from '../api/reports.js';
 
 // --- tiny router matching Vercel's file layout ---------------------------
 const routes = [
@@ -29,15 +26,12 @@ const routes = [
   [/^\/api\/users\/([^/]+)$/, userById, 'id'],
   [/^\/api\/projects$/, projectsIndex],
   [/^\/api\/projects\/([^/]+)$/, projectById, 'id'],
-  [/^\/api\/activation\/generate$/, activationGenerate],
-  [/^\/api\/activation\/verify$/, activationVerify],
+  [/^\/api\/activation$/, activation],
   [/^\/api\/ingest$/, ingest],
   [/^\/api\/time-entries$/, timeEntries],
   [/^\/api\/consent$/, consent],
   [/^\/api\/analytics$/, analytics],
-  [/^\/api\/rules$/, rules],
-  [/^\/api\/audit-logs$/, auditLogs],
-  [/^\/api\/telemetry-feed$/, telemetryFeed],
+  [/^\/api\/reports$/, reports],
 ];
 
 const server = http.createServer((req, res) => {
@@ -138,22 +132,22 @@ async function main() {
   ok(r.status === 403, 'lead cannot create a lead');
 
   // 5. Lead generates activation code for the employee
-  r = await call('POST', '/api/activation/generate', { token: leadToken, body: { user_id: empId } });
+  r = await call('POST', '/api/activation?action=generate', { token: leadToken, body: { user_id: empId } });
   ok(r.status === 201 && /^\d{8}$/.test(r.json.code), 'lead generates 8-digit code');
   const code = r.json.code;
 
   // 6. Desktop activation requires consent + valid code
-  r = await call('POST', '/api/activation/verify', { body: { email: 'emp@cm.com', code, consent: false } });
+  r = await call('POST', '/api/activation?action=verify', { body: { email: 'emp@cm.com', code, consent: false } });
   ok(r.status === 400, 'activation rejected without consent (DPDP)');
-  r = await call('POST', '/api/activation/verify', { body: { email: 'emp@cm.com', code: '00000000', consent: true } });
+  r = await call('POST', '/api/activation?action=verify', { body: { email: 'emp@cm.com', code: '00000000', consent: true } });
   ok(r.status === 401, 'activation rejects wrong code');
-  r = await call('POST', '/api/activation/verify', { body: { email: 'emp@cm.com', code, consent: true, platform: 'linux', hostname: 'ws-01' } });
+  r = await call('POST', '/api/activation?action=verify', { body: { email: 'emp@cm.com', code, consent: true, platform: 'linux', hostname: 'ws-01' } });
   ok(r.status === 200 && r.json.device_token && r.json.user_token, 'activation issues device + user token');
   const deviceToken = r.json.device_token;
   const empToken = r.json.user_token;
 
   // 6b. Code is single-use
-  r = await call('POST', '/api/activation/verify', { body: { email: 'emp@cm.com', code, consent: true } });
+  r = await call('POST', '/api/activation?action=verify', { body: { email: 'emp@cm.com', code, consent: true } });
   ok(r.status === 409, 'activation code is single-use');
 
   // 7. Daemon ingests telemetry with the device token
@@ -220,24 +214,24 @@ async function main() {
   ok(Array.isArray(r.json.trend), 'employee analytics returns trend');
 
   // 14. Productivity rules (admin only)
-  r = await call('POST', '/api/rules', { token: adminToken, body: { keyword: 'AutoCAD', category: 'whitelist' } });
+  r = await call('POST', '/api/reports?kind=rules', { token: adminToken, body: { keyword: 'AutoCAD', category: 'whitelist' } });
   ok(r.status === 201 && r.json.rule.keyword === 'autocad', 'admin adds whitelist rule (lowercased)');
   const ruleId = r.json.rule.id;
-  r = await call('POST', '/api/rules', { token: leadToken, body: { keyword: 'x', category: 'blacklist' } });
+  r = await call('POST', '/api/reports?kind=rules', { token: leadToken, body: { keyword: 'x', category: 'blacklist' } });
   ok(r.status === 403, 'non-admin cannot add rule');
-  r = await call('GET', '/api/rules', { token: adminToken });
+  r = await call('GET', '/api/reports?kind=rules', { token: adminToken });
   ok(r.json.rules.some((x) => x.keyword === 'autocad'), 'rules list returns added rule');
-  r = await call('DELETE', `/api/rules?id=${ruleId}`, { token: adminToken });
+  r = await call('DELETE', `/api/reports?kind=rules&id=${ruleId}`, { token: adminToken });
   ok(r.status === 200, 'admin deletes rule');
 
   // 15. Audit log + telemetry feed
-  r = await call('GET', '/api/audit-logs', { token: adminToken });
+  r = await call('GET', '/api/reports?kind=audit', { token: adminToken });
   ok(r.status === 200 && Array.isArray(r.json.logs) && r.json.logs.length > 0, 'admin audit-logs returns real entries');
-  r = await call('GET', '/api/audit-logs', { token: leadToken });
+  r = await call('GET', '/api/reports?kind=audit', { token: leadToken });
   ok(r.status === 403, 'non-admin cannot read audit-logs');
-  r = await call('GET', '/api/telemetry-feed?limit=10', { token: adminToken });
+  r = await call('GET', '/api/reports?kind=telemetry&limit=10', { token: adminToken });
   ok(r.status === 200 && Array.isArray(r.json.feed) && r.json.feed.length === 3, 'admin telemetry-feed returns real rows');
-  r = await call('GET', '/api/telemetry-feed', { token: empToken });
+  r = await call('GET', '/api/reports?kind=telemetry', { token: empToken });
   ok(r.status === 200 && r.json.feed.every((x) => x.employee === 'Emp One'), 'employee feed scoped to self');
 
   console.log(`\n${passed} passed, ${failed} failed`);

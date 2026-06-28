@@ -8,15 +8,12 @@ import usersIndex from '../api/users/index.js';
 import userById from '../api/users/[id].js';
 import projectsIndex from '../api/projects/index.js';
 import projectById from '../api/projects/[id].js';
-import activationGenerate from '../api/activation/generate.js';
-import activationVerify from '../api/activation/verify.js';
+import activation from '../api/activation.js';
 import ingest from '../api/ingest.js';
 import timeEntries from '../api/time-entries.js';
 import consent from '../api/consent.js';
 import analytics from '../api/analytics.js';
-import rules from '../api/rules.js';
-import auditLogs from '../api/audit-logs.js';
-import telemetryFeed from '../api/telemetry-feed.js';
+import reports from '../api/reports.js';
 
 const routes = [
   [/^\/api\/auth\/login$/, login],
@@ -25,15 +22,12 @@ const routes = [
   [/^\/api\/users\/([^/]+)$/, userById, 'id'],
   [/^\/api\/projects$/, projectsIndex],
   [/^\/api\/projects\/([^/]+)$/, projectById, 'id'],
-  [/^\/api\/activation\/generate$/, activationGenerate],
-  [/^\/api\/activation\/verify$/, activationVerify],
+  [/^\/api\/activation$/, activation],
   [/^\/api\/ingest$/, ingest],
   [/^\/api\/time-entries$/, timeEntries],
   [/^\/api\/consent$/, consent],
   [/^\/api\/analytics$/, analytics],
-  [/^\/api\/rules$/, rules],
-  [/^\/api\/audit-logs$/, auditLogs],
-  [/^\/api\/telemetry-feed$/, telemetryFeed],
+  [/^\/api\/reports$/, reports],
 ];
 
 const port = Number(process.env.API_PORT || 3001);

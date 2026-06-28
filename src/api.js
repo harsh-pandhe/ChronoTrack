@@ -108,11 +108,11 @@ export const projects = {
 export const activation = {
   // Admin/lead mints an 8-digit code for an employee. Code shown ONCE.
   generate(userId) {
-    return request('POST', '/api/activation/generate', { user_id: userId });
+    return request('POST', '/api/activation?action=generate', { user_id: userId });
   },
   // Desktop activation (used by the agent, not the dashboard) — here for completeness.
   verify(payload) {
-    return request('POST', '/api/activation/verify', payload);
+    return request('POST', '/api/activation?action=verify', payload);
   },
 };
 
@@ -143,25 +143,25 @@ export const analytics = {
 // --- Productivity rules --------------------------------------------------
 export const rules = {
   list() {
-    return request('GET', '/api/rules').then((d) => d.rules);
+    return request('GET', '/api/reports?kind=rules').then((d) => d.rules);
   },
   add(keyword, category) {
-    return request('POST', '/api/rules', { keyword, category }).then((d) => d.rule);
+    return request('POST', '/api/reports?kind=rules', { keyword, category }).then((d) => d.rule);
   },
   remove(id) {
-    return request('DELETE', `/api/rules?id=${id}`);
+    return request('DELETE', `/api/reports?kind=rules&id=${id}`);
   },
 };
 
 // --- Audit log + telemetry feed ------------------------------------------
 export const auditLogs = {
   list() {
-    return request('GET', '/api/audit-logs').then((d) => d.logs);
+    return request('GET', '/api/reports?kind=audit').then((d) => d.logs);
   },
 };
 export const telemetryFeed = {
   list(limit = 50) {
-    return request('GET', `/api/telemetry-feed?limit=${limit}`).then((d) => d.feed);
+    return request('GET', `/api/reports?kind=telemetry&limit=${limit}`).then((d) => d.feed);
   },
 };
 
