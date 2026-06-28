@@ -55,55 +55,6 @@ import {
   Line
 } from 'recharts';
 
-// Default static lists
-const INITIAL_PROJECTS = [
-  { id: 'Project Alpha', name: 'NHAI Highway Expressway (Phase 1)', contractValue: 180000000, margin: 45, bgColor: 'bg-indigo-500/20', borderCol: 'border-indigo-500/30', color: '#6366f1' },
-  { id: 'Project Beta', name: 'Smart City Metro Line Design', contractValue: 95000000, margin: 38, bgColor: 'bg-blue-500/20', borderCol: 'border-blue-500/30', color: '#3b82f6' },
-  { id: 'Project Gamma', name: 'Water Treatment Plant Design', contractValue: 65000000, margin: 32, bgColor: 'bg-emerald-500/20', borderCol: 'border-emerald-500/30', color: '#10b981' }
-];
-
-const INITIAL_TEAM_LEADS = [
-  { id: 'TL-01', name: 'Rajesh Kumar', dept: 'Civil Engineering', activeSubordinates: 30, activeBenchHours: 14.5, telemetryScore: 84 },
-  { id: 'TL-02', name: 'Anita Desai', dept: 'Structural Design', activeSubordinates: 28, activeBenchHours: 114, telemetryScore: 52 },
-  { id: 'TL-03', name: 'Vikram Singh', dept: 'Site Planning', activeSubordinates: 32, activeBenchHours: 22, telemetryScore: 79 },
-  { id: 'TL-04', name: 'Priya Patel', dept: 'Costing & Estimating', activeSubordinates: 29, activeBenchHours: 148.5, telemetryScore: 45 },
-  { id: 'TL-05', name: 'Sanjay Mehta', dept: 'Project Management', activeSubordinates: 31, activeBenchHours: 4, telemetryScore: 91 }
-];
-
-const INITIAL_EMPLOYEES = [
-  { id: 'EMP001', name: 'Sarah Jenkins', role: 'Senior AutoCAD Engineer', dept: 'Civil Engineering', teamLeadId: 'TL-01', activeProject: 'Project Alpha', baseSalary: 75000, benefits: 15000, avgHours: 160, status: 'Active' },
-  { id: 'EMP002', name: 'John Doe', role: 'Structural Designer', dept: 'Structural Design', teamLeadId: 'TL-02', activeProject: 'Project Beta', baseSalary: 62000, benefits: 12000, avgHours: 160, status: 'Active' },
-  { id: 'EMP003', name: 'Alex Rivera', role: 'Site Planner', dept: 'Site Planning', teamLeadId: 'TL-03', activeProject: 'Project Beta', baseSalary: 55000, benefits: 11000, avgHours: 160, status: 'Active' },
-  { id: 'EMP004', name: 'Emily Chen', role: 'Project Architect', dept: 'Structural Design', teamLeadId: 'TL-02', activeProject: 'Project Gamma', baseSalary: 85000, benefits: 18000, avgHours: 160, status: 'Active' },
-  { id: 'EMP005', name: 'Rohan Sharma', role: 'Draftsman', dept: 'Civil Engineering', teamLeadId: 'TL-01', activeProject: 'Project Alpha', baseSalary: 45000, benefits: 9000, avgHours: 160, status: 'Active' },
-  { id: 'EMP006', name: 'Neha Gupta', role: 'Junior Estimator', dept: 'Costing & Estimating', teamLeadId: 'TL-04', activeProject: 'Project Alpha', baseSalary: 42000, benefits: 8000, avgHours: 160, status: 'Active' }
-];
-
-const INITIAL_LOGS = {
-  'Sarah Jenkins': [
-    { id: 101, project: 'Project Alpha', hours: 7, mins: 30, task: 'Drafted alignment coordinates for Section D-12', start: '09:00 AM', end: '04:30 PM', date: '2026-06-24', activityScore: 88, isManual: false, status: 'Approved', activeApp: 'Autodesk Revit', productivity: 92 },
-    { id: 102, project: 'Project Alpha', hours: 8, mins: 0, task: 'NHAI blueprint correction feedback review', start: '09:00 AM', end: '05:00 PM', date: '2026-06-23', activityScore: 82, isManual: false, status: 'Approved', activeApp: 'AutoCAD 2026', productivity: 88 }
-  ],
-  'John Doe': [
-    { id: 201, project: 'Project Beta', hours: 6, mins: 0, task: 'Metro column load calculation sheets', start: '10:00 AM', end: '04:00 PM', date: '2026-06-24', activityScore: 42, isManual: false, status: 'Approved', activeApp: 'Excel (Metro Calculation)', productivity: 68 }
-  ],
-  'Alex Rivera': [
-    { id: 301, project: 'Project Beta', hours: 7, mins: 30, task: 'Roadway cross-section site profiles', start: '09:30 AM', end: '05:00 PM', date: '2026-06-24', activityScore: 35, isManual: false, status: 'Pending', activeApp: 'Chrome (YouTube)', productivity: 10 }
-  ]
-};
-
-const AUDIT_LOGS = [
-  { id: 1, user: 'System', action: 'Telemetry Daemon connected on localhost:5050', time: '10:14:48 AM' },
-  { id: 2, user: 'Admin', action: 'Configured project resource limits for Project Alpha', time: '09:48:15 AM' }
-];
-
-const TRANSITION_TRENDS = [
-  { year: '2022', revenue: 12000000, margin: 8, activeEmployees: 120, benchRatio: 28 },
-  { year: '2023', revenue: 45000000, margin: 12, activeEmployees: 410, benchRatio: 22 },
-  { year: '2024', revenue: 110000000, margin: 18, activeEmployees: 890, benchRatio: 18 },
-  { year: '2025 (Proj)', revenue: 210000000, margin: 24, activeEmployees: 1450, benchRatio: 12 },
-  { year: '2026 (Proj)', revenue: 300000000, margin: 34, activeEmployees: 1600, benchRatio: 4 }
-];
 
 export default function App() {
   const isEmployeeOnlyMode = new URLSearchParams(window.location.search).get('app') === 'employee';
@@ -159,37 +110,13 @@ export default function App() {
   const [loginRole, setLoginRole] = useState('admin'); // 'admin' | 'tl' | 'employee'
   const [loginError, setLoginError] = useState('');
 
-  // Core Data Lists (loaded from localStorage or defaults)
-  const [employees, setEmployees] = useState(() => {
-    const saved = localStorage.getItem('civil_employees');
-    return saved ? JSON.parse(saved) : INITIAL_EMPLOYEES;
-  });
-
-  const [projects, setProjects] = useState(() => {
-    const saved = localStorage.getItem('civil_projects');
-    return saved ? JSON.parse(saved) : INITIAL_PROJECTS;
-  });
-
-  const [teamLeads, setTeamLeads] = useState(() => {
-    const saved = localStorage.getItem('civil_team_leads');
-    return saved ? JSON.parse(saved) : INITIAL_TEAM_LEADS;
-  });
-
-  const [logs, setLogs] = useState(() => {
-    const saved = localStorage.getItem('civil_logs');
-    return saved ? JSON.parse(saved) : INITIAL_LOGS;
-  });
-
-  const [auditLogs, setAuditLogs] = useState(() => {
-    const saved = localStorage.getItem('civil_audit');
-    return saved ? JSON.parse(saved) : AUDIT_LOGS;
-  });
-
-  // Sync Log Simulator
-  const [syncLogs, setSyncLogs] = useState([
-    { id: 1, time: '10:00:00 AM', status: 'Success', batch: 'CM-4912', records: 12 },
-    { id: 2, time: '09:00:00 AM', status: 'Success', batch: 'CM-1823', records: 8 }
-  ]);
+  // Core data lists — empty until loaded from the API (no hardcoded demo data).
+  const [employees, setEmployees] = useState([]);
+  const [projects, setProjects] = useState([]);
+  const [teamLeads, setTeamLeads] = useState([]);
+  const [logs, setLogs] = useState({});
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [syncLogs, setSyncLogs] = useState([]);
 
   // Toast & Notifications State
   const [toast, setToast] = useState(null);
@@ -735,10 +662,7 @@ export default function App() {
   // Manager Provisioning Activation Codes
   const [provisionEmail, setProvisionEmail] = useState('');
   const [provisionName, setProvisionName] = useState('');
-  const [pendingActivations, setPendingActivations] = useState([
-    { name: 'Sarah Jenkins', email: 'sarah.jenkins@civilmantra.com', code: 'CM-8931-A', status: 'Active' },
-    { name: 'David Miller', email: 'david.miller@civilmantra.com', code: 'CM-1029-B', status: 'Pending' }
-  ]);
+  const [pendingActivations, setPendingActivations] = useState([]);
 
   const generateActivationCode = async (e) => {
     e.preventDefault();
@@ -2321,8 +2245,8 @@ export default function App() {
                       <span className="text-[10px] font-black uppercase text-indigo-400 block tracking-wider">Step 1: Secure Activation Key</span>
                       <p className="text-xs text-zinc-350">Use this unique key when launching the desktop app for the first time.</p>
                     </div>
-                    <div className="bg-zinc-950 border border-border/80 px-6 py-3 rounded-2xl font-mono text-sm font-black text-white tracking-widest select-all">
-                      CM-4912-A
+                    <div className="bg-zinc-950 border border-border/80 px-6 py-3 rounded-2xl font-mono text-xs text-zinc-400 tracking-wide">
+                      Use the 8-digit code your admin emailed you
                     </div>
                   </div>
 
@@ -2577,7 +2501,7 @@ export default function App() {
                         <span className="text-xs font-black uppercase tracking-wider">Active Telemetry Validation Ping</span>
                       </div>
                       <p className="text-[11px] text-zinc-350 leading-relaxed">
-                        Your supervisor Rajesh Kumar has requested validation of your activity for the past 2 hours.
+                        Your team lead has requested validation of your activity for the past 2 hours.
                       </p>
 
                       <form onSubmit={async (e) => {
