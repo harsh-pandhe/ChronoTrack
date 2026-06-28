@@ -56,6 +56,24 @@ async function dailyTrend(companyId, sinceSql, extra = '', params = []) {
   }));
 }
 
+// Hourly buckets for the last 24h — drives the "today / since login" timeline.
+async function hourlyTrend(companyId, extra = '', params = []) {
+  const { rows } = await query(
+    `SELECT to_char(date_trunc('hour', ts), 'HH24:00') AS hour,
+            count(*)::int AS samples,
+            COALESCE(sum(CASE WHEN NOT is_idle THEN 1 ELSE 0 END),0)::int AS active_samples
+       FROM telemetry_logs
+      WHERE company_id=$1 AND ts > now() - interval '24 hours' ${extra}
+      GROUP BY date_trunc('hour', ts) ORDER BY date_trunc('hour', ts)`,
+    [companyId, ...params]
+  );
+  return rows.map((r) => ({
+    hour: r.hour,
+    active_minutes: Math.round((r.active_samples * SAMPLE_SECONDS) / 60),
+    samples: r.samples,
+  }));
+}
+
 async function topApps(companyId, userId, sinceSql) {
   const { rows } = await query(
     `SELECT app_category AS category, count(*)::int AS samples
@@ -108,12 +126,13 @@ export default handler(async (req, res) => {
       if (actor.role === 'lead' && rows[0].team_lead_id !== actor.id)
         throw new HttpError(403, 'Not your team member');
     }
-    const [rollup, apps, trend] = await Promise.all([
+    const [rollup, apps, trend, hourly] = await Promise.all([
       userRollup(actor.company_id, targetId, sinceSql),
       topApps(actor.company_id, targetId, sinceSql),
       dailyTrend(actor.company_id, sinceSql, 'AND user_id=$2', [targetId]),
+      hourlyTrend(actor.company_id, 'AND user_id=$2', [targetId]),
     ]);
-    return send(res, 200, { scope, user_id: targetId, days, rollup, top_apps: apps, trend });
+    return send(res, 200, { scope, user_id: targetId, days, rollup, top_apps: apps, trend, hourly });
   }
 
   if (scope === 'team') {
