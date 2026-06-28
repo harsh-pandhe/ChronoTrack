@@ -153,6 +153,18 @@ export const rules = {
   },
 };
 
+// --- Audit log + telemetry feed ------------------------------------------
+export const auditLogs = {
+  list() {
+    return request('GET', '/api/audit-logs').then((d) => d.logs);
+  },
+};
+export const telemetryFeed = {
+  list(limit = 50) {
+    return request('GET', `/api/telemetry-feed?limit=${limit}`).then((d) => d.feed);
+  },
+};
+
 // --- Consent (DPDP) ------------------------------------------------------
 export const consent = {
   status() {
@@ -163,4 +175,4 @@ export const consent = {
   },
 };
 
-export default { auth, users, projects, activation, timeEntries, consent, analytics, rules, getUser, getToken, clearSession };
+export default { auth, users, projects, activation, timeEntries, consent, analytics, rules, auditLogs, telemetryFeed, getUser, getToken, clearSession };

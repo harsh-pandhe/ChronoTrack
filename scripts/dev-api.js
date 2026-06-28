@@ -15,6 +15,8 @@ import timeEntries from '../api/time-entries.js';
 import consent from '../api/consent.js';
 import analytics from '../api/analytics.js';
 import rules from '../api/rules.js';
+import auditLogs from '../api/audit-logs.js';
+import telemetryFeed from '../api/telemetry-feed.js';
 
 const routes = [
   [/^\/api\/auth\/login$/, login],
@@ -30,6 +32,8 @@ const routes = [
   [/^\/api\/consent$/, consent],
   [/^\/api\/analytics$/, analytics],
   [/^\/api\/rules$/, rules],
+  [/^\/api\/audit-logs$/, auditLogs],
+  [/^\/api\/telemetry-feed$/, telemetryFeed],
 ];
 
 const port = Number(process.env.API_PORT || 3001);

@@ -18,6 +18,8 @@ import timeEntries from '../api/time-entries.js';
 import consent from '../api/consent.js';
 import analytics from '../api/analytics.js';
 import rules from '../api/rules.js';
+import auditLogs from '../api/audit-logs.js';
+import telemetryFeed from '../api/telemetry-feed.js';
 
 // --- tiny router matching Vercel's file layout ---------------------------
 const routes = [
@@ -34,6 +36,8 @@ const routes = [
   [/^\/api\/consent$/, consent],
   [/^\/api\/analytics$/, analytics],
   [/^\/api\/rules$/, rules],
+  [/^\/api\/audit-logs$/, auditLogs],
+  [/^\/api\/telemetry-feed$/, telemetryFeed],
 ];
 
 const server = http.createServer((req, res) => {
@@ -225,6 +229,16 @@ async function main() {
   ok(r.json.rules.some((x) => x.keyword === 'autocad'), 'rules list returns added rule');
   r = await call('DELETE', `/api/rules?id=${ruleId}`, { token: adminToken });
   ok(r.status === 200, 'admin deletes rule');
+
+  // 15. Audit log + telemetry feed
+  r = await call('GET', '/api/audit-logs', { token: adminToken });
+  ok(r.status === 200 && Array.isArray(r.json.logs) && r.json.logs.length > 0, 'admin audit-logs returns real entries');
+  r = await call('GET', '/api/audit-logs', { token: leadToken });
+  ok(r.status === 403, 'non-admin cannot read audit-logs');
+  r = await call('GET', '/api/telemetry-feed?limit=10', { token: adminToken });
+  ok(r.status === 200 && Array.isArray(r.json.feed) && r.json.feed.length === 3, 'admin telemetry-feed returns real rows');
+  r = await call('GET', '/api/telemetry-feed', { token: empToken });
+  ok(r.status === 200 && r.json.feed.every((x) => x.employee === 'Emp One'), 'employee feed scoped to self');
 
   console.log(`\n${passed} passed, ${failed} failed`);
   server.close();

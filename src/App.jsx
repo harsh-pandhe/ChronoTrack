@@ -151,6 +151,9 @@ export default function App() {
   const [serverAnalytics, setServerAnalytics] = useState(null);
   // Real project time entries for the ROI attribution ledger.
   const [timeEntriesData, setTimeEntriesData] = useState([]);
+  // Real audit trail + telemetry feed.
+  const [serverAuditLogs, setServerAuditLogs] = useState([]);
+  const [serverTelemetryFeed, setServerTelemetryFeed] = useState([]);
   const [loginRole, setLoginRole] = useState('admin'); // 'admin' | 'tl' | 'employee'
   const [loginError, setLoginError] = useState('');
 
@@ -604,6 +607,8 @@ export default function App() {
       const role = (api.getUser() && api.getUser().role) || '';
       try { await loadRules(); } catch { /* ignore */ }
       try { setTimeEntriesData(await api.timeEntries.list()); } catch { /* ignore */ }
+      try { setServerTelemetryFeed(await api.telemetryFeed.list(50)); } catch { /* ignore */ }
+      try { if (role === 'admin') setServerAuditLogs(await api.auditLogs.list()); } catch { /* ignore */ }
       try {
         if (role === 'admin') {
           setServerAnalytics({ overview: await api.analytics.overview(7), team: await api.analytics.team(7) });
@@ -1395,20 +1400,24 @@ export default function App() {
                 {/* AI / ML Forecast Panel */}
                 <div className="p-6 rounded-3xl bg-primary/5 border border-primary/10 flex flex-col md:flex-row justify-between gap-6">
                   <div className="space-y-2 max-w-xl">
-                    <span className="text-[9px] bg-primary/10 border border-primary/20 text-primary px-3 py-1 rounded-full font-black uppercase tracking-widest inline-block">ML Insights Feed</span>
-                    <h3 className="text-sm font-extrabold text-white">Projected Idle Bench Capacity & Overhead Adjustments</h3>
+                    <span className="text-[9px] bg-primary/10 border border-primary/20 text-primary px-3 py-1 rounded-full font-black uppercase tracking-widest inline-block">Insights (Real Telemetry)</span>
+                    <h3 className="text-sm font-extrabold text-white">Workforce Utilisation & Bench Capacity</h3>
                     <p className="text-xs text-zinc-400 leading-relaxed">
-                      Based on real-time keystroke density trends and focus-application transitions, our ML pipeline projects active utilization increases to 96% next month. Flagged anomalous patterns remain below 1.2%.
+                      {serverAnalytics?.overview ? (() => {
+                        const o = serverAnalytics.overview;
+                        const top = o.categories && o.categories[0] ? o.categories[0].category : 'n/a';
+                        return `Active utilisation ${o.telemetry.active_pct}% across ${o.headcount.employees} employee(s) — ${o.telemetry.active_hours}h logged over the last ${o.days}d. Idle bench ${o.portfolio.bench_pct}%. Most-used category: ${top}.`;
+                      })() : 'Loading real telemetry insights…'}
                     </p>
                   </div>
                   <div className="flex items-center space-x-4 shrink-0">
                     <div className="text-center p-3.5 bg-card border border-border rounded-2xl w-24">
-                      <span className="text-[9px] uppercase font-bold text-zinc-500 block">Saved</span>
-                      <span className="text-sm font-black text-emerald-400">Rs. 14.5L</span>
+                      <span className="text-[9px] uppercase font-bold text-zinc-500 block">Idle Bench</span>
+                      <span className="text-sm font-black text-emerald-400">{serverAnalytics?.overview ? `${serverAnalytics.overview.portfolio.bench_pct}%` : '—'}</span>
                     </div>
                     <div className="text-center p-3.5 bg-card border border-border rounded-2xl w-24">
                       <span className="text-[9px] uppercase font-bold text-zinc-500 block">Risk Status</span>
-                      <span className="text-sm font-black text-primary">LOW</span>
+                      <span className="text-sm font-black text-primary">{serverAnalytics?.overview ? (serverAnalytics.overview.telemetry.active_pct < 40 ? 'HIGH' : serverAnalytics.overview.telemetry.active_pct < 70 ? 'MED' : 'LOW') : '—'}</span>
                     </div>
                   </div>
                 </div>
@@ -1880,9 +1889,11 @@ export default function App() {
                   </div>
 
                   <div className="bg-black/80 border border-zinc-900 p-5 rounded-2xl font-mono text-[10px] text-zinc-400 space-y-2.5 max-h-96 overflow-y-auto">
-                    {auditLogs.map(log => (
-                      <div key={log.id} className="flex justify-between border-b border-zinc-900/50 pb-2 last:border-0 last:pb-0">
-                        <span>[{log.time}] <strong className="text-zinc-300">{log.user}:</strong> {log.action}</span>
+                    {serverAuditLogs.length === 0 && <span className="text-zinc-600">No audit events yet.</span>}
+                    {serverAuditLogs.map(log => (
+                      <div key={log.id} className="flex justify-between border-b border-zinc-900/50 pb-2 last:border-0 last:pb-0 gap-3">
+                        <span>[{new Date(log.ts).toLocaleString()}] <strong className="text-zinc-300">{log.actor_name || 'system'}:</strong> {log.action}{log.target ? ` (${String(log.target).slice(0,12)})` : ''}</span>
+                        <span className="text-zinc-700 shrink-0">{log.ip || ''}</span>
                       </div>
                     ))}
                   </div>
@@ -2027,36 +2038,38 @@ export default function App() {
                 </div>
 
                 <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
-                  <span className="text-xs font-black text-white uppercase tracking-wider block">Raw Log Ledger</span>
+                  <span className="text-xs font-black text-white uppercase tracking-wider block">Raw Telemetry Ledger (latest {serverTelemetryFeed.length})</span>
+                  {serverTelemetryFeed.length === 0 && <p className="text-xs text-zinc-500">No telemetry yet — employees need to activate the desktop agent.</p>}
                   <div className="border border-border rounded-2xl overflow-hidden">
                     <table className="w-full text-left border-collapse">
                       <thead>
                         <tr className="border-b border-border bg-zinc-900/30 text-[9px] uppercase font-black tracking-wider text-zinc-550">
+                          <th className="p-3">Time</th>
                           <th className="p-3">Member</th>
-                          <th className="p-3">Task Details</th>
-                          <th className="p-3">Logged App</th>
-                          <th className="p-3">Duration</th>
-                          <th className="p-3">Activity Score</th>
-                          <th className="p-3 text-right">Verification</th>
+                          <th className="p-3">Active Window</th>
+                          <th className="p-3">Category</th>
+                          <th className="p-3">Density</th>
+                          <th className="p-3 text-right">State</th>
                         </tr>
                       </thead>
                       <tbody className="text-xs text-zinc-300 divide-y divide-border">
-                        {Object.entries(logs).map(([name, items]) => 
-                          items.map(l => (
-                            <tr key={l.id} className="hover:bg-zinc-900/10">
-                              <td className="p-3 font-extrabold text-white">{name}</td>
-                              <td className="p-3 text-zinc-400 font-medium">{l.task}</td>
-                              <td className="p-3 font-mono text-xs">{l.activeApp}</td>
-                              <td className="p-3 font-semibold">{l.hours}h {l.mins}m</td>
-                              <td className="p-3 font-bold text-indigo-400">{l.activityScore}%</td>
-                              <td className="p-3 text-right">
-                                <span className="inline-flex px-2 py-0.5 rounded text-[8px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-black uppercase tracking-wider">
-                                  {l.status}
-                                </span>
-                              </td>
-                            </tr>
-                          ))
-                        )}
+                        {serverTelemetryFeed.map((l, i) => (
+                          <tr key={i} className="hover:bg-zinc-900/10">
+                            <td className="p-3 font-mono text-[10px] text-zinc-500">{new Date(l.ts).toLocaleTimeString()}</td>
+                            <td className="p-3 font-extrabold text-white">{l.employee}</td>
+                            <td className="p-3 text-zinc-400 font-medium truncate max-w-[220px]">{l.window_title}</td>
+                            <td className="p-3 font-mono text-[10px]">{l.app_category}</td>
+                            <td className="p-3 font-bold text-indigo-400">{l.input_density}</td>
+                            <td className="p-3 text-right">
+                              <span className={`inline-flex px-2 py-0.5 rounded text-[8px] border font-black uppercase tracking-wider ${
+                                l.anomaly_flag ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                : l.is_idle ? 'bg-zinc-800 text-zinc-400 border-border'
+                                : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'}`}>
+                                {l.anomaly_flag ? 'anomaly' : l.is_idle ? 'idle' : 'active'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
                   </div>
