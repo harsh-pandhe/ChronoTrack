@@ -55,6 +55,51 @@ function startStaticServer() {
   });
 }
 
+// Register the telemetry daemon to start automatically on user login, so it
+// runs as a background service independent of the app window.
+function registerAutostart(binPath) {
+  try {
+    if (process.platform === 'linux') {
+      // systemd --user unit
+      const dir = path.join(require('os').homedir(), '.config', 'systemd', 'user');
+      fs.mkdirSync(dir, { recursive: true });
+      const unit = `[Unit]
+Description=Civil Mantra Telemetry Daemon
+After=default.target
+
+[Service]
+ExecStart=${binPath}
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+`;
+      fs.writeFileSync(path.join(dir, 'civilmantra-daemon.service'), unit);
+      spawn('systemctl', ['--user', 'enable', '--now', 'civilmantra-daemon.service'], { stdio: 'ignore' });
+    } else if (process.platform === 'win32') {
+      // Run key -> autostart at logon
+      spawn('reg', ['add', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run',
+        '/v', 'CivilMantraDaemon', '/t', 'REG_SZ', '/d', binPath, '/f'], { stdio: 'ignore' });
+    } else if (process.platform === 'darwin') {
+      const dir = path.join(require('os').homedir(), 'Library', 'LaunchAgents');
+      fs.mkdirSync(dir, { recursive: true });
+      const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.civilmantra.daemon</string>
+  <key>ProgramArguments</key><array><string>${binPath}</string></array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+</dict></plist>
+`;
+      fs.writeFileSync(path.join(dir, 'com.civilmantra.daemon.plist'), plist);
+    }
+    console.log('[ELECTRON] Autostart registered for', process.platform);
+  } catch (err) {
+    console.error('[ELECTRON] Autostart registration failed:', err.message);
+  }
+}
+
 function startTelemetryDaemon() {
   const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
@@ -63,14 +108,19 @@ function startTelemetryDaemon() {
   if (!isDev) {
     const binName = process.platform === 'win32' ? 'CivilMantraDaemon.exe' : 'CivilMantraDaemon';
     const binPath = path.join(process.resourcesPath, 'daemon', binName);
-    console.log('[ELECTRON] Spawning bundled Telemetry Daemon:', binPath);
+    // Register the daemon to autostart on login so collection runs independently
+    // of the app window (the daemon's single-instance lock prevents duplicates).
+    registerAutostart(binPath);
+    console.log('[ELECTRON] Spawning bundled Telemetry Daemon (detached):', binPath);
     try {
-      daemonProcess = spawn(binPath, [], { detached: false, stdio: 'ignore' });
+      // detached + unref so the daemon survives the app window closing.
+      daemonProcess = spawn(binPath, [], { detached: true, stdio: 'ignore' });
       daemonProcess.on('error', (err) =>
         console.error('[ELECTRON] Failed to start bundled daemon:', err.message)
       );
       if (daemonProcess && daemonProcess.pid) {
         console.log(`[ELECTRON] Bundled daemon spawned (PID: ${daemonProcess.pid})`);
+        daemonProcess.unref();
       }
     } catch (err) {
       console.error('[ELECTRON] Exception spawning bundled daemon:', err);
@@ -169,7 +219,9 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
-  stopTelemetryDaemon();
+  // Do NOT stop the daemon — it runs as a background service (autostart) and
+  // keeps collecting after the window closes. In dev, stop it to avoid orphans.
+  if (process.env.NODE_ENV === 'development' || !app.isPackaged) stopTelemetryDaemon();
   if (process.platform !== 'darwin') {
     app.quit();
   }

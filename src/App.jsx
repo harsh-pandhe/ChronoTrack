@@ -154,6 +154,8 @@ export default function App() {
   // Real audit trail + telemetry feed.
   const [serverAuditLogs, setServerAuditLogs] = useState([]);
   const [serverTelemetryFeed, setServerTelemetryFeed] = useState([]);
+  // Employee's OWN analytics (transparency self-view in the desktop agent).
+  const [selfAnalytics, setSelfAnalytics] = useState(null);
   const [loginRole, setLoginRole] = useState('admin'); // 'admin' | 'tl' | 'employee'
   const [loginError, setLoginError] = useState('');
 
@@ -792,6 +794,30 @@ export default function App() {
   const [desktopActivated, setDesktopActivated] = useState(() => {
     return localStorage.getItem('civil_desktop_activated') === 'true';
   });
+
+  // Load the employee's own analytics for the transparency self-view + refresh.
+  useEffect(() => {
+    if (!desktopActivated || !api.getToken()) return;
+    let alive = true;
+    const load = async () => {
+      try {
+        const a = await api.analytics.employee(null, 7);
+        if (alive) setSelfAnalytics(a);
+      } catch { /* not an employee token / offline */ }
+    };
+    load();
+    const t = setInterval(load, 60000);
+    return () => { alive = false; clearInterval(t); };
+  }, [desktopActivated]);
+
+  // Auto-prompt the "what project?" validation every N active hours.
+  useEffect(() => {
+    if (!desktopActivated) return;
+    const PROMPT_EVERY_MS = 2 * 60 * 60 * 1000; // 2h
+    const t = setInterval(() => setShowVerificationPrompt(true), PROMPT_EVERY_MS);
+    return () => clearInterval(t);
+  }, [desktopActivated]);
+
   const [activationCodeInput, setActivationCodeInput] = useState('');
   const [activationEmailInput, setActivationEmailInput] = useState('');
   const [grantedPermissions, setGrantedPermissions] = useState({
@@ -2462,6 +2488,49 @@ export default function App() {
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                   <span>Syncing Live Logs</span>
                 </span>
+              </div>
+
+              {/* My Productivity — employee's own data (transparency self-view) */}
+              <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
+                <span className="text-xs font-black text-white uppercase tracking-wider flex items-center space-x-2">
+                  <TrendingUp className="w-4 h-4 text-primary" />
+                  <span>My Productivity (last 7 days) — your data, transparent</span>
+                </span>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="p-4 rounded-2xl bg-background border border-border">
+                    <span className="text-[9px] uppercase font-bold text-zinc-500 block">Active %</span>
+                    <span className="text-xl font-black text-emerald-400">{selfAnalytics?.rollup?.active_pct ?? '—'}%</span>
+                  </div>
+                  <div className="p-4 rounded-2xl bg-background border border-border">
+                    <span className="text-[9px] uppercase font-bold text-zinc-500 block">Active Hours</span>
+                    <span className="text-xl font-black text-white">{selfAnalytics?.rollup?.active_hours ?? '—'}h</span>
+                  </div>
+                  <div className="p-4 rounded-2xl bg-background border border-border">
+                    <span className="text-[9px] uppercase font-bold text-zinc-500 block">Samples</span>
+                    <span className="text-xl font-black text-white">{selfAnalytics?.rollup?.samples ?? '—'}</span>
+                  </div>
+                  <div className="p-4 rounded-2xl bg-background border border-border">
+                    <span className="text-[9px] uppercase font-bold text-zinc-500 block">Flagged</span>
+                    <span className="text-xl font-black text-amber-400">{selfAnalytics?.rollup?.anomalies ?? '—'}</span>
+                  </div>
+                </div>
+                <div className="h-44 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={selfAnalytics?.trend || []}>
+                      <defs>
+                        <linearGradient id="selfRev" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                      <XAxis dataKey="day" stroke="#4b5563" fontSize={10} />
+                      <YAxis stroke="#4b5563" fontSize={10} />
+                      <Tooltip contentStyle={{ backgroundColor: '#09090b', borderColor: '#1f2937', borderRadius: '12px', fontSize: '10px' }} />
+                      <Area type="monotone" dataKey="active_hours" stroke="#10b981" fillOpacity={1} fill="url(#selfRev)" strokeWidth={2} name="Active Hours" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
