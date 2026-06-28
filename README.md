@@ -9,6 +9,10 @@ per-project cost/ROI for team leads and admins.
 > Built for Civil Mantra (≈1,600 employees) to measure true utilisation and project
 > profitability. DPDP-aware (India), consent-based, human-in-the-loop.
 
+**Status:** web platform live in production (Vercel + Neon); Linux agent proven;
+Windows agent pending one build + clean-VM test. See **[docs/ROADMAP.md](docs/ROADMAP.md)**
+for pilot readiness and **[docs/DEMO-SCRIPT.md](docs/DEMO-SCRIPT.md)** to record a demo.
+
 ---
 
 ## Architecture
