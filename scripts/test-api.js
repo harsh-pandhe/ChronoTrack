@@ -234,6 +234,19 @@ async function main() {
   r = await call('GET', '/api/reports?kind=telemetry', { token: empToken });
   ok(r.status === 200 && r.json.feed.every((x) => x.employee === 'Emp One'), 'employee feed scoped to self');
 
+  // 16. Self profile + password change (auth/me PATCH)
+  r = await call('POST', '/api/users', { token: adminToken, body: { name: 'Lead Two', email: 'lead2@cm.com', role: 'lead', password: 'lead2-strong-pass', can_manage_employees: true } });
+  ok(r.status === 201 && r.json.user.can_manage_employees === true, 'admin creates lead WITH authority in one call');
+  let l2 = (await call('POST', '/api/auth/login', { body: { email: 'lead2@cm.com', password: 'lead2-strong-pass' } })).json.token;
+  r = await call('PATCH', '/api/auth/me', { token: l2, body: { current_password: 'wrong', new_password: 'changed-pass-1' } });
+  ok(r.status === 401, 'password change rejects wrong current password');
+  r = await call('PATCH', '/api/auth/me', { token: l2, body: { current_password: 'lead2-strong-pass', new_password: 'changed-pass-1' } });
+  ok(r.status === 200, 'password change succeeds with correct current');
+  r = await call('POST', '/api/auth/login', { body: { email: 'lead2@cm.com', password: 'changed-pass-1' } });
+  ok(r.status === 200 && r.json.token, 'login works with new password');
+  r = await call('POST', '/api/auth/login', { body: { email: 'lead2@cm.com', password: 'lead2-strong-pass' } });
+  ok(r.status === 401, 'old password no longer works');
+
   console.log(`\n${passed} passed, ${failed} failed`);
   server.close();
   process.exit(failed ? 1 : 0);

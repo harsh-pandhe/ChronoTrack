@@ -66,18 +66,22 @@ export default handler(async (req, res) => {
 
     const password_hash = password ? await hashPassword(password) : null;
     const status = password ? 'active' : 'invited';
+    // Only admin may grant manage-authority (to a new lead).
+    const canManage = actor.role === 'admin' && role === 'lead' && body.can_manage_employees === true;
 
     let created;
     try {
       ({ rows: [created] } = await query(
         `INSERT INTO users
            (company_id, name, email, password_hash, role, team_lead_id, hourly_cost,
-            status, emp_code, dept, title, base_salary, benefits, active_project_id, avg_hours)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+            status, emp_code, dept, title, base_salary, benefits, active_project_id, avg_hours,
+            can_manage_employees)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
          RETURNING id, name, email, role, team_lead_id, hourly_cost, status, emp_code,
-                   dept, title, base_salary, benefits, active_project_id, avg_hours, created_at`,
+                   dept, title, base_salary, benefits, active_project_id, avg_hours,
+                   can_manage_employees, created_at`,
         [actor.company_id, name, email, password_hash, role, leadId, hourly_cost, status,
-         emp_code, dept, title, base_salary, benefits, active_project_id, hours]
+         emp_code, dept, title, base_salary, benefits, active_project_id, hours, canManage]
       ));
     } catch (err) {
       if (err.code === '23505') throw new HttpError(409, 'Email already exists in this company');

@@ -66,6 +66,10 @@ export const auth = {
   me() {
     return request('GET', '/api/auth/me');
   },
+  updateProfile(patch) {
+    // { name?, current_password?, new_password? }
+    return request('PATCH', '/api/auth/me', patch).then((d) => d.user);
+  },
   logout() {
     clearSession();
   },

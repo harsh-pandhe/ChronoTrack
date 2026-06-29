@@ -107,6 +107,30 @@ export default function App() {
   const [serverTelemetryFeed, setServerTelemetryFeed] = useState([]);
   // Employee's OWN analytics (transparency self-view in the desktop agent).
   const [selfAnalytics, setSelfAnalytics] = useState(null);
+  // Profile / change-password modal.
+  const [showProfile, setShowProfile] = useState(false);
+  const [profileName, setProfileName] = useState('');
+  const [pwCurrent, setPwCurrent] = useState('');
+  const [pwNew, setPwNew] = useState('');
+
+  const openProfile = () => {
+    const u = api.getUser();
+    setProfileName(u?.name || '');
+    setPwCurrent(''); setPwNew('');
+    setShowProfile(true);
+  };
+  const saveProfileName = async () => {
+    try { await api.auth.updateProfile({ name: profileName }); showToast('Profile updated.', 'success'); }
+    catch (e) { showToast(e.message || 'Update failed.', 'error'); }
+  };
+  const changePassword = async () => {
+    if (pwNew.length < 8) { showToast('New password must be 8+ characters.', 'error'); return; }
+    try {
+      await api.auth.updateProfile({ current_password: pwCurrent, new_password: pwNew });
+      showToast('Password changed.', 'success');
+      setPwCurrent(''); setPwNew('');
+    } catch (e) { showToast(e.message || 'Password change failed.', 'error'); }
+  };
   const [loginRole, setLoginRole] = useState('admin'); // 'admin' | 'tl' | 'employee'
   const [loginError, setLoginError] = useState('');
 
@@ -560,11 +584,14 @@ export default function App() {
   const [showEditForm, setShowEditForm] = useState(false);
   const [selectedEmp, setSelectedEmp] = useState(null);
   const [empForm, setEmpForm] = useState({
+    userType: 'employee', // 'employee' | 'lead'
     name: '',
+    email: '',
+    password: '',
     role: '',
     dept: 'Civil Engineering',
-    teamLeadId: 'TL-01',
-    activeProject: 'Project Alpha',
+    teamLeadId: '',
+    activeProject: '',
     baseSalary: 50000,
     benefits: 10000,
     status: 'Active'
@@ -572,36 +599,43 @@ export default function App() {
 
   const handleAddEmployee = async (e) => {
     e.preventDefault();
-    if (!empForm.name || !empForm.role) {
-      showToast('Please fill in name and role.', 'error');
-      return;
+    const isLead = empForm.userType === 'lead';
+    if (!empForm.name) { showToast('Please enter a name.', 'error'); return; }
+    if (!isLead && !empForm.role) { showToast('Please enter a designation.', 'error'); return; }
+    if (isLead && (!empForm.email || empForm.password.length < 8)) {
+      showToast('Team Lead needs an email and an 8+ char password.', 'error'); return;
     }
     const email =
       empForm.email ||
       `${empForm.name.toLowerCase().replace(/[^a-z0-9]+/g, '.')}@civilmantra.com`;
     try {
-      await api.users.create({
-        name: empForm.name,
-        email,
-        role: 'employee',
-        title: empForm.role,
-        dept: empForm.dept,
-        team_lead_id: empForm.teamLeadId || (teamLeads[0] && teamLeads[0].id) || null,
-        active_project_id: empForm.activeProject || null,
-        base_salary: Number(empForm.baseSalary) || 0,
-        benefits: Number(empForm.benefits) || 0,
-        avg_hours: 160,
-      });
+      if (isLead) {
+        await api.users.create({
+          name: empForm.name, email, role: 'lead',
+          password: empForm.password, dept: empForm.dept,
+          can_manage_employees: true,
+        });
+      } else {
+        await api.users.create({
+          name: empForm.name, email, role: 'employee',
+          title: empForm.role, dept: empForm.dept,
+          team_lead_id: empForm.teamLeadId || (teamLeads[0] && teamLeads[0].id) || null,
+          active_project_id: empForm.activeProject || null,
+          base_salary: Number(empForm.baseSalary) || 0,
+          benefits: Number(empForm.benefits) || 0,
+          avg_hours: 160,
+        });
+      }
       await loadServerData();
       setShowAddForm(false);
       setEmpForm({
-        name: '', email: '', role: '', dept: 'Civil Engineering',
+        userType: 'employee', name: '', email: '', password: '', role: '', dept: 'Civil Engineering',
         teamLeadId: '', activeProject: '', baseSalary: 50000, benefits: 10000, status: 'Active',
       });
-      logAudit('Admin', `Created employee ${empForm.name}`);
-      showToast(`Added ${empForm.name} successfully.`, 'success');
+      logAudit('Admin', `Created ${isLead ? 'team lead' : 'employee'} ${empForm.name}`);
+      showToast(`Added ${empForm.name} (${isLead ? 'Team Lead' : 'Employee'}).`, 'success');
     } catch (err) {
-      showToast(err.message || 'Failed to create employee.', 'error');
+      showToast(err.message || 'Failed to create user.', 'error');
     }
   };
 
@@ -928,6 +962,43 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* PROFILE / CHANGE PASSWORD MODAL */}
+      {showProfile && (() => {
+        const u = api.getUser() || {};
+        return (
+          <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-6" onClick={() => setShowProfile(false)}>
+            <div className="w-full max-w-md bg-card border border-border rounded-3xl p-6 space-y-5" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-black text-white uppercase tracking-wider flex items-center space-x-2">
+                  <User className="w-4 h-4 text-primary" /><span>My Profile</span>
+                </h3>
+                <button onClick={() => setShowProfile(false)} className="text-zinc-500 hover:text-white"><X className="w-4 h-4" /></button>
+              </div>
+              <div className="text-[11px] text-zinc-400 space-y-1">
+                <div className="flex justify-between"><span>Email</span><span className="text-white">{u.email}</span></div>
+                <div className="flex justify-between"><span>Role</span><span className="text-white uppercase">{u.role}</span></div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-[9px] uppercase font-black text-zinc-500">Display Name</label>
+                <div className="flex gap-2">
+                  <input value={profileName} onChange={(e) => setProfileName(e.target.value)}
+                    className="flex-1 bg-background border border-border focus:border-primary rounded-xl px-3 py-2 text-xs text-white outline-none" />
+                  <button onClick={saveProfileName} className="px-3 py-2 bg-primary text-primary-foreground rounded-xl text-[10px] font-black uppercase">Save</button>
+                </div>
+              </div>
+              <div className="border-t border-border pt-4 space-y-2">
+                <label className="text-[9px] uppercase font-black text-zinc-500">Change Password</label>
+                <input type="password" value={pwCurrent} onChange={(e) => setPwCurrent(e.target.value)} placeholder="Current password"
+                  className="w-full bg-background border border-border focus:border-primary rounded-xl px-3 py-2 text-xs text-white outline-none" />
+                <input type="password" value={pwNew} onChange={(e) => setPwNew(e.target.value)} placeholder="New password (8+ chars)"
+                  className="w-full bg-background border border-border focus:border-primary rounded-xl px-3 py-2 text-xs text-white outline-none" />
+                <button onClick={changePassword} className="w-full py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl text-[10px] font-black uppercase tracking-widest">Update Password</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* APPLE-STYLE MARKETING LANDING PAGE */}
       {currentRole === 'landing' && (
@@ -1273,13 +1344,16 @@ export default function App() {
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
                 <span className="font-semibold uppercase tracking-wider">Session Active</span>
               </div>
-              <button 
-                onClick={handleLogout} 
-                className="px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-border hover:text-white rounded-lg transition-all flex items-center space-x-1 uppercase text-[10px] font-bold"
-              >
-                <LogOut className="w-3 h-3" />
-                <span>Logout</span>
-              </button>
+              <div className="flex items-center space-x-2">
+                <button onClick={openProfile}
+                  className="px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-border hover:text-white rounded-lg transition-all flex items-center space-x-1 uppercase text-[10px] font-bold">
+                  <User className="w-3 h-3" /><span>Profile</span>
+                </button>
+                <button onClick={handleLogout}
+                  className="px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-border hover:text-white rounded-lg transition-all flex items-center space-x-1 uppercase text-[10px] font-bold">
+                  <LogOut className="w-3 h-3" /><span>Logout</span>
+                </button>
+              </div>
             </div>
           </aside>
 
@@ -1426,7 +1500,7 @@ export default function App() {
                     className="px-4 py-2 bg-primary hover:bg-primary/95 text-primary-foreground font-black text-xs uppercase tracking-widest rounded-full transition-all flex items-center space-x-1.5 active:scale-[0.98]"
                   >
                     <Plus className="w-4 h-4" />
-                    <span>Add Employee</span>
+                    <span>Add User</span>
                   </button>
                 </div>
 
@@ -1434,23 +1508,56 @@ export default function App() {
                 {showAddForm && (
                   <form onSubmit={handleAddEmployee} className="p-6 rounded-3xl bg-card border border-primary/20 space-y-4 animate-fade-in">
                     <div className="flex justify-between items-center">
-                      <h3 className="text-xs font-black text-white uppercase tracking-widest text-primary">Provision New Employee Profile</h3>
+                      <h3 className="text-xs font-black text-white uppercase tracking-widest text-primary">Provision New User (Employee or Team Lead)</h3>
                       <button type="button" onClick={() => setShowAddForm(false)} className="text-zinc-500 hover:text-white transition-colors">
                         <X className="w-4 h-4" />
                       </button>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                       <div className="space-y-1">
-                        <label className="text-[9px] uppercase font-black text-zinc-450 tracking-wider">Full Name</label>
-                        <input 
-                          type="text" 
-                          required
-                          value={empForm.name} 
-                          onChange={(e) => setEmpForm({...empForm, name: e.target.value})} 
+                        <label className="text-[9px] uppercase font-black text-zinc-450 tracking-wider">Account Type</label>
+                        <select
+                          value={empForm.userType}
+                          onChange={(e) => setEmpForm({...empForm, userType: e.target.value})}
                           className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-white outline-none"
-                          placeholder="Sarah Jenkins"
+                        >
+                          <option value="employee">Employee</option>
+                          <option value="lead">Team Lead</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] uppercase font-black text-zinc-450 tracking-wider">Full Name</label>
+                        <input
+                          type="text"
+                          required
+                          value={empForm.name}
+                          onChange={(e) => setEmpForm({...empForm, name: e.target.value})}
+                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-white outline-none"
+                          placeholder="Full name"
                         />
                       </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] uppercase font-black text-zinc-450 tracking-wider">Corporate Email</label>
+                        <input
+                          type="email"
+                          value={empForm.email}
+                          onChange={(e) => setEmpForm({...empForm, email: e.target.value})}
+                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-white outline-none"
+                          placeholder="name@civilmantra.com"
+                        />
+                      </div>
+                      {empForm.userType === 'lead' && (
+                        <div className="space-y-1">
+                          <label className="text-[9px] uppercase font-black text-zinc-450 tracking-wider">Temp Password (8+)</label>
+                          <input
+                            type="text"
+                            value={empForm.password}
+                            onChange={(e) => setEmpForm({...empForm, password: e.target.value})}
+                            className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-white outline-none"
+                            placeholder="lead login password"
+                          />
+                        </div>
+                      )}
                       <div className="space-y-1">
                         <label className="text-[9px] uppercase font-black text-zinc-450 tracking-wider">Designation / Role</label>
                         <input 
@@ -1894,6 +2001,9 @@ export default function App() {
 
             <div className="p-4 border-t border-border flex items-center justify-between text-xs text-zinc-500">
               <span className="font-semibold uppercase tracking-wider">TL Mode active</span>
+              <button onClick={openProfile} className="px-2.5 py-1 bg-zinc-900 border border-border hover:text-white rounded-lg transition-all uppercase text-[10px] font-bold mr-2">
+                Profile
+              </button>
               <button onClick={handleLogout} className="px-2.5 py-1 bg-zinc-900 border border-border hover:text-white rounded-lg transition-all uppercase text-[10px] font-bold">
                 Logout
               </button>
