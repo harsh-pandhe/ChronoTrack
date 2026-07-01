@@ -173,6 +173,24 @@ export default function App() {
     catch (err) { showToast(err.message || 'Failed.', 'error'); }
   };
 
+  // Create project (admin or lead).
+  const [showAddProject, setShowAddProject] = useState(false);
+  const [projForm, setProjForm] = useState({ name: '', client: '', billed_revenue: '' });
+
+  const handleAddProject = async (e) => {
+    if (e) e.preventDefault();
+    if (!projForm.name) { showToast('Project name required.', 'error'); return; }
+    try {
+      await api.projects.create({
+        name: projForm.name, client: projForm.client,
+        billed_revenue: Number(projForm.billed_revenue) || 0,
+      });
+      await loadServerData();
+      setShowAddProject(false); setProjForm({ name: '', client: '', billed_revenue: '' });
+      showToast(`Project "${projForm.name}" created.`, 'success');
+    } catch (err) { showToast(err.message || 'Failed to create project.', 'error'); }
+  };
+
   // Core data lists — empty until loaded from the API (no hardcoded demo data).
   const [employees, setEmployees] = useState([]);
   const [projects, setProjects] = useState([]);
@@ -898,18 +916,40 @@ export default function App() {
             <h2 className="text-xl font-black text-white uppercase tracking-wider">Contribution & ROI Attribution</h2>
             <p className="text-xs text-zinc-400 mt-1">Calculates salary costs, logged hours, and revenue generation ratios per engineer.</p>
           </div>
-          <div>
+          <div className="flex items-center gap-2">
             <select
               value={selectedAttributionProject}
               onChange={(e) => setSelectedAttributionProject(e.target.value)}
               className="bg-card border border-border rounded-xl px-4 py-2 text-xs text-white outline-none"
             >
+              {projects.length === 0 && <option value="">No projects yet</option>}
               {projects.map(p => (
                 <option key={p.id} value={p.id}>{p.name || p.id}</option>
               ))}
             </select>
+            <button
+              onClick={() => setShowAddProject(true)}
+              className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground font-black text-xs uppercase tracking-widest rounded-xl transition-all flex items-center space-x-1.5 whitespace-nowrap"
+            >
+              <Plus className="w-4 h-4" /><span>New Project</span>
+            </button>
           </div>
         </div>
+
+        {showAddProject && (
+          <form onSubmit={handleAddProject} className="p-6 rounded-3xl bg-card border border-primary/20 space-y-4 animate-fade-in">
+            <div className="flex justify-between items-center">
+              <h3 className="text-xs font-black uppercase tracking-widest text-primary">New Project</h3>
+              <button type="button" onClick={() => setShowAddProject(false)} className="text-zinc-500 hover:text-white"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <input value={projForm.name} onChange={(e) => setProjForm({ ...projForm, name: e.target.value })} placeholder="Project name" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-white outline-none" />
+              <input value={projForm.client} onChange={(e) => setProjForm({ ...projForm, client: e.target.value })} placeholder="Client (optional)" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-white outline-none" />
+              <input type="number" value={projForm.billed_revenue} onChange={(e) => setProjForm({ ...projForm, billed_revenue: e.target.value })} placeholder="Contract value (Rs.)" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-white outline-none" />
+            </div>
+            <button type="submit" className="px-5 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground font-black text-xs uppercase tracking-widest rounded-xl">Create Project</button>
+          </form>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="p-6 rounded-3xl bg-card border border-border shadow-md">
