@@ -933,6 +933,19 @@ export default function App() {
             >
               <Plus className="w-4 h-4" /><span>New Project</span>
             </button>
+            {activeProj && (
+              <button
+                onClick={async () => {
+                  if (!window.confirm(`Archive project "${activeProj.name}"?`)) return;
+                  try { await api.projects.archive(activeProj.id); await loadServerData(); showToast('Project archived.', 'info'); }
+                  catch (err) { showToast(err.message || 'Failed.', 'error'); }
+                }}
+                title="Archive project"
+                className="px-3 py-2 bg-zinc-900 border border-red-500/20 text-red-400 hover:bg-red-500/10 rounded-xl transition-all"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </div>
 
@@ -1102,7 +1115,7 @@ export default function App() {
                   Console Access
                 </button>
                 <button 
-                  onClick={() => showToast('Download triggered. Standalone installer packaging loaded.', 'info')} 
+                  onClick={() => window.open('https://github.com/harsh-pandhe/ChronoTrack/releases/latest', '_blank', 'noopener')}
                   className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-xs uppercase rounded-full transition-all duration-200 active:scale-[0.98]"
                 >
                   Download Agent
@@ -2497,10 +2510,10 @@ export default function App() {
                   {/* Downloader Section */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     {[
-                      { os: 'Windows Agent', ext: 'Setup.exe', size: '48 MB', icon: Laptop, desc: 'Includes automated background installer and system services.', file: null },
+                      { os: 'Windows Agent', ext: 'exe', size: '96 MB', icon: Laptop, desc: 'NSIS installer with the bundled telemetry daemon — no Python needed.', file: 'https://github.com/harsh-pandhe/ChronoTrack/releases/download/v3.0.0/CivilMantraAgent.Setup.3.0.0.exe' },
                       { os: 'macOS Agent', ext: 'Client.dmg', size: '52 MB', icon: Globe, desc: 'Includes Apple Silicon and Intel universal bundle configurations.', file: null },
-                      { os: 'Linux (AppImage)', ext: 'AppImage', size: '132 MB', icon: HardDrive, desc: 'Self-contained portable executable. chmod +x and run — no install needed.', file: '/downloads/CivilMantraAgent.AppImage' },
-                      { os: 'Linux (.deb)', ext: 'deb', size: '94 MB', icon: HardDrive, desc: 'Debian/Ubuntu package. Installs to your app menu like any native app.', file: '/downloads/CivilMantraAgent.deb' }
+                      { os: 'Linux (AppImage)', ext: 'AppImage', size: '132 MB', icon: HardDrive, desc: 'Self-contained portable executable. chmod +x and run — no install needed.', file: 'https://github.com/harsh-pandhe/ChronoTrack/releases/download/v3.0.0/CivilMantraAgent-3.0.0.AppImage' },
+                      { os: 'Linux (.deb)', ext: 'deb', size: '94 MB', icon: HardDrive, desc: 'Debian/Ubuntu package. Installs to your app menu like any native app.', file: 'https://github.com/harsh-pandhe/ChronoTrack/releases/download/v3.0.0/chronotrack_3.0.0_amd64.deb' }
                     ].map(dl => (
                       <div key={dl.os} className="p-6 rounded-3xl bg-card border border-border hover:border-zinc-800 transition-all flex flex-col justify-between h-56">
                         <div className="space-y-2">
@@ -2514,15 +2527,11 @@ export default function App() {
                           type="button"
                           onClick={() => {
                             if (!dl.file) {
-                              showToast(`${dl.os} build not available in this demo (Linux only).`, 'info');
+                              showToast(`${dl.os} build not available yet.`, 'info');
                               return;
                             }
-                            const a = document.createElement('a');
-                            a.href = dl.file;
-                            a.download = dl.file.split('/').pop();
-                            document.body.appendChild(a);
-                            a.click();
-                            a.remove();
+                            // Navigate to the GitHub Release asset (served as attachment).
+                            window.open(dl.file, '_blank', 'noopener');
                             showToast(`Downloading CivilMantra ${dl.os}…`, 'success');
                           }}
                           className="w-full py-2.5 bg-zinc-900 border border-border hover:bg-zinc-800 hover:text-white text-zinc-300 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center space-x-2"
