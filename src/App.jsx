@@ -134,6 +134,45 @@ export default function App() {
   const [loginRole, setLoginRole] = useState('admin'); // 'admin' | 'tl' | 'employee'
   const [loginError, setLoginError] = useState('');
 
+  // Add-Team-Lead form (admin).
+  const [showAddLead, setShowAddLead] = useState(false);
+  const [leadForm, setLeadForm] = useState({ name: '', email: '', dept: '', password: '' });
+
+  const handleAddLead = async (e) => {
+    if (e) e.preventDefault();
+    if (!leadForm.name || !leadForm.email || leadForm.password.length < 8) {
+      showToast('Name, email, and 8+ char password required.', 'error'); return;
+    }
+    try {
+      await api.users.create({ name: leadForm.name, email: leadForm.email, role: 'lead',
+        dept: leadForm.dept, password: leadForm.password });
+      await loadServerData();
+      setShowAddLead(false); setLeadForm({ name: '', email: '', dept: '', password: '' });
+      showToast(`Team lead ${leadForm.name} created.`, 'success');
+    } catch (err) { showToast(err.message || 'Failed to create team lead.', 'error'); }
+  };
+
+  const toggleLeadAuthority = async (lead) => {
+    try {
+      await api.users.update(lead.id, { can_manage_employees: !lead.canManage });
+      await loadServerData();
+      showToast(`Authority ${lead.canManage ? 'revoked' : 'granted'} for ${lead.name}.`, 'info');
+    } catch (err) { showToast(err.message || 'Failed.', 'error'); }
+  };
+
+  const editLeadName = async (lead) => {
+    const n = window.prompt('Team lead name', lead.name);
+    if (!n || n.trim() === lead.name) return;
+    try { await api.users.update(lead.id, { name: n.trim() }); await loadServerData(); showToast('Updated.', 'success'); }
+    catch (err) { showToast(err.message || 'Failed.', 'error'); }
+  };
+
+  const disableUser = async (id, name) => {
+    if (!window.confirm(`Disable ${name}? They can no longer log in.`)) return;
+    try { await api.users.disable(id); await loadServerData(); showToast(`${name} disabled.`, 'info'); }
+    catch (err) { showToast(err.message || 'Failed.', 'error'); }
+  };
+
   // Core data lists — empty until loaded from the API (no hardcoded demo data).
   const [employees, setEmployees] = useState([]);
   const [projects, setProjects] = useState([]);
@@ -1374,6 +1413,13 @@ export default function App() {
                   </div>
                 </div>
 
+                {serverAnalytics?.overview && serverAnalytics.overview.telemetry.samples === 0 && (
+                  <div className="p-4 rounded-2xl bg-primary/5 border border-primary/15 text-xs text-zinc-400 flex items-center gap-3">
+                    <AlertTriangle className="w-4 h-4 text-primary shrink-0" />
+                    <span>No telemetry yet. Create team leads &amp; employees, then have them install and activate the agent — analytics fill in automatically.</span>
+                  </div>
+                )}
+
                 {/* Bento Grid KPIs */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                   <div className="p-6 rounded-3xl bg-card border border-border space-y-3 hover:border-zinc-800 transition-all">
@@ -1495,14 +1541,40 @@ export default function App() {
                     <h2 className="text-xl font-black text-white uppercase tracking-wider">User Directory & Assignments</h2>
                     <p className="text-xs text-zinc-400 mt-1">Manage corporate accounts, roles, and project mapping.</p>
                   </div>
-                  <button 
-                    onClick={() => { setShowAddForm(true); setShowEditForm(false); }}
-                    className="px-4 py-2 bg-primary hover:bg-primary/95 text-primary-foreground font-black text-xs uppercase tracking-widest rounded-full transition-all flex items-center space-x-1.5 active:scale-[0.98]"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>Add User</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => { setShowAddLead(true); setShowAddForm(false); setShowEditForm(false); }}
+                      className="px-4 py-2 bg-zinc-900 border border-border hover:text-white text-zinc-300 font-black text-xs uppercase tracking-widest rounded-full transition-all flex items-center space-x-1.5"
+                    >
+                      <Users className="w-4 h-4" />
+                      <span>Add Team Lead</span>
+                    </button>
+                    <button
+                      onClick={() => { setShowAddForm(true); setShowEditForm(false); setShowAddLead(false); }}
+                      className="px-4 py-2 bg-primary hover:bg-primary/95 text-primary-foreground font-black text-xs uppercase tracking-widest rounded-full transition-all flex items-center space-x-1.5 active:scale-[0.98]"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Add Employee</span>
+                    </button>
+                  </div>
                 </div>
+
+                {/* Add Team Lead Form */}
+                {showAddLead && (
+                  <form onSubmit={handleAddLead} className="p-6 rounded-3xl bg-card border border-primary/20 space-y-4 animate-fade-in">
+                    <div className="flex justify-between items-center">
+                      <h3 className="text-xs font-black uppercase tracking-widest text-primary">Create Team Lead</h3>
+                      <button type="button" onClick={() => setShowAddLead(false)} className="text-zinc-500 hover:text-white"><X className="w-4 h-4" /></button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <input value={leadForm.name} onChange={(e) => setLeadForm({ ...leadForm, name: e.target.value })} placeholder="Full name" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-white outline-none" />
+                      <input type="email" value={leadForm.email} onChange={(e) => setLeadForm({ ...leadForm, email: e.target.value })} placeholder="Corporate email" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-white outline-none" />
+                      <input value={leadForm.dept} onChange={(e) => setLeadForm({ ...leadForm, dept: e.target.value })} placeholder="Department" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-white outline-none" />
+                      <input type="password" value={leadForm.password} onChange={(e) => setLeadForm({ ...leadForm, password: e.target.value })} placeholder="Temp password (8+ chars)" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-white outline-none" />
+                    </div>
+                    <button type="submit" className="px-5 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground font-black text-xs uppercase tracking-widest rounded-xl">Create Team Lead</button>
+                  </form>
+                )}
 
                 {/* Add Employee Form */}
                 {showAddForm && (
@@ -1724,6 +1796,28 @@ export default function App() {
                         </tr>
                       </thead>
                       <tbody className="text-xs text-zinc-300 divide-y divide-border">
+                        {teamLeads.length === 0 && employees.length === 0 && (
+                          <tr><td colSpan={7} className="p-8 text-center text-zinc-500">No users yet — add a team lead, then employees under them.</td></tr>
+                        )}
+                        {teamLeads.map(lead => (
+                          <tr key={lead.id} className="hover:bg-zinc-900/30 transition-colors bg-primary/[0.03]">
+                            <td className="p-4 font-mono font-bold text-zinc-600">{lead.id.slice(0, 8)}</td>
+                            <td className="p-4 font-extrabold text-white">{lead.name}</td>
+                            <td className="p-4"><span className="px-2 py-0.5 rounded text-[8px] font-black uppercase bg-primary/10 text-primary">Team Lead</span></td>
+                            <td className="p-4 text-zinc-500">—</td>
+                            <td className="p-4 text-zinc-500">{lead.dept || '—'}</td>
+                            <td className="p-4">
+                              <button onClick={() => toggleLeadAuthority(lead)} title="Toggle manage-employees authority"
+                                className={`inline-flex px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${lead.canManage ? 'bg-emerald-500/10 text-emerald-400' : 'bg-zinc-800 text-zinc-400'}`}>
+                                {lead.canManage ? 'Can manage ✓' : 'No authority'}
+                              </button>
+                            </td>
+                            <td className="p-4 text-right space-x-2">
+                              <button onClick={() => editLeadName(lead)} className="p-1.5 rounded-lg border border-border bg-zinc-900 hover:text-white transition-colors"><Edit2 className="w-3.5 h-3.5" /></button>
+                              <button onClick={() => disableUser(lead.id, lead.name)} className="p-1.5 rounded-lg border border-red-500/20 bg-red-500/5 text-red-400 hover:bg-red-500/15 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                            </td>
+                          </tr>
+                        ))}
                         {employees.map(emp => {
                           const tl = teamLeads.find(l => l.id === emp.teamLeadId);
                           return (
