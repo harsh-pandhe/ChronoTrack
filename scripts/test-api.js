@@ -246,6 +246,14 @@ async function main() {
   r = await call('POST', '/api/reports?kind=retention', { token: adminToken, body: { days: 365 } });
   ok(r.status === 200 && typeof r.json.deleted === 'number', 'admin runs retention prune');
 
+  // 15c. Hard delete a user (permanent, cascades)
+  r = await call('POST', '/api/users', { token: adminToken, body: { name: 'Del Me', email: 'delme@cm.com', role: 'employee' } });
+  const delId = r.json.user.id;
+  r = await call('DELETE', `/api/users/${delId}?hard=1`, { token: adminToken });
+  ok(r.status === 200 && r.json.deleted === true, 'admin hard-deletes user');
+  r = await call('GET', '/api/users', { token: adminToken });
+  ok(!r.json.users.some((u) => u.id === delId), 'deleted user removed from directory');
+
   // 16. Self profile + password change (auth/me PATCH)
   r = await call('POST', '/api/users', { token: adminToken, body: { name: 'Lead Two', email: 'lead2@cm.com', role: 'lead', password: 'lead2-strong-pass', can_manage_employees: true } });
   ok(r.status === 201 && r.json.user.can_manage_employees === true, 'admin creates lead WITH authority in one call');

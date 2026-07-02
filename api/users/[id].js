@@ -63,7 +63,15 @@ export default handler(async (req, res) => {
   }
 
   if (req.method === 'DELETE') {
-    // Soft-disable (preserves telemetry history + audit integrity).
+    const hard = new URL(req.url, 'http://localhost').searchParams.get('hard') === '1';
+    if (hard) {
+      // Permanent delete — FK CASCADE removes their telemetry/time/devices/etc.
+      // (employees under a deleted lead have team_lead_id set NULL by the FK).
+      await query(`DELETE FROM users WHERE id = $1 AND company_id = $2`, [id, actor.company_id]);
+      await audit(req, actor, 'delete user (permanent)', id);
+      return send(res, 200, { ok: true, deleted: true });
+    }
+    // Default: soft-disable (preserves telemetry history + audit integrity).
     await query(`UPDATE users SET status = 'disabled', updated_at = now() WHERE id = $1`, [id]);
     await audit(req, actor, 'disable user', id);
     return send(res, 200, { ok: true });

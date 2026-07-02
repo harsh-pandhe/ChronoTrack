@@ -194,9 +194,9 @@ export default function App() {
   };
 
   const disableUser = async (id, name) => {
-    if (!window.confirm(`Disable ${name}? They can no longer log in.`)) return;
-    try { await api.users.disable(id); await loadServerData(); showToast(`${name} disabled.`, 'info'); }
-    catch (err) { showToast(err.message || 'Failed.', 'error'); }
+    if (!window.confirm(`Permanently delete ${name} and all their data? This cannot be undone.`)) return;
+    try { await api.users.remove(id); await loadServerData(); showToast(`${name} deleted.`, 'info'); }
+    catch (err) { showToast(err.message || 'Delete failed.', 'error'); }
   };
 
   // DPDP: export a user's data as JSON.
@@ -775,16 +775,15 @@ export default function App() {
   };
 
   const handleDeleteEmployee = async (id) => {
-    const confirmDelete = window.confirm('Are you sure you want to disable this employee account?');
-    if (!confirmDelete) return;
     const target = employees.find((e) => e.id === id);
+    if (!window.confirm(`Permanently delete ${target?.name || 'this employee'} and all their data? This cannot be undone.`)) return;
     try {
-      await api.users.disable(id);
+      await api.users.remove(id);
       await loadServerData();
-      logAudit('Admin', `Disabled employee account ${id} (${target?.name})`);
-      showToast('Employee account disabled.', 'info');
+      logAudit('Admin', `Deleted employee ${target?.name}`);
+      showToast('Employee deleted.', 'info');
     } catch (err) {
-      showToast(err.message || 'Disable failed.', 'error');
+      showToast(err.message || 'Delete failed.', 'error');
     }
   };
 

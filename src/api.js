@@ -87,6 +87,9 @@ export const users = {
   update(id, patch) {
     return request('PATCH', `/api/users/${id}`, patch).then((d) => d.user);
   },
+  remove(id) {
+    return request('DELETE', `/api/users/${id}?hard=1`);
+  },
   disable(id) {
     return request('DELETE', `/api/users/${id}`);
   },
