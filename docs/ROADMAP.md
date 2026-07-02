@@ -113,15 +113,37 @@ Ran every test suite against a real ephemeral Postgres (not mocked), read every
 ## ⏳ Before handing to Civil Mantra for real-system testing
 
 ### Must-do (blockers)
-1. **Build the Windows installer** — enable GitHub Actions billing (Settings →
-   Billing → spending limit) then run the Release workflow, OR build on a Windows
-   VM (`docs/BUILD-WINDOWS.md`). _Est: 1–2h._
-2. **Clean-VM smoke test** — fresh Windows VM: install → activate → telemetry
-   reaches cloud. Repeat for a clean Linux box. _Est: 1–2h._
-3. **Rotate exposed credentials** — the Neon password + JWT secret were shared in
-   chat; reset both (Neon dashboard + Vercel env) before real data. _Est: 15m._
-4. **Seed real org** — create Civil Mantra's actual admin + ~5 team leads; remove
-   test accounts. _Est: 30m._
+1. ✅ **Windows installer builds** — GitHub Actions billing is no longer
+   blocking (confirmed 2026-07-02: CI + Release workflow both run fine).
+   Found + fixed a real regression along the way: a code-signing-hook commit
+   (`64f55ee`, 07-02) set `CSC_LINK` to an empty string instead of leaving it
+   unset, which broke electron-builder on every Windows build since (fixed in
+   `d1e731e`). Also fixed two real Windows bugs while rebuilding: the daemon
+   used to pop a visible console window (`windowsHide: true` now set), and
+   "Exit Agent" used to show the marketing landing page instead of closing
+   the app (now wired to a real Electron quit). Latest build:
+   https://github.com/harsh-pandhe/ChronoTrack/actions/runs/28621882143
+   (still **unsigned** — SmartScreen warning is expected until a cert is
+   bought, see item 5).
+2. ⏳ **Clean-VM smoke test** — checklist doc written:
+   `docs/WINDOWS-TEST-CHECKLIST.md`. Covers install, no-visible-daemon-window,
+   activation, telemetry-reaches-cloud, Exit Agent, background survival after
+   exit, autostart-after-reboot, re-open-doesn't-reprompt, consent withdrawal.
+   Handed to a human tester on a real Windows machine 2026-07-03 — **results
+   not yet back**. Still need the equivalent pass on a clean Linux box.
+3. ⚠️ **Rotate exposed credentials — STILL NOT DONE, now doubly exposed.**
+   The Neon `DATABASE_URL` was shared in chat before this roadmap item was
+   written, **and was pasted in plaintext again on 2026-07-03** during this
+   session (used once, read-only listing + one deletion, not stored anywhere
+   in this repo). Both the Neon password and the JWT secret need rotating
+   (Neon dashboard → reset password; Vercel env → new `JWT_SECRET`, which
+   invalidates all live sessions — do it during a maintenance window) before
+   this goes anywhere near real employee data.
+4. ✅ **Test accounts removed** — deleted `harshpandhehome@gmail.com`
+   (employee, 1 device + 5 telemetry rows) from prod 2026-07-03. Kept
+   `admin@civilmantra.com` (admin) and `udaypandhe@gmail.com` (lead) — confirm
+   with Civil Mantra whether `udaypandhe@gmail.com` is a real team lead or
+   also needs replacing with a real `@civilmantra.com` account before pilot.
 
 ### Strongly recommended (before wider than pilot)
 5. **Code-sign installers** — Windows Authenticode (avoids SmartScreen "unknown
