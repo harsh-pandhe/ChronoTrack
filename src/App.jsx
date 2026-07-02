@@ -334,9 +334,13 @@ export default function App() {
   ]);
 
   useEffect(() => {
+    // Only the Electron desktop agent talks to the local daemon (127.0.0.1:5050).
+    // In a plain browser (admin/lead web dashboards) there is no daemon — skip the
+    // poll entirely to avoid 401 spam.
+    if (!window.electronAPI) return;
     let isMounted = true;
     let lastWindow = "";
-    
+
     const pollDaemon = async () => {
       try {
         const token = window.electronAPI ? window.electronAPI.getApiToken() : '';
