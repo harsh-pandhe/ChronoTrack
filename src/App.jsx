@@ -134,7 +134,8 @@ export default function App() {
   const [loginRole, setLoginRole] = useState('admin'); // 'admin' | 'tl' | 'employee'
   const [loginError, setLoginError] = useState('');
 
-  // Add-Team-Lead form (admin).
+  // Directory search + add-team-lead form (admin).
+  const [dirSearch, setDirSearch] = useState('');
   const [showAddLead, setShowAddLead] = useState(false);
   const [leadForm, setLeadForm] = useState({ name: '', email: '', dept: '', password: '' });
 
@@ -171,6 +172,29 @@ export default function App() {
     if (!window.confirm(`Disable ${name}? They can no longer log in.`)) return;
     try { await api.users.disable(id); await loadServerData(); showToast(`${name} disabled.`, 'info'); }
     catch (err) { showToast(err.message || 'Failed.', 'error'); }
+  };
+
+  // DPDP: export a user's data as JSON.
+  const exportUserData = async (u) => {
+    try {
+      const data = await api.dataRights.export(u.id);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `chronotrack-${(u.name || 'user').replace(/\s+/g, '_')}.json`;
+      a.click(); URL.revokeObjectURL(a.href);
+      showToast('Data exported.', 'success');
+    } catch (err) { showToast(err.message || 'Export failed.', 'error'); }
+  };
+
+  // DPDP: erase a user's telemetry + time entries (right to erasure).
+  const purgeUserData = async (u) => {
+    if (!window.confirm(`Erase ALL telemetry + time entries for ${u.name}? Cannot be undone.`)) return;
+    try {
+      const r = await api.dataRights.purge(u.id);
+      await loadServerData();
+      showToast(`Erased ${r.telemetry_deleted} telemetry + ${r.time_entries_deleted} entries.`, 'info');
+    } catch (err) { showToast(err.message || 'Purge failed.', 'error'); }
   };
 
   // Create project (admin or lead).
@@ -1837,6 +1861,16 @@ export default function App() {
                   </form>
                 )}
 
+                {/* Directory search */}
+                <div className="relative">
+                  <input
+                    value={dirSearch}
+                    onChange={(e) => setDirSearch(e.target.value)}
+                    placeholder="Search by name, email, or department…"
+                    className="w-full bg-card border border-border focus:border-primary rounded-xl pl-4 pr-4 py-2.5 text-xs text-white placeholder-zinc-600 outline-none"
+                  />
+                </div>
+
                 {/* Directory Table */}
                 <div className="bg-card border border-border rounded-3xl overflow-hidden shadow-xl">
                   <div className="overflow-x-auto">
@@ -1856,7 +1890,7 @@ export default function App() {
                         {teamLeads.length === 0 && employees.length === 0 && (
                           <tr><td colSpan={7} className="p-8 text-center text-zinc-500">No users yet — add a team lead, then employees under them.</td></tr>
                         )}
-                        {teamLeads.map(lead => (
+                        {teamLeads.filter(l => { const q = dirSearch.trim().toLowerCase(); return !q || `${l.name} ${l.email || ''} ${l.dept || ''}`.toLowerCase().includes(q); }).map(lead => (
                           <tr key={lead.id} className="hover:bg-zinc-900/30 transition-colors bg-primary/[0.03]">
                             <td className="p-4 font-mono font-bold text-zinc-600">{lead.id.slice(0, 8)}</td>
                             <td className="p-4 font-extrabold text-white">{lead.name}</td>
@@ -1875,7 +1909,7 @@ export default function App() {
                             </td>
                           </tr>
                         ))}
-                        {employees.map(emp => {
+                        {employees.filter(e => { const q = dirSearch.trim().toLowerCase(); return !q || `${e.name} ${e.email || ''} ${e.dept || ''} ${e.role || ''}`.toLowerCase().includes(q); }).map(emp => {
                           const tl = teamLeads.find(l => l.id === emp.teamLeadId);
                           return (
                             <tr key={emp.id} className="hover:bg-zinc-900/30 transition-colors">
@@ -1893,17 +1927,21 @@ export default function App() {
                                   {emp.status}
                                 </span>
                               </td>
-                              <td className="p-4 text-right space-x-2">
-                                <button 
-                                  onClick={() => openEditForm(emp)} 
-                                  className="p-1.5 rounded-lg border border-border bg-zinc-900 hover:text-white transition-colors"
-                                >
+                              <td className="p-4 text-right space-x-2 whitespace-nowrap">
+                                <button onClick={() => exportUserData(emp)} title="Export data (DPDP)"
+                                  className="p-1.5 rounded-lg border border-border bg-zinc-900 hover:text-white transition-colors">
+                                  <Download className="w-3.5 h-3.5" />
+                                </button>
+                                <button onClick={() => openEditForm(emp)} title="Edit"
+                                  className="p-1.5 rounded-lg border border-border bg-zinc-900 hover:text-white transition-colors">
                                   <Edit2 className="w-3.5 h-3.5" />
                                 </button>
-                                <button 
-                                  onClick={() => handleDeleteEmployee(emp.id)} 
-                                  className="p-1.5 rounded-lg border border-red-500/20 bg-red-500/5 text-red-400 hover:bg-red-500/15 transition-colors"
-                                >
+                                <button onClick={() => purgeUserData(emp)} title="Erase data (DPDP)"
+                                  className="p-1.5 rounded-lg border border-amber-500/20 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 transition-colors">
+                                  <AlertTriangle className="w-3.5 h-3.5" />
+                                </button>
+                                <button onClick={() => handleDeleteEmployee(emp.id)} title="Disable"
+                                  className="p-1.5 rounded-lg border border-red-500/20 bg-red-500/5 text-red-400 hover:bg-red-500/15 transition-colors">
                                   <Trash2 className="w-3.5 h-3.5" />
                                 </button>
                               </td>

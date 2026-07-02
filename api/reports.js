@@ -90,5 +90,57 @@ export default handler(async (req, res) => {
     return send(res, 200, { feed: rows });
   }
 
+  // ---- DPDP: data export (own data, or admin/lead for their scope) ----
+  if (kind === 'export') {
+    if (req.method !== 'GET') throw new HttpError(405, 'Method Not Allowed');
+    const target = url.searchParams.get('user_id') || actor.id;
+    if (target !== actor.id) {
+      if (actor.role === 'employee') throw new HttpError(403, 'Forbidden');
+      const { rows } = await query(`SELECT team_lead_id FROM users WHERE id=$1 AND company_id=$2`, [target, actor.company_id]);
+      if (!rows[0]) throw new HttpError(404, 'User not found');
+      if (actor.role === 'lead' && rows[0].team_lead_id !== actor.id) throw new HttpError(403, 'Not your team member');
+    }
+    const [u, tele, te, cons] = await Promise.all([
+      query(`SELECT id, name, email, role, dept, title, status, created_at FROM users WHERE id=$1`, [target]),
+      query(`SELECT ts, window_title, app_category, input_density, is_idle, anomaly_flag FROM telemetry_logs WHERE user_id=$1 ORDER BY ts`, [target]),
+      query(`SELECT start_ts, end_ts, hours, source, note FROM time_entries WHERE user_id=$1 ORDER BY start_ts`, [target]),
+      query(`SELECT consent_version, granted_at, withdrawn_at FROM consents WHERE user_id=$1 ORDER BY created_at`, [target]),
+    ]);
+    if (!u.rows[0]) throw new HttpError(404, 'User not found');
+    return send(res, 200, {
+      exported_at: new Date().toISOString(),
+      user: u.rows[0], telemetry: tele.rows, time_entries: te.rows, consents: cons.rows,
+    });
+  }
+
+  // ---- DPDP: right to erasure — purge a user's telemetry + time entries (admin) ----
+  if (kind === 'purge') {
+    if (req.method !== 'DELETE') throw new HttpError(405, 'Method Not Allowed');
+    if (actor.role !== 'admin') throw new HttpError(403, 'Admin only');
+    const target = url.searchParams.get('user_id');
+    if (!target) throw new HttpError(400, 'Missing user_id');
+    const chk = await query(`SELECT id FROM users WHERE id=$1 AND company_id=$2`, [target, actor.company_id]);
+    if (!chk.rows[0]) throw new HttpError(404, 'User not found');
+    const t = await query(`DELETE FROM telemetry_logs WHERE user_id=$1`, [target]);
+    const e = await query(`DELETE FROM time_entries WHERE user_id=$1`, [target]);
+    await audit(req, actor, 'purge user data', target);
+    return send(res, 200, { ok: true, telemetry_deleted: t.rowCount, time_entries_deleted: e.rowCount });
+  }
+
+  // ---- Retention: prune telemetry older than N days (admin or cron secret) ----
+  if (kind === 'retention') {
+    if (req.method !== 'POST') throw new HttpError(405, 'Method Not Allowed');
+    const cronOk = process.env.CRON_SECRET && req.headers['x-cron-secret'] === process.env.CRON_SECRET;
+    if (!cronOk && actor.role !== 'admin') throw new HttpError(403, 'Admin only');
+    const body = await readBody(req);
+    const days = Math.min(3650, Math.max(1, Number(body.days) || 180));
+    const r = await query(
+      `DELETE FROM telemetry_logs WHERE company_id=$1 AND ts < now() - ($2 || ' days')::interval`,
+      [actor.company_id, String(days)]
+    );
+    await audit(req, actor, `retention prune >${days}d`, String(r.rowCount));
+    return send(res, 200, { ok: true, deleted: r.rowCount, older_than_days: days });
+  }
+
   throw new HttpError(400, 'Invalid kind');
 });

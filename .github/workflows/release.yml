@@ -34,8 +34,14 @@ jobs:
             src-daemon/telemetry_daemon.py
       - name: Build SPA
         run: npm run build
-      - name: Build Windows installer (NSIS)
+      - name: Build Windows installer (NSIS, signed if cert secrets present)
         run: npx electron-builder --win nsis --publish never
+        env:
+          # Add these repo secrets to enable Authenticode signing (removes the
+          # SmartScreen "Unknown publisher" warning). Base64-encode your .pfx:
+          #   base64 -w0 cert.pfx  -> paste as secret WIN_CSC_LINK
+          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
       - uses: actions/upload-artifact@v4
         with:
           name: windows-installer

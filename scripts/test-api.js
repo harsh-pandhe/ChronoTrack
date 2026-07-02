@@ -234,6 +234,18 @@ async function main() {
   r = await call('GET', '/api/reports?kind=telemetry', { token: empToken });
   ok(r.status === 200 && r.json.feed.every((x) => x.employee === 'Emp One'), 'employee feed scoped to self');
 
+  // 15b. DPDP data rights: export / purge / retention
+  r = await call('GET', `/api/reports?kind=export&user_id=${empId}`, { token: adminToken });
+  ok(r.status === 200 && Array.isArray(r.json.telemetry) && r.json.user.email === 'emp@cm.com', 'admin exports user data (DPDP)');
+  r = await call('GET', '/api/reports?kind=export', { token: empToken });
+  ok(r.status === 200 && r.json.user.email === 'emp@cm.com', 'employee exports own data');
+  r = await call('DELETE', `/api/reports?kind=purge&user_id=${empId}`, { token: leadToken });
+  ok(r.status === 403, 'non-admin cannot purge');
+  r = await call('DELETE', `/api/reports?kind=purge&user_id=${empId}`, { token: adminToken });
+  ok(r.status === 200 && r.json.telemetry_deleted === 3, 'admin purges user telemetry (erasure)');
+  r = await call('POST', '/api/reports?kind=retention', { token: adminToken, body: { days: 365 } });
+  ok(r.status === 200 && typeof r.json.deleted === 'number', 'admin runs retention prune');
+
   // 16. Self profile + password change (auth/me PATCH)
   r = await call('POST', '/api/users', { token: adminToken, body: { name: 'Lead Two', email: 'lead2@cm.com', role: 'lead', password: 'lead2-strong-pass', can_manage_employees: true } });
   ok(r.status === 201 && r.json.user.can_manage_employees === true, 'admin creates lead WITH authority in one call');

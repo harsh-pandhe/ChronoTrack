@@ -168,6 +168,15 @@ export const telemetryFeed = {
     return request('GET', `/api/reports?kind=telemetry&limit=${limit}`).then((d) => d.feed);
   },
 };
+export const dataRights = {
+  export(userId) {
+    const q = userId ? `&user_id=${userId}` : '';
+    return request('GET', `/api/reports?kind=export${q}`);
+  },
+  purge(userId) {
+    return request('DELETE', `/api/reports?kind=purge&user_id=${userId}`);
+  },
+};
 
 // --- Consent (DPDP) ------------------------------------------------------
 export const consent = {
@@ -179,4 +188,4 @@ export const consent = {
   },
 };
 
-export default { auth, users, projects, activation, timeEntries, consent, analytics, rules, auditLogs, telemetryFeed, getUser, getToken, clearSession };
+export default { auth, users, projects, activation, timeEntries, consent, analytics, rules, auditLogs, telemetryFeed, dataRights, getUser, getToken, clearSession };
