@@ -59,19 +59,23 @@ import {
 // avoids the "width(-1)/height(-1)" console warning on first paint / tab switch.
 function SizedChart({ children }) {
   const ref = useRef(null);
-  const [ready, setReady] = useState(false);
+  const [size, setSize] = useState({ w: 0, h: 0 });
   useEffect(() => {
     if (!ref.current) return;
-    const ro = new ResizeObserver(([e]) => {
-      if (e.contentRect.width > 0 && e.contentRect.height > 0) setReady(true);
-    });
+    const measure = () => {
+      const el = ref.current;
+      if (el) setSize({ w: Math.floor(el.clientWidth), h: Math.floor(el.clientHeight) });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
     ro.observe(ref.current);
     return () => ro.disconnect();
   }, []);
   return (
     <div ref={ref} style={{ width: '100%', height: '100%' }}>
-      {ready ? (
-        <ResponsiveContainer width="100%" height="100%">{children}</ResponsiveContainer>
+      {size.w > 0 && size.h > 0 ? (
+        // Pass NUMERIC dims (not "100%") so recharts never sees width/height -1.
+        <ResponsiveContainer width={size.w} height={size.h}>{children}</ResponsiveContainer>
       ) : null}
     </div>
   );
