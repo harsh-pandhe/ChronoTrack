@@ -7,7 +7,6 @@
 //   DATABASE_URL=... PGSSL=disable JWT_SECRET=... node scripts/dev-api.js &   # API
 //   API_BASE=http://localhost:3031 N=25 DURATION=60 node scripts/load-test.js
 import { query } from '../lib/db.js';
-import { hashPassword } from '../lib/auth.js';
 
 const API = process.env.API_BASE || 'http://localhost:3031';
 const N = Number(process.env.N || 25);
@@ -55,8 +54,8 @@ async function provision() {
   for (let i = 0; i < N; i++) {
     const email = `load${Date.now()}_${i}@cm.com`;
     const emp = (await call('POST', '/api/users', { token: leadTok, body: { name: `Load Emp ${i}`, email, role: 'employee', base_salary: 60000 } })).json.user;
-    const code = (await call('POST', '/api/activation/generate', { token: leadTok, body: { user_id: emp.id } })).json.code;
-    const act = (await call('POST', '/api/activation/verify', { body: { email, code, consent: true, platform: 'linux', hostname: `load-${i}` } })).json;
+    const code = (await call('POST', '/api/activation?action=generate', { token: leadTok, body: { user_id: emp.id } })).json.code;
+    const act = (await call('POST', '/api/activation?action=verify', { body: { email, code, consent: true, platform: 'linux', hostname: `load-${i}` } })).json;
     devices.push(act.device_token);
   }
   return devices;

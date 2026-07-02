@@ -1,31 +1,20 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import api from './api.js';
 import {
-  Check,
-  X, 
-  ChevronRight, 
-  Shield, 
-  Activity, 
-  HardDrive, 
-  Terminal, 
-  Settings, 
-  User, 
-  Users, 
+  X,
+  Shield,
+  Activity,
+  HardDrive,
+  Terminal,
+  User,
+  Users,
   Cpu,
-  TrendingUp, 
-  Lock, 
-  Unlock, 
-  RefreshCw, 
-  Play, 
-  Square, 
-  Trash2, 
-  Plus, 
+  TrendingUp,
+  Lock,
+  Trash2,
+  Plus,
   Server,
-  Layers,
-  Flame,
   CheckCircle2,
-  DollarSign,
-  Home,
   Download,
   Laptop,
   Globe,
@@ -36,23 +25,18 @@ import {
   LogOut,
   Clock,
   Edit2,
-  Eye,
   AlertTriangle,
-  Mail,
-  ChevronDown
 } from 'lucide-react';
-import { 
-  ResponsiveContainer, 
-  AreaChart, 
-  Area, 
-  XAxis, 
-  YAxis, 
-  Tooltip, 
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  Tooltip,
   CartesianGrid,
   BarChart,
   Bar,
-  LineChart,
-  Line
 } from 'recharts';
 
 // Renders a recharts ResponsiveContainer only once its box has a real size —
@@ -110,7 +94,6 @@ export default function App() {
   const [newProjName, setNewProjName] = useState('');
   const [newProjBudget, setNewProjBudget] = useState('50000000');
   const [newProjMargin, setNewProjMargin] = useState('35');
-  const [newProjColor, setNewProjColor] = useState('#6366f1');
 
   // Employee Validation Ping Prompt States
   const [verificationTaskDescription, setVerificationTaskDescription] = useState('');
@@ -298,7 +281,7 @@ export default function App() {
         setSessionToken(api.getToken());
         setCurrentRole(route);
         if (route !== 'employee') loadServerData();
-      } catch (err) {
+      } catch {
         // Invalid/expired token → clear and return to landing.
         api.clearSession();
         localStorage.removeItem('civil_session_token');
@@ -382,6 +365,11 @@ export default function App() {
     { time: '', event: 'Waiting for local daemon on port 5050…' }
   ]);
 
+  // Desktop App states
+  const [desktopActivated, setDesktopActivated] = useState(() => {
+    return localStorage.getItem('civil_desktop_activated') === 'true';
+  });
+
   useEffect(() => {
     // Only the Electron desktop agent talks to the local daemon (127.0.0.1:5050).
     // In a plain browser (admin/lead web dashboards) there is no daemon — skip the
@@ -446,7 +434,7 @@ export default function App() {
             ]);
           }
         }
-      } catch (err) {
+      } catch {
         // Daemon unreachable — show honest offline state, never fake data.
         if (isMounted) {
           setLocalDaemonState(prev => ({
@@ -611,9 +599,20 @@ export default function App() {
     showToast('Logged out successfully.', 'info');
   };
 
+  // In the packaged desktop agent, "Exit Agent" should close the app window,
+  // not drop the employee onto the marketing landing page. The telemetry
+  // daemon is a separate autostarted background process and keeps collecting
+  // regardless (see main.cjs). Web dashboard (no electronAPI) still logs out.
+  const handleExitAgent = () => {
+    if (window.electronAPI?.quitApp) window.electronAPI.quitApp();
+    else handleLogout();
+  };
+
   // Map backend rows -> existing UI shapes and load real data from the server.
   // Source of truth is now the API; localStorage is only a transient cache.
-  const loadServerData = async () => {
+  // Function declaration (not const arrow) so it's hoisted and safely callable
+  // from handlers defined earlier in this component body.
+  async function loadServerData() {
     try {
       const [srvUsers, srvProjects] = await Promise.all([
         api.users.list(),
@@ -687,7 +686,7 @@ export default function App() {
       // Keep last-known data on transient failure; surface once.
       console.warn('[data] server load failed:', err.message);
     }
-  };
+  }
 
   // Interactive CRUD State for User Management
   const [showAddForm, setShowAddForm] = useState(false);
@@ -856,11 +855,6 @@ export default function App() {
     setContactEmail('');
     setContactMsg('');
   };
-
-  // Desktop App states
-  const [desktopActivated, setDesktopActivated] = useState(() => {
-    return localStorage.getItem('civil_desktop_activated') === 'true';
-  });
 
   // Load the employee's own analytics for the transparency self-view + refresh.
   useEffect(() => {
@@ -2633,8 +2627,8 @@ export default function App() {
                     <span className="text-[10px] uppercase font-bold text-zinc-400">
                       {localDaemonState.isSimulated ? 'Cloud Simulation Active' : localDaemonState.online ? 'Daemon Active (Port 5050)' : 'Daemon Offline'}
                     </span>
-                    <button 
-                      onClick={handleLogout}
+                    <button
+                      onClick={handleExitAgent}
                       className="px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-border text-zinc-400 hover:text-white rounded-lg text-[9px] font-black uppercase tracking-wider transition-all"
                     >
                       Exit Agent

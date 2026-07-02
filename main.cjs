@@ -1,4 +1,4 @@
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
@@ -79,7 +79,7 @@ WantedBy=default.target
     } else if (process.platform === 'win32') {
       // Run key -> autostart at logon
       spawn('reg', ['add', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run',
-        '/v', 'CivilMantraDaemon', '/t', 'REG_SZ', '/d', binPath, '/f'], { stdio: 'ignore' });
+        '/v', 'CivilMantraDaemon', '/t', 'REG_SZ', '/d', binPath, '/f'], { stdio: 'ignore', windowsHide: true });
     } else if (process.platform === 'darwin') {
       const dir = path.join(require('os').homedir(), 'Library', 'LaunchAgents');
       fs.mkdirSync(dir, { recursive: true });
@@ -114,7 +114,7 @@ function startTelemetryDaemon() {
     console.log('[ELECTRON] Spawning bundled Telemetry Daemon (detached):', binPath);
     try {
       // detached + unref so the daemon survives the app window closing.
-      daemonProcess = spawn(binPath, [], { detached: true, stdio: 'ignore' });
+      daemonProcess = spawn(binPath, [], { detached: true, stdio: 'ignore', windowsHide: true });
       daemonProcess.on('error', (err) =>
         console.error('[ELECTRON] Failed to start bundled daemon:', err.message)
       );
@@ -133,13 +133,13 @@ function startTelemetryDaemon() {
   const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
   console.log('[ELECTRON] Spawning Telemetry Daemon (dev):', daemonPath);
   try {
-    daemonProcess = spawn(pythonCmd, [daemonPath], { detached: false, stdio: 'ignore' });
+    daemonProcess = spawn(pythonCmd, [daemonPath], { detached: false, stdio: 'ignore', windowsHide: true });
     daemonProcess.on('error', (err) => {
       console.error('[ELECTRON] Failed to start telemetry daemon:', err.message);
       if (pythonCmd === 'python3') {
         console.log('[ELECTRON] Retrying with "python"...');
         try {
-          daemonProcess = spawn('python', [daemonPath], { detached: false, stdio: 'ignore' });
+          daemonProcess = spawn('python', [daemonPath], { detached: false, stdio: 'ignore', windowsHide: true });
         } catch (retryErr) {
           console.error('[ELECTRON] Retry failed:', retryErr.message);
         }
@@ -158,7 +158,7 @@ function stopTelemetryDaemon() {
     console.log('[ELECTRON] Terminating Telemetry Daemon...');
     try {
       if (process.platform === 'win32') {
-        spawn('taskkill', ['/pid', daemonProcess.pid, '/f', '/t']);
+        spawn('taskkill', ['/pid', daemonProcess.pid, '/f', '/t'], { windowsHide: true });
       } else {
         daemonProcess.kill('SIGTERM');
       }
@@ -202,6 +202,10 @@ function createWindow() {
 }
 
 let staticPort = 0;
+
+// "Exit Agent" in the renderer closes the app window only — the telemetry
+// daemon is an independently-autostarted background process and keeps running.
+ipcMain.on('app-quit', () => app.quit());
 
 app.whenReady().then(async () => {
   const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;

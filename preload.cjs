@@ -1,4 +1,4 @@
-const { contextBridge } = require('electron');
+const { contextBridge, ipcRenderer } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -30,5 +30,8 @@ function getApiToken() {
 }
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  getApiToken: () => getApiToken()
+  getApiToken: () => getApiToken(),
+  // Closes the app window. The telemetry daemon is a separate autostarted
+  // background process (systemd/Run-key/LaunchAgent) and keeps running.
+  quitApp: () => ipcRenderer.send('app-quit')
 });
