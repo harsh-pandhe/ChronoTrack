@@ -35,13 +35,20 @@ jobs:
       - name: Build SPA
         run: npm run build
       - name: Build Windows installer (NSIS, signed if cert secrets present)
-        run: npx electron-builder --win nsis --publish never
-        env:
-          # Add these repo secrets to enable Authenticode signing (removes the
-          # SmartScreen "Unknown publisher" warning). Base64-encode your .pfx:
-          #   base64 -w0 cert.pfx  -> paste as secret WIN_CSC_LINK
-          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        shell: pwsh
+        run: |
+          # electron-builder treats a merely-*set* CSC_LINK (even "") as "please
+          # sign" and fails resolving it to a file. GitHub Actions' `env:` block
+          # always creates the var (as "") when a referenced secret doesn't
+          # exist, so we only export it here, conditionally, when it's real.
+          # Add repo secrets WIN_CSC_LINK (base64 -w0 cert.pfx) / WIN_CSC_KEY_PASSWORD
+          # to enable Authenticode signing (removes the SmartScreen "Unknown
+          # publisher" warning).
+          if ("${{ secrets.WIN_CSC_LINK }}" -ne "") {
+            $env:CSC_LINK = "${{ secrets.WIN_CSC_LINK }}"
+            $env:CSC_KEY_PASSWORD = "${{ secrets.WIN_CSC_KEY_PASSWORD }}"
+          }
+          npx electron-builder --win nsis --publish never
       - uses: actions/upload-artifact@v4
         with:
           name: windows-installer
