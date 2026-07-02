@@ -8,8 +8,24 @@ import { query } from '../lib/db.js';
 import { audit } from '../lib/audit.js';
 
 export default handler(async (req, res) => {
-  const actor = await requireAuth(req);
   const url = new URL(req.url, 'http://localhost');
+
+  // Vercel Cron hits this with `Authorization: Bearer $CRON_SECRET`. Run a global
+  // retention prune BEFORE requireAuth (no user session). Configure the cron in
+  // vercel.json + set CRON_SECRET (Vercel injects it) and optional RETENTION_DAYS.
+  const cronSecret = process.env.CRON_SECRET;
+  const authz = req.headers['authorization'] || '';
+  const isCron = cronSecret && (authz === `Bearer ${cronSecret}` || req.headers['x-cron-secret'] === cronSecret);
+  if (isCron) {
+    const days = Math.min(3650, Math.max(1, Number(process.env.RETENTION_DAYS) || 180));
+    const r = await query(
+      `DELETE FROM telemetry_logs WHERE ts < now() - ($1 || ' days')::interval`,
+      [String(days)]
+    );
+    return send(res, 200, { ok: true, cron: true, deleted: r.rowCount, older_than_days: days });
+  }
+
+  const actor = await requireAuth(req);
   const kind = url.searchParams.get('kind') || 'rules';
 
   // ---- rules ----

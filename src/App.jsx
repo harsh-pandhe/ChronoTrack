@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import api from './api.js';
 import {
   Check,
@@ -55,6 +55,27 @@ import {
   Line
 } from 'recharts';
 
+// Renders a recharts ResponsiveContainer only once its box has a real size —
+// avoids the "width(-1)/height(-1)" console warning on first paint / tab switch.
+function SizedChart({ children }) {
+  const ref = useRef(null);
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    if (!ref.current) return;
+    const ro = new ResizeObserver(([e]) => {
+      if (e.contentRect.width > 0 && e.contentRect.height > 0) setReady(true);
+    });
+    ro.observe(ref.current);
+    return () => ro.disconnect();
+  }, []);
+  return (
+    <div ref={ref} style={{ width: '100%', height: '100%' }}>
+      {ready ? (
+        <ResponsiveContainer width="100%" height="100%">{children}</ResponsiveContainer>
+      ) : null}
+    </div>
+  );
+}
 
 export default function App() {
   const isEmployeeOnlyMode = new URLSearchParams(window.location.search).get('app') === 'employee';
@@ -1578,7 +1599,7 @@ export default function App() {
                   <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
                     <span className="text-xs font-black text-white uppercase tracking-wider">Daily Active Hours (last {serverAnalytics?.overview?.days || 7}d)</span>
                     <div className="h-64 w-full">
-                      <ResponsiveContainer width="100%" height="100%">
+                      <SizedChart>
                         <AreaChart data={serverAnalytics?.overview?.trend || []}>
                           <defs>
                             <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
@@ -1592,14 +1613,14 @@ export default function App() {
                           <Tooltip contentStyle={{ backgroundColor: '#09090b', borderColor: '#1f2937', borderRadius: '12px', fontSize: '10px' }} />
                           <Area type="monotone" dataKey="active_hours" stroke="#6366f1" fillOpacity={1} fill="url(#colorRev)" strokeWidth={2} name="Active Hours" />
                         </AreaChart>
-                      </ResponsiveContainer>
+                      </SizedChart>
                     </div>
                   </div>
 
                   <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
                     <span className="text-xs font-black text-white uppercase tracking-wider">Activity by Category (samples)</span>
                     <div className="h-64 w-full">
-                      <ResponsiveContainer width="100%" height="100%">
+                      <SizedChart>
                         <BarChart data={serverAnalytics?.overview?.categories || []}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
                           <XAxis dataKey="category" stroke="#4b5563" fontSize={9} interval={0} angle={-20} textAnchor="end" height={50} />
@@ -1607,7 +1628,7 @@ export default function App() {
                           <Tooltip contentStyle={{ backgroundColor: '#09090b', borderColor: '#1f2937', borderRadius: '12px', fontSize: '10px' }} />
                           <Bar dataKey="samples" fill="#10b981" radius={[4, 4, 0, 0]} name="Samples" />
                         </BarChart>
-                      </ResponsiveContainer>
+                      </SizedChart>
                     </div>
                   </div>
                 </div>
@@ -2214,7 +2235,7 @@ export default function App() {
                   <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
                     <span className="text-xs font-black text-white uppercase tracking-wider">Team Daily Active Hours</span>
                     <div className="h-56 w-full">
-                      <ResponsiveContainer width="100%" height="100%">
+                      <SizedChart>
                         <AreaChart data={serverAnalytics?.team?.trend || []}>
                           <defs>
                             <linearGradient id="tlRev" x1="0" y1="0" x2="0" y2="1">
@@ -2228,13 +2249,13 @@ export default function App() {
                           <Tooltip contentStyle={{ backgroundColor: '#09090b', borderColor: '#1f2937', borderRadius: '12px', fontSize: '10px' }} />
                           <Area type="monotone" dataKey="active_hours" stroke="#3b82f6" fillOpacity={1} fill="url(#tlRev)" strokeWidth={2} name="Active Hours" />
                         </AreaChart>
-                      </ResponsiveContainer>
+                      </SizedChart>
                     </div>
                   </div>
                   <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
                     <span className="text-xs font-black text-white uppercase tracking-wider">Per-Employee Active %</span>
                     <div className="h-56 w-full">
-                      <ResponsiveContainer width="100%" height="100%">
+                      <SizedChart>
                         <BarChart data={(serverAnalytics?.team?.members || []).map(m => ({ name: m.name.split(' ')[0], active_pct: m.active_pct }))}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
                           <XAxis dataKey="name" stroke="#4b5563" fontSize={9} interval={0} angle={-20} textAnchor="end" height={50} />
@@ -2242,7 +2263,7 @@ export default function App() {
                           <Tooltip contentStyle={{ backgroundColor: '#09090b', borderColor: '#1f2937', borderRadius: '12px', fontSize: '10px' }} />
                           <Bar dataKey="active_pct" fill="#10b981" radius={[4, 4, 0, 0]} name="Active %" />
                         </BarChart>
-                      </ResponsiveContainer>
+                      </SizedChart>
                     </div>
                   </div>
                 </div>
@@ -2734,7 +2755,7 @@ export default function App() {
                   </div>
                 </div>
                 <div className="h-44 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
+                  <SizedChart>
                     <AreaChart data={selfAnalytics?.trend || []}>
                       <defs>
                         <linearGradient id="selfRev" x1="0" y1="0" x2="0" y2="1">
@@ -2748,7 +2769,7 @@ export default function App() {
                       <Tooltip contentStyle={{ backgroundColor: '#09090b', borderColor: '#1f2937', borderRadius: '12px', fontSize: '10px' }} />
                       <Area type="monotone" dataKey="active_hours" stroke="#10b981" fillOpacity={1} fill="url(#selfRev)" strokeWidth={2} name="Active Hours" />
                     </AreaChart>
-                  </ResponsiveContainer>
+                  </SizedChart>
                 </div>
               </div>
 
