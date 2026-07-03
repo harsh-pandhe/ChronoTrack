@@ -1,6 +1,94 @@
 # ChronoTrack — Final Roadmap & Pilot Readiness
 
-_Last updated: 2026-07-03 — full re-verification pass (real DB, real tests, real build)._
+_Last updated: 2026-07-03 (evening) — real-hardware Windows test + fixes, plan
+for an industry-grade v1.0 (rebrand pending user input, see bottom)._
+
+---
+
+## 🔍 2026-07-03 (evening) — real Windows-hardware test results
+
+A tester (Claude, driving the Windows machine directly via computer-use) ran
+`docs/WINDOWS-TEST-CHECKLIST.md` against the build from commit `d1e731e`.
+Results and what came out of them:
+
+### Confirmed working
+- Install completes, no crash.
+- Daemon runs invisibly on first launch (windowsHide worked for the
+  Electron-spawned case).
+- Autostart survives reboot; re-opening the app doesn't re-prompt activation.
+
+### Bugs found + fixed this pass
+1. **Daemon console window DOES appear — windowsHide wasn't the whole
+   fix.** `windowsHide` on the Node `spawn()` call only suppresses the
+   console when *Electron* launches the daemon. The OS autostart entry
+   (`HKCU...Run` key) launches the exe **directly** with no such option, so
+   after a reboot the console pops up exactly as before. Real fix: build the
+   daemon with `--noconsole` (no console subsystem at all, regardless of
+   launcher) in both `build_daemon.sh` and `release.yml`, and redirect the
+   daemon's own stdout/stderr to a rotating log file
+   (`%APPDATA%/civil-mantra/data/daemon.log`) so bare `print()` calls can't
+   crash on a null stream in windowed mode either. Fixed in `102d2ff`.
+2. **Real crash loop caught in the test screenshot**:
+   `ctypes.ArgumentError: argument 4: OverflowError: int too long to
+   convert` firing on every keystroke inside `keyboard_proc`.
+   `CallNextHookEx` had no `argtypes`/`restype` declared, so ctypes
+   marshaled the 64-bit `lParam` pointer as a 32-bit C `int` by default and
+   overflowed on every single call. This was silently swallowed
+   ("Exception ignored") but meant the hook chain broke on every event.
+   Fixed with proper `argtypes`/`restype` declarations.
+3. **Every employee's own project pick-list was permanently empty,
+   regardless of what project they were assigned at creation.**
+   `active_project_id` (set on the employee form) was never mirrored into
+   `project_assignments` — the table `GET /api/projects` actually filters on
+   for an employee's own scope. This is the root cause behind "the project
+   selection is not the project we assigned them" — there was no real
+   assignment underneath, just a display-only field. Fixed: both
+   `POST /api/users` and `PATCH /api/users/:id` now upsert the assignment.
+   Also fixed the `newEmpProject` form default, which was the **literal
+   string `'Project Alpha'`** (not a real project id) — this would either
+   fail the FK constraint or, since a controlled `<select>` doesn't
+   re-sync its value when the mismatched default doesn't match any
+   `<option>`, silently submit that garbage string if the lead didn't
+   manually reselect. Now defaults to a real "No project assigned" option.
+   Added permanent regression tests in `scripts/test-api.js` (56/56 pass now).
+
+### Still unconfirmed / needs another real test
+4. **"Exit Agent" still showed the marketing landing page in the test.**
+   The source code for the fix is confirmed correct and present in the
+   exact commit that was built (verified by reading `preload.cjs`,
+   `main.cjs`, `App.jsx` directly — `contextBridge` exposes `quitApp`,
+   `ipcMain` handles `app-quit`, the button calls `handleExitAgent`). The
+   tester's own notes say the Downloads folder already had **a duplicate
+   installer file** from an earlier attempt, and activation state was
+   already present before install — strong signal the OLD (pre-fix)
+   installer got run instead of the freshly-downloaded one, or an old app
+   instance was still resident. **Needs a clean re-test**: fully uninstall
+   any existing CivilMantra Agent (Add/Remove Programs), delete old
+   installer files from Downloads, download only the newest artifact, then
+   retest just this one item.
+5. **The in-app "POSTGRESQL CLOUD SYNC" panel showed "Success — Pushed N
+   events" for a device that, per a direct prod DB query taken minutes
+   later, no longer exists** (0 rows in `devices`, 0 rows in
+   `telemetry_logs` company-wide at the time of writing). The panel is
+   showing a **historical local log**, not live proof of current
+   connectivity — if the server-side device/user gets deleted or revoked
+   after a successful sync, the panel doesn't reflect that until the next
+   sync attempt actually fails. This is a real reliability/trust gap for a
+   product whose whole pitch is "transparent, verifiable telemetry" — see
+   the hardening plan below.
+6. Confirmed via direct prod query: two projects both named "CRM" exist —
+   no duplicate-name guard, and no form anywhere in the app disables its
+   submit button while a request is in flight, so a double-click on any
+   "Create" button (employee, lead, project, rule) can create duplicates.
+   Not a security issue, but real, and affects data quality at scale.
+7. `POST /api/time-entries` checks the project belongs to the caller's
+   company, but **does not check the employee is actually in
+   `project_assignments` for it** — the UI dropdown only shows assigned
+   projects, but a crafted direct API call could log hours against any
+   company project. Same-tenant only (not a cross-company leak), but it
+   undermines the "verified hours" ROI story this product is built on.
+
+---
 
 ## TL;DR
 - **Web platform:** ✅ LIVE in production (Vercel + Neon), fully functional.
@@ -114,23 +202,24 @@ Ran every test suite against a real ephemeral Postgres (not mocked), read every
 
 ### Must-do (blockers)
 1. ✅ **Windows installer builds** — GitHub Actions billing is no longer
-   blocking (confirmed 2026-07-02: CI + Release workflow both run fine).
-   Found + fixed a real regression along the way: a code-signing-hook commit
-   (`64f55ee`, 07-02) set `CSC_LINK` to an empty string instead of leaving it
-   unset, which broke electron-builder on every Windows build since (fixed in
-   `d1e731e`). Also fixed two real Windows bugs while rebuilding: the daemon
-   used to pop a visible console window (`windowsHide: true` now set), and
-   "Exit Agent" used to show the marketing landing page instead of closing
-   the app (now wired to a real Electron quit). Latest build:
-   https://github.com/harsh-pandhe/ChronoTrack/actions/runs/28621882143
-   (still **unsigned** — SmartScreen warning is expected until a cert is
-   bought, see item 5).
-2. ⏳ **Clean-VM smoke test** — checklist doc written:
-   `docs/WINDOWS-TEST-CHECKLIST.md`. Covers install, no-visible-daemon-window,
-   activation, telemetry-reaches-cloud, Exit Agent, background survival after
-   exit, autostart-after-reboot, re-open-doesn't-reprompt, consent withdrawal.
-   Handed to a human tester on a real Windows machine 2026-07-03 — **results
-   not yet back**. Still need the equivalent pass on a clean Linux box.
+   blocking. Found + fixed a CSC_LINK regression (`d1e731e`) and, after a real
+   hardware test, two further real bugs: the daemon console window only
+   partly fixed by `windowsHide` (now truly fixed with `--noconsole` + log
+   redirection, `102d2ff`), and a live ctypes crash loop in the keyboard hook
+   (`102d2ff`). Latest build:
+   https://github.com/harsh-pandhe/ChronoTrack/actions/runs/28621882143 — a
+   fresh build with today's fixes has not been triggered yet (ask before
+   doing so — costs CI minutes on every run). Still **unsigned**.
+2. ⏳ **Clean-VM smoke test** — first real-hardware pass done 2026-07-03
+   (`docs/WINDOWS-TEST-CHECKLIST.md`). Confirmed: install, daemon starts
+   invisibly on first launch, autostart survives reboot, no re-prompt on
+   reopen. **Exit Agent still unconfirmed** — the fix is verified correct in
+   source, but the tester's own notes suggest a stale/duplicate installer may
+   have been run instead of the new build; needs a clean
+   uninstall-then-reinstall retest. Also surfaced 3 more real bugs (see
+   "real-hardware test results" above), now fixed. Still need: a from-scratch
+   activation test (this machine had leftover state), the equivalent pass on
+   a clean Linux box, and re-test after the next build once triggered.
 3. ⚠️ **Rotate exposed credentials — STILL NOT DONE, now doubly exposed.**
    The Neon `DATABASE_URL` was shared in chat before this roadmap item was
    written, **and was pasted in plaintext again on 2026-07-03** during this
@@ -140,10 +229,13 @@ Ran every test suite against a real ephemeral Postgres (not mocked), read every
    invalidates all live sessions — do it during a maintenance window) before
    this goes anywhere near real employee data.
 4. ✅ **Test accounts removed** — deleted `harshpandhehome@gmail.com`
-   (employee, 1 device + 5 telemetry rows) from prod 2026-07-03. Kept
-   `admin@civilmantra.com` (admin) and `udaypandhe@gmail.com` (lead) — confirm
-   with Civil Mantra whether `udaypandhe@gmail.com` is a real team lead or
-   also needs replacing with a real `@civilmantra.com` account before pilot.
+   (employee, 1 device + 5 telemetry rows) from prod 2026-07-03. **Note:
+   prod org has since changed again during testing** — `harshpandhehome@gmail.com`
+   was recreated (status `invited`, not yet activated), and the original
+   `udaypandhe@gmail.com` lead account is gone, replaced by a new
+   `uday@gmail.com` lead. Two projects both named "CRM" now exist (no
+   duplicate-name guard — see item 6 in the real-hardware findings above).
+   Recommend a final cleanup pass once testing is actually done, not before.
 
 ### Strongly recommended (before wider than pilot)
 5. **Code-sign installers** — Windows Authenticode (avoids SmartScreen "unknown
@@ -193,3 +285,92 @@ Ran every test suite against a real ephemeral Postgres (not mocked), read every
 - **CI does not run `npm run lint`** — only build + `test:api`. Real bugs (two
   TDZ hook-order issues) sat undetected in `src/App.jsx` until this pass.
   Recommend adding a lint step to `.github/workflows/ci.yml`.
+
+---
+
+## 🏁 Path to an industry-grade v1.0
+
+The ask: fix everything, test everything, and turn this into a lightweight,
+strong, good-looking product ready for real industry use — not a pilot demo.
+Below is the concrete plan. A few decisions in it are yours, not mine (marked
+**[YOUR CALL]**) — see the questions accompanying this update.
+
+### Stage 1 — Close out the bugs already found (no new scope)
+- [ ] Retest Exit Agent on a clean install (uninstall old app, delete stale
+  installers, download only the newest artifact) — confirm the fix actually
+  lands once tested cleanly.
+- [ ] Retest daemon-window + keyboard-hook-crash fixes after the next build
+  (needs a fresh Windows build with commit `102d2ff` — not triggered yet).
+- [ ] Fresh-activation test (this machine's state was contaminated by
+  earlier runs) — either a clean VM or reset via the web dashboard.
+- [ ] Same checklist pass on a clean Linux machine.
+- [ ] `POST /api/time-entries` should reject hours logged against a project
+  the employee isn't in `project_assignments` for (currently only checked
+  client-side via the dropdown) — closes the ROI-integrity gap.
+- [ ] Add a duplicate-name guard on project creation, and a generic
+  submit-in-flight guard (disable button while the request is pending) across
+  every create form — stops accidental double-records app-wide.
+- [ ] Make the "POSTGRESQL CLOUD SYNC" panel prove *current* connectivity
+  (e.g. a live ping to `/api/ingest` health, not just a replay of past sync
+  attempts), so it can't show "Success" for a device that no longer exists
+  server-side.
+
+### Stage 2 — Test everything, systematically (not spot checks)
+The current test suite covers backend logic well (56 real API tests + 9
+daemon e2e + a load test) but has never systematically clicked through every
+button/flow in the actual UI. Plan: a full button-by-button pass across all
+three roles (admin, lead, employee) and the desktop agent, covering every
+form, every CRUD action, every chart, every edge case (empty states, error
+states, permission boundaries) — not just the happy path. **[YOUR CALL]**:
+should this be (a) another live Windows/browser pass like today's, (b) me
+building out real Playwright e2e coverage for the web dashboard (the spec
+file already exists at `tests/e2e/web-flows.spec.js` but is thin), or (c)
+both? Playwright coverage has the advantage of running in CI forever after,
+catching regressions automatically instead of needing a human each time.
+
+### Stage 3 — Lightweight
+- Bundle is 667KB (single chunk) — code-split by route/role (admin bundle,
+  lead bundle, employee/desktop-agent bundle load independently) so nobody
+  downloads code for views they can't access.
+- Audit `recharts`/`lucide-react` for tree-shaking — only import icons/chart
+  types actually used (already trimmed unused icon imports this session;
+  worth a full pass).
+- Daemon binary: PyInstaller `--onefile` is already reasonably small; the
+  `--noconsole` + log-file change adds no real weight.
+
+### Stage 4 — Strong (hardening beyond what's already solid)
+Backend auth/authz/SQL-injection/CORS already checked and clean (see the
+2026-07-03 morning pass above). Remaining hardening for real industry use:
+- Redis-backed rate limiting (currently in-memory per instance — fine for a
+  pilot, not for company scale).
+- `deployment/schema.sql` cleanup (stale, misleading — either delete or
+  regenerate from migrations).
+- CI lint step (catches exactly the class of bug found in `src/App.jsx` this
+  session).
+- Decompose `src/App.jsx` (2,965 lines, one file, all roles) — not urgent
+  but every fix here carries needless blast radius as the app grows.
+
+### Stage 5 — Nice UI
+Current UI is a single dense dark-console aesthetic reused across every
+role. A real design pass (not just re-skinning) would cover: role-appropriate
+information hierarchy (an employee's transparency view doesn't need
+admin-density data tables), responsive/mobile handling (not verified at all
+today), empty/loading/error states designed rather than ad hoc, and
+consistent spacing/typography audited against a real design system rather
+than accumulated Tailwind classes. **[YOUR CALL]**: any visual direction/
+reference you want followed, or should this be proposed fresh?
+
+### Stage 6 — Rebrand (not "Civil Mantra")
+Every user-facing surface currently says "Civil Mantra" / "CivilMantra" —
+window titles, app name (`com.civilmantra.agent`), installer filenames, the
+landing page copy, email domains in seed data, `package.json` `productName`,
+autostart registry key names, config folder paths (`~/.config/civil-mantra`),
+and the favicon/logo (`public/logo.png`, `public/icon.ico`). This is a
+mechanical-but-wide-reaching rename once a name is picked, plus a new
+logo/icon set. **[YOUR CALL — needed before this can start]**: what's the new
+product name? Do you have a name in mind, or want me to propose options? For
+the logo: any style direction (minimal/geometric, wordmark-only, a specific
+color already used elsewhere), or should I propose a few directions to react
+to?
+
+---
