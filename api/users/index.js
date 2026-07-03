@@ -88,6 +88,18 @@ export default handler(async (req, res) => {
       throw err;
     }
 
+    // active_project_id is a display convenience; project_assignments is what
+    // actually gates which projects this employee can log time against (see
+    // GET /api/projects). Without this, every employee's "what project were
+    // you working on" list is permanently empty regardless of active_project_id.
+    if (active_project_id) {
+      await query(
+        `INSERT INTO project_assignments (project_id, user_id) VALUES ($1, $2)
+         ON CONFLICT (project_id, user_id) DO NOTHING`,
+        [active_project_id, created.id]
+      );
+    }
+
     await audit(req, actor, `create ${role}`, created.id);
     return send(res, 201, { user: created });
   }

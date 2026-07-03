@@ -56,6 +56,27 @@ monitored_lock = threading.Lock()
 # Ensure directories exist
 os.makedirs(DB_DIR, exist_ok=True)
 
+# Redirect stdout/stderr to a log file. This is the real fix for the daemon
+# ever showing a console window: `windowsHide` on the Electron spawn() call
+# only helps when Electron itself launches the process — the OS autostart
+# entry (Run key / systemd / LaunchAgent) launches the exe directly with no
+# such option, so a PyInstaller console-subsystem binary still pops a window
+# on every login. Building with --noconsole/--windowed removes the console
+# subsystem entirely (see build_daemon.sh + release.yml), but a windowed exe
+# has no real stdout — bare print() would then throw on a None stream. Doing
+# this ourselves (instead of relying on PyInstaller's stdio shim) guarantees
+# no crash either way and keeps the logs somewhere useful for debugging.
+LOG_PATH = os.path.join(DB_DIR, "daemon.log")
+MAX_LOG_BYTES = 5 * 1024 * 1024  # rotate once past 5MB so it never grows unbounded
+try:
+    if os.path.exists(LOG_PATH) and os.path.getsize(LOG_PATH) > MAX_LOG_BYTES:
+        os.replace(LOG_PATH, LOG_PATH + ".1")
+    _log_file = open(LOG_PATH, "a", buffering=1, encoding="utf-8")
+    sys.stdout = _log_file
+    sys.stderr = _log_file
+except Exception:
+    pass  # fall back to whatever stdio PyInstaller gave us
+
 # Generate or load configuration
 def get_or_create_config():
     os.makedirs(CONFIG_DIR, exist_ok=True)
@@ -553,7 +574,20 @@ def run_windows_hooks():
         
         LRESULT = ctypes.c_longlong if ctypes.sizeof(ctypes.c_void_p) == 8 else ctypes.c_long
         HOOKPROC = ctypes.WINFUNCTYPE(LRESULT, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM)
-        
+
+        # Without explicit argtypes/restype, ctypes marshals CallNextHookEx's
+        # args as plain 32-bit C int by default. lParam is a pointer to a
+        # KBDLLHOOKSTRUCT/MSLLHOOKSTRUCT and routinely exceeds the 32-bit
+        # range on 64-bit Windows, raising
+        # "ArgumentError: argument 4: OverflowError: int too long to convert"
+        # on every single keystroke/mouse event (silently swallowed by ctypes
+        # as "Exception ignored", but it means CallNextHookEx never actually
+        # runs, so the hook chain breaks for every other listener).
+        user32.CallNextHookEx.argtypes = [wintypes.HHOOK, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM]
+        user32.CallNextHookEx.restype = LRESULT
+        user32.SetWindowsHookExW.argtypes = [ctypes.c_int, HOOKPROC, wintypes.HINSTANCE, wintypes.DWORD]
+        user32.SetWindowsHookExW.restype = wintypes.HHOOK
+
         WH_KEYBOARD_LL = 13
         WH_MOUSE_LL = 14
         WM_KEYDOWN = 0x0100

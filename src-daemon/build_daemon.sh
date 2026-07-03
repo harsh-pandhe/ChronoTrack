@@ -16,6 +16,7 @@ NAME="CivilMantraDaemon"
 rm -rf build "$OUT"
 "$PYINSTALLER" \
   --onefile \
+  --noconsole \
   --name "$NAME" \
   --distpath "$OUT" \
   --workpath build/pyi \

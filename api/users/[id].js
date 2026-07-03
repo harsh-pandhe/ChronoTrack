@@ -10,6 +10,7 @@ const FIELDS = {
   status: 'status',
   can_manage_employees: 'can_manage_employees',
   team_lead_id: 'team_lead_id',
+  active_project_id: 'active_project_id',
 };
 
 async function loadTarget(companyId, id) {
@@ -58,6 +59,17 @@ export default handler(async (req, res) => {
        RETURNING id, name, email, role, team_lead_id, can_manage_employees, hourly_cost, status`,
       vals
     );
+
+    // Keep project_assignments in sync so this actually shows up in the
+    // employee's project pick-list (see the matching insert in POST /api/users).
+    if (body.active_project_id) {
+      await query(
+        `INSERT INTO project_assignments (project_id, user_id) VALUES ($1, $2)
+         ON CONFLICT (project_id, user_id) DO NOTHING`,
+        [body.active_project_id, id]
+      );
+    }
+
     await audit(req, actor, 'update user', id);
     return send(res, 200, { user: rows[0] });
   }

@@ -177,6 +177,30 @@ async function main() {
   ok(proj && Number(proj.cost) === 1000, 'project cost derived from time × hourly_cost');
   ok(proj && Math.round(proj.roi) === 99, 'project ROI computed correctly');
 
+  // 9b. Assigning active_project_id at creation must populate project_assignments
+  // (regression: this used to be silently dropped, leaving every employee's
+  // "what project were you working on" pick-list permanently empty).
+  r = await call('POST', '/api/users', { token: leadToken, body: {
+    name: 'Assigned Emp', email: `assigned-${Date.now()}@cm.com`, role: 'employee', active_project_id: projectId } });
+  ok(r.status === 201, 'lead creates employee with active_project_id');
+  let { rows: assignRows } = await query(
+    `SELECT 1 FROM project_assignments WHERE project_id = $1 AND user_id = $2`,
+    [projectId, r.json.user.id]
+  );
+  ok(assignRows.length === 1, 'active_project_id at creation populates project_assignments');
+
+  // 9c. Same check via PATCH (admin/lead assigns a project after the fact).
+  r = await call('POST', '/api/users', { token: leadToken, body: {
+    name: 'Assigned Later Emp', email: `assigned-later-${Date.now()}@cm.com`, role: 'employee' } });
+  const laterEmpId = r.json.user.id;
+  r = await call('PATCH', `/api/users/${laterEmpId}`, { token: leadToken, body: { active_project_id: projectId } });
+  ok(r.status === 200, 'lead assigns project to existing employee via PATCH');
+  ({ rows: assignRows } = await query(
+    `SELECT 1 FROM project_assignments WHERE project_id = $1 AND user_id = $2`,
+    [projectId, laterEmpId]
+  ));
+  ok(assignRows.length === 1, 'PATCH active_project_id also populates project_assignments');
+
   // 10. Consent withdrawal stops collection (DPDP)
   r = await call('DELETE', '/api/consent', { token: empToken });
   ok(r.status === 200, 'employee withdraws consent');

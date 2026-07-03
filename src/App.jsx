@@ -88,7 +88,7 @@ export default function App() {
   const [newEmpBenefits, setNewEmpBenefits] = useState('10000');
   const [newEmpRole, setNewEmpRole] = useState('Assistant Civil Engineer');
   const [newEmpDept, setNewEmpDept] = useState('Civil Engineering');
-  const [newEmpProject, setNewEmpProject] = useState('Project Alpha');
+  const [newEmpProject, setNewEmpProject] = useState('');
   
   // Team Lead Add Project Form States
   const [newProjName, setNewProjName] = useState('');
@@ -2447,6 +2447,7 @@ export default function App() {
                             onChange={(e) => setNewEmpProject(e.target.value)}
                             className="w-full bg-background border border-border rounded-xl px-4 py-2 text-xs text-white outline-none"
                           >
+                            <option value="">No project assigned</option>
                             {projects.map(p => (
                               <option key={p.id} value={p.id}>{p.name}</option>
                             ))}
