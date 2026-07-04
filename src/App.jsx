@@ -1752,7 +1752,12 @@ export default function App() {
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
                     <span className="text-xs font-black text-white uppercase tracking-wider">Daily Active Hours (last {serverAnalytics?.overview?.days || 7}d)</span>
-                    <div className="h-64 w-full">
+                    <div className="h-64 w-full relative">
+                      {!serverAnalytics?.overview?.trend?.length && (
+                        <div className="absolute inset-0 flex items-center justify-center text-xs text-zinc-600 pointer-events-none">
+                          No activity data yet
+                        </div>
+                      )}
                       <SizedChart>
                         <AreaChart data={serverAnalytics?.overview?.trend || []}>
                           <defs>
@@ -1773,7 +1778,12 @@ export default function App() {
 
                   <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
                     <span className="text-xs font-black text-white uppercase tracking-wider">Activity by Category (samples)</span>
-                    <div className="h-64 w-full">
+                    <div className="h-64 w-full relative">
+                      {!serverAnalytics?.overview?.categories?.length && (
+                        <div className="absolute inset-0 flex items-center justify-center text-xs text-zinc-600 pointer-events-none">
+                          No activity data yet
+                        </div>
+                      )}
                       <SizedChart>
                         <BarChart data={serverAnalytics?.overview?.categories || []}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
@@ -2181,6 +2191,10 @@ export default function App() {
                   {/* Middle pending activations list */}
                   <div className="md:col-span-2 p-6 rounded-3xl bg-card border border-border space-y-4">
                     <span className="text-[10px] font-black uppercase tracking-wider text-zinc-550 block">Pending Registration Keys</span>
+                    <p className="text-[10px] text-zinc-500 -mt-2">
+                      Keys are only shown once, right after generating — codes are stored hashed and can't be
+                      retrieved again later, so copy it before navigating away.
+                    </p>
                     <div className="border border-border rounded-2xl overflow-hidden">
                       <table className="w-full text-left border-collapse">
                         <thead>
@@ -2192,6 +2206,9 @@ export default function App() {
                           </tr>
                         </thead>
                         <tbody className="text-xs text-zinc-300 divide-y divide-border font-mono">
+                          {pendingActivations.length === 0 && (
+                            <tr><td colSpan={4} className="p-4 text-center text-zinc-600 font-sans">No keys generated this session yet.</td></tr>
+                          )}
                           {pendingActivations.map((p, idx) => (
                             <tr key={idx} className="hover:bg-zinc-900/10">
                               <td className="p-3 font-sans font-extrabold text-white">{p.name}</td>
@@ -2393,7 +2410,12 @@ export default function App() {
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
                     <span className="text-xs font-black text-white uppercase tracking-wider">Team Daily Active Hours</span>
-                    <div className="h-56 w-full">
+                    <div className="h-56 w-full relative">
+                      {!serverAnalytics?.team?.trend?.length && (
+                        <div className="absolute inset-0 flex items-center justify-center text-xs text-zinc-600 pointer-events-none">
+                          No activity data yet
+                        </div>
+                      )}
                       <SizedChart>
                         <AreaChart data={serverAnalytics?.team?.trend || []}>
                           <defs>
@@ -2413,7 +2435,12 @@ export default function App() {
                   </div>
                   <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
                     <span className="text-xs font-black text-white uppercase tracking-wider">Per-Employee Active %</span>
-                    <div className="h-56 w-full">
+                    <div className="h-56 w-full relative">
+                      {!serverAnalytics?.team?.members?.length && (
+                        <div className="absolute inset-0 flex items-center justify-center text-xs text-zinc-600 pointer-events-none">
+                          No activity data yet
+                        </div>
+                      )}
                       <SizedChart>
                         <BarChart data={(serverAnalytics?.team?.members || []).map(m => ({ name: m.name.split(' ')[0], active_pct: m.active_pct }))}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
@@ -2927,7 +2954,12 @@ export default function App() {
                     <span className="text-xl font-black text-amber-400">{selfAnalytics?.rollup?.anomalies ?? '—'}</span>
                   </div>
                 </div>
-                <div className="h-44 w-full">
+                <div className="h-44 w-full relative">
+                  {!selfAnalytics?.trend?.length && (
+                    <div className="absolute inset-0 flex items-center justify-center text-xs text-zinc-600 pointer-events-none">
+                      No activity data yet
+                    </div>
+                  )}
                   <SizedChart>
                     <AreaChart data={selfAnalytics?.trend || []}>
                       <defs>
