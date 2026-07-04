@@ -1,7 +1,93 @@
 # ChronoTrack — Final Roadmap & Pilot Readiness
 
-_Last updated: 2026-07-04 (later) — full admin/team-lead/employee web audit via
-Chrome, real telemetry root-caused, 13 confirmed bugs fixed same day._
+_Last updated: 2026-07-05 — all 2026-07-04 fixes deployed to production and
+re-verified live; chart/empty-state polish added; daemon lock hardened;
+one real open issue found (intermittent cloud-sync network failures from the
+packaged daemon)._
+
+---
+
+## 🔁 2026-07-05 — production deploy + full live re-verification
+
+Merged the 2026-07-04 fix branch to `main` (fast-forward, no conflicts) and
+pushed — Vercel deployed it live. Then re-ran the entire admin/team-lead flow
+directly against production via the Chrome extension, plus a full
+clean-uninstall/clean-install desktop cycle via computer-use, specifically
+re-checking every one of the 13 fixes plus UI/chart/button polish as asked.
+
+### Re-verified live, all confirmed working
+- UUIDs → names: project dropdowns (create + edit) and audit log all show
+  real names now (e.g. "create employee (Retest Employee Alpha)" instead of
+  a raw ID fragment).
+- Project + team-lead assignment persists correctly end-to-end — created a
+  test employee with both set, confirmed they show correctly in the table
+  and in the edit form afterward.
+- Submit-in-flight guard: button visibly shows "Adding…" and disables during
+  the request.
+- Duplicate-name guard: attempted to create a project with an existing name,
+  got a clean "A project named '...' already exists." error toast.
+- Custom confirm modal: the DPDP data-purge action now shows a proper red
+  modal requiring the word `ERASE` to be typed — no native dialog, no browser
+  freeze.
+- Status field: edit form now shows "Inactive (hasn't activated the desktop
+  agent yet)" consistent with the table badge — no more contradiction.
+- Net Profit Margin shows "No cost data yet"; Idle Bench % correctly labeled.
+- Team lead's "Provision New Employee" panel correctly shows a locked
+  explanation instead of a fillable-then-rejected form when unauthorized.
+- Desktop: clean uninstall → fresh install → daemon runs invisibly → Exit
+  Agent closes the window fully → daemon survives in the background. All
+  still hold on the newest build.
+- Cloud Sync Status panel (new this pass, see below) shows honest real state
+  instead of the old blank panel.
+
+### New polish added this pass (not bugs, but asked to review UI/UX/charts)
+- All 5 charts (dashboard trend + category, team lead trend + per-employee,
+  employee self-view) now show "No activity data yet" centered in the chart
+  area instead of a bare empty grid when there's no data.
+- "Pending Registration Keys" list (Provision Keys page) now has an explicit
+  empty state, plus a note clarifying keys are shown once only (stored
+  hashed server-side, cannot be redisplayed) — this list was already
+  session-only with no backing list endpoint; documented rather than silently
+  left confusing.
+
+### New finding + fix: daemon single-instance lock had a TOCTOU race
+Confirmed live: two `CivilMantraDaemon.exe` processes running with start
+times ~1 second apart. The old lock (read PID file → check if alive → write
+own PID) has no atomicity, so two processes launched in the same instant can
+both pass the check before either writes. Fixed by holding the PID file open
+with an OS-level exclusive lock (`msvcrt.locking` / `fcntl.flock`) for the
+daemon's whole lifetime — atomic, and released automatically even on a crash.
+
+**Correction after further testing:** re-tested after this fix and *still*
+saw two processes. Investigated the parent/child relationship directly
+(`Get-CimInstance Win32_Process`) and found the second process's
+`ParentProcessId` **is** the first process's PID — this is the standard
+PyInstaller `--onefile` bootloader+child pattern (a thin extractor process
+that stays resident, plus the real worker), not a duplicate instance at all.
+**There was no actual race-condition bug** — my initial diagnosis jumped to
+a conclusion without checking the parent/child relationship first. The lock
+code is still a reasonable defensive improvement (real OS-level exclusivity
+is strictly better than the old check-then-write), so it's staying in, but
+it is not "fixing" a bug that existed.
+
+### Real open issue found, not fixed (needs proper diagnosis, not a guess)
+**Intermittent cloud-sync failures from the packaged daemon**, confirmed
+persistent across a completely fresh build/install: `daemon.log` shows 119
+`[Cloud] Sync deferred` entries (mix of read-timeouts, `getaddrinfo failed`,
+and connection-reset errors) accumulated across testing, and the panel still
+read "No successful sync yet on this device" after 35+ seconds of waiting
+on the newest build. A direct Python request from this same machine to the
+same endpoint (`/api/ingest`) succeeded immediately and cleanly (401, meaning
+reachable and responding). This points at something specific to the
+**PyInstaller-bundled executable's networking** — most likely candidates:
+stale/missing SSL certificate bundle in the frozen build, or
+Windows Defender/firewall throttling an unsigned executable's outbound
+HTTPS. Did not attempt a speculative fix — needs actual diagnostics (e.g.
+temporarily logging the raw SSL error class/traceback, checking whether
+`certifi`'s bundle is present in the PyInstaller spec, testing with the
+installer's code-signing added). **This is the real reason telemetry isn't
+reaching the cloud for real users, not a application-layer bug** — worth
+prioritizing before pilot.
 
 ---
 
