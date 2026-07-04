@@ -180,35 +180,53 @@ def decrypt_val(val, default=""):
         return val
 
 # Single Instance Lock
+#
+# The old check (read PID file -> check if that PID is alive -> write our own
+# PID) is a classic TOCTOU race: two processes launched within the same
+# instant (e.g. Electron's spawn() and the OS autostart Run-key both firing
+# at login) can both pass the "is it alive" check before either has written
+# its own PID, so both proceed — confirmed in the wild as two
+# CivilMantraDaemon.exe processes with start times one second apart.
+#
+# Fix: hold the PID file open with an OS-level exclusive lock for the whole
+# process lifetime. The OS enforces this atomically, and releases it
+# automatically even on a hard crash (unlike the old explicit release_lock()).
+_lock_file = None
+
 def acquire_lock():
-    if os.path.exists(PID_PATH):
-        try:
-            with open(PID_PATH, "r") as f:
-                old_pid = int(f.read().strip())
-            # Check if process is still active
-            if IS_WINDOWS:
-                import ctypes
-                PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-                h_proc = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, old_pid)
-                if h_proc:
-                    ctypes.windll.kernel32.CloseHandle(h_proc)
-                    print(f"[FATAL] Another instance of Civil Mantra Telemetry Daemon is already running (PID: {old_pid}). Exiting.")
-                    sys.exit(1)
-            else:
-                os.kill(old_pid, 0)
-                print(f"[FATAL] Another instance of Civil Mantra Telemetry Daemon is already running (PID: {old_pid}). Exiting.")
+    global _lock_file
+    try:
+        _lock_file = open(PID_PATH, "a+")
+        if IS_WINDOWS:
+            import msvcrt
+            try:
+                msvcrt.locking(_lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+            except OSError:
+                print("[FATAL] Another instance of Civil Mantra Telemetry Daemon is already running. Exiting.")
                 sys.exit(1)
-        except (ProcessLookupError, ValueError, OSError):
-            # Process is dead, stale PID file
-            pass
-        except PermissionError:
-            print("[FATAL] Permission denied reading PID lock. Exiting.")
-            sys.exit(1)
-            
-    with open(PID_PATH, "w") as f:
-        f.write(str(os.getpid()))
+        else:
+            import fcntl
+            try:
+                fcntl.flock(_lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                print("[FATAL] Another instance of Civil Mantra Telemetry Daemon is already running. Exiting.")
+                sys.exit(1)
+        _lock_file.seek(0)
+        _lock_file.truncate()
+        _lock_file.write(str(os.getpid()))
+        _lock_file.flush()
+    except PermissionError:
+        print("[FATAL] Permission denied acquiring PID lock. Exiting.")
+        sys.exit(1)
 
 def release_lock():
+    global _lock_file
+    if _lock_file:
+        try:
+            _lock_file.close()
+        except Exception:
+            pass
+        _lock_file = None
     if os.path.exists(PID_PATH):
         try:
             os.remove(PID_PATH)
