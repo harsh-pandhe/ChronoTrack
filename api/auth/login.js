@@ -12,7 +12,7 @@ export default handler(async (req, res) => {
   if (!email || !password) throw new HttpError(400, 'Missing email or password');
 
   const { rows } = await query(
-    `SELECT id, company_id, name, email, password_hash, role, status
+    `SELECT id, company_id, name, email, password_hash, role, status, can_manage_employees
        FROM users WHERE lower(email) = lower($1)`,
     [email]
   );
@@ -32,6 +32,7 @@ export default handler(async (req, res) => {
       email: user.email,
       role: user.role,
       company_id: user.company_id,
+      can_manage_employees: !!user.can_manage_employees,
     },
   });
 });

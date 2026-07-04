@@ -175,7 +175,12 @@ export default handler(async (req, res) => {
     ]);
     const totalRevenue = projects.reduce((s, p) => s + p.revenue, 0);
     const totalCost = projects.reduce((s, p) => s + p.cost, 0);
-    const margin = totalRevenue > 0 ? Math.round((100 * (totalRevenue - totalCost)) / totalRevenue) : 0;
+    // null (not 0 or 100) when no hours have been logged yet — (revenue-0)/revenue
+    // is trivially 100% and would misleadingly read as "verified 100% margin"
+    // before any real cost data exists.
+    const margin = totalCost > 0 && totalRevenue > 0
+      ? Math.round((100 * (totalRevenue - totalCost)) / totalRevenue)
+      : null;
     const t = tele[0];
     const activePct = t.samples > 0 ? Math.round((100 * t.active_samples) / t.samples) : 0;
     const [trend, catRows] = await Promise.all([

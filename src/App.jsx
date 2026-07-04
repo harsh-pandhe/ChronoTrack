@@ -94,6 +94,7 @@ export default function App() {
   const [newProjName, setNewProjName] = useState('');
   const [newProjBudget, setNewProjBudget] = useState('50000000');
   const [newProjMargin, setNewProjMargin] = useState('35');
+  const [savingTLProject, setSavingTLProject] = useState(false);
 
   // Employee Validation Ping Prompt States
   const [verificationTaskDescription, setVerificationTaskDescription] = useState('');
@@ -169,17 +170,23 @@ export default function App() {
     } catch (err) { showToast(err.message || 'Failed.', 'error'); }
   };
 
-  const editLeadName = async (lead) => {
-    const n = window.prompt('Team lead name', lead.name);
-    if (!n || n.trim() === lead.name) return;
-    try { await api.users.update(lead.id, { name: n.trim() }); await loadServerData(); showToast('Updated.', 'success'); }
-    catch (err) { showToast(err.message || 'Failed.', 'error'); }
+  const editLeadName = (lead) => {
+    askText('Team lead name', lead.name, async (n) => {
+      if (!n || n.trim() === lead.name) return;
+      try { await api.users.update(lead.id, { name: n.trim() }); await loadServerData(); showToast('Updated.', 'success'); }
+      catch (err) { showToast(err.message || 'Failed.', 'error'); }
+    });
   };
 
-  const disableUser = async (id, name) => {
-    if (!window.confirm(`Permanently delete ${name} and all their data? This cannot be undone.`)) return;
-    try { await api.users.remove(id); await loadServerData(); showToast(`${name} deleted.`, 'info'); }
-    catch (err) { showToast(err.message || 'Delete failed.', 'error'); }
+  const disableUser = (id, name) => {
+    askConfirm(
+      `Permanently delete ${name} and all their data? This cannot be undone.`,
+      async () => {
+        try { await api.users.remove(id); await loadServerData(); showToast(`${name} deleted.`, 'info'); }
+        catch (err) { showToast(err.message || 'Delete failed.', 'error'); }
+      },
+      { title: 'Delete team lead', danger: true, confirmLabel: 'Delete permanently' }
+    );
   };
 
   // DPDP: export a user's data as JSON.
@@ -196,22 +203,33 @@ export default function App() {
   };
 
   // DPDP: erase a user's telemetry + time entries (right to erasure).
-  const purgeUserData = async (u) => {
-    if (!window.confirm(`Erase ALL telemetry + time entries for ${u.name}? Cannot be undone.`)) return;
-    try {
-      const r = await api.dataRights.purge(u.id);
-      await loadServerData();
-      showToast(`Erased ${r.telemetry_deleted} telemetry + ${r.time_entries_deleted} entries.`, 'info');
-    } catch (err) { showToast(err.message || 'Purge failed.', 'error'); }
+  // This is the single most destructive action an admin can take from this
+  // screen — it permanently deletes real activity history. Requires typing
+  // ERASE to confirm, not just a click, since a mis-click here is unrecoverable.
+  const purgeUserData = (u) => {
+    askConfirm(
+      `This will permanently erase ALL telemetry and time-entry history for ${u.name}. This cannot be undone and there is no backup.`,
+      async () => {
+        try {
+          const r = await api.dataRights.purge(u.id);
+          await loadServerData();
+          showToast(`Erased ${r.telemetry_deleted} telemetry + ${r.time_entries_deleted} entries.`, 'info');
+        } catch (err) { showToast(err.message || 'Purge failed.', 'error'); }
+      },
+      { title: 'Erase all activity data (DPDP right to erasure)', danger: true, confirmLabel: 'Erase permanently', requireTypedWord: 'ERASE' }
+    );
   };
 
   // Create project (admin or lead).
   const [showAddProject, setShowAddProject] = useState(false);
   const [projForm, setProjForm] = useState({ name: '', client: '', billed_revenue: '' });
 
+  const [savingProject, setSavingProject] = useState(false);
   const handleAddProject = async (e) => {
     if (e) e.preventDefault();
+    if (savingProject) return; // guard against double-submit (rapid double-click) creating duplicates
     if (!projForm.name) { showToast('Project name required.', 'error'); return; }
+    setSavingProject(true);
     try {
       await api.projects.create({
         name: projForm.name, client: projForm.client,
@@ -221,6 +239,7 @@ export default function App() {
       setShowAddProject(false); setProjForm({ name: '', client: '', billed_revenue: '' });
       showToast(`Project "${projForm.name}" created.`, 'success');
     } catch (err) { showToast(err.message || 'Failed to create project.', 'error'); }
+    finally { setSavingProject(false); }
   };
 
   // Core data lists — empty until loaded from the API (no hardcoded demo data).
@@ -229,7 +248,27 @@ export default function App() {
   const [teamLeads, setTeamLeads] = useState([]);
   const [logs, setLogs] = useState({});
   const [auditLogs, setAuditLogs] = useState([]);
-  const [syncLogs, setSyncLogs] = useState([]);
+  // Custom confirm modal — replaces window.confirm() everywhere. Native browser
+  // dialogs are unstyled, block the whole tab (including automated testing),
+  // and give no way to signal "this one is more dangerous than that one."
+  const [confirmModal, setConfirmModal] = useState(null);
+  const [confirmTypedInput, setConfirmTypedInput] = useState('');
+  const askConfirm = (message, onConfirm, opts = {}) => {
+    setConfirmTypedInput('');
+    setConfirmModal({
+      message, onConfirm,
+      title: opts.title || 'Please confirm',
+      danger: !!opts.danger,
+      confirmLabel: opts.confirmLabel || 'Confirm',
+      requireTypedWord: opts.requireTypedWord || null, // e.g. "DELETE" for the most destructive actions
+    });
+  };
+
+  // Custom rename/text-prompt modal — replaces window.prompt().
+  const [renameModal, setRenameModal] = useState(null);
+  const askText = (label, initialValue, onConfirm) => {
+    setRenameModal({ label, value: initialValue, onConfirm });
+  };
 
   // Toast & Notifications State
   const [toast, setToast] = useState(null);
@@ -364,6 +403,10 @@ export default function App() {
   const [telemetryTicker, setTelemetryTicker] = useState([
     { time: '', event: 'Waiting for local daemon on port 5050…' }
   ]);
+  // Real cloud-sync status from the daemon's /api/status — never simulated.
+  const [cloudSyncStatus, setCloudSyncStatus] = useState({
+    checked: false, lastSuccessAt: null, lastError: null, pendingSync: null,
+  });
 
   // Desktop App states
   const [desktopActivated, setDesktopActivated] = useState(() => {
@@ -402,6 +445,14 @@ export default function App() {
             if (sj.cloud && sj.cloud.activated && isMounted) {
               setDesktopActivated(true);
               localStorage.setItem('civil_desktop_activated', 'true');
+            }
+            if (isMounted) {
+              setCloudSyncStatus({
+                checked: true,
+                lastSuccessAt: sj.cloud?.last_success_at || null,
+                lastError: sj.cloud?.last_error || null,
+                pendingSync: typeof sj.pending_sync === 'number' ? sj.pending_sync : null,
+              });
             }
           }
         } catch { /* ignore */ }
@@ -444,6 +495,10 @@ export default function App() {
             status: 'offline',
             activeWindow: 'Daemon offline',
           }));
+          setCloudSyncStatus({
+            checked: true, lastSuccessAt: null, pendingSync: null,
+            lastError: 'Cannot reach the local desktop daemon.',
+          });
         }
       }
     };
@@ -542,28 +597,23 @@ export default function App() {
     return () => clearInterval(timer);
   }, [localDaemonState.online]);
 
-  // Cloud Sync Simulation Loop — demo-only (real sync happens in the daemon).
-  useEffect(() => {
-    if (import.meta.env.VITE_DEMO_MODE !== 'true') return;
-    if (!localDaemonState.online) return;
-    const interval = setInterval(() => {
-      const now = new Date();
-      const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      const batchNum = 'CM-' + Math.floor(Math.random() * 9000 + 1000);
-      const recs = Math.floor(Math.random() * 15 + 1);
-      
-      setSyncLogs(prev => [
-        { id: Date.now(), time: timeStr, status: 'Success', batch: batchNum, records: recs },
-        ...prev.slice(0, 4)
-      ]);
-      showToast(`Batch sync complete: Pushed ${recs} records to Cloud.`, 'success');
-      logAudit('Sync Engine', `Database synchronization completed: Batch ${batchNum} pushed to Cloud.`);
-    }, 15000);
-    return () => clearInterval(interval);
-  }, [localDaemonState.online]);
-
   // Map backend role (admin|lead|employee) to UI route (admin|tl|employee).
   const roleToRoute = (role) => (role === 'lead' ? 'tl' : role);
+
+  // Audit log targets are stored as raw IDs (user/project) or plain strings
+  // (rule keywords, counts). Resolve IDs to a human-readable name instead of
+  // showing a bare UUID fragment — fall back to a short ID only if nothing
+  // matches (e.g. the record was since deleted).
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const resolveAuditTarget = (target) => {
+    const str = String(target);
+    if (!UUID_RE.test(str)) return str;
+    const person = employees.find(e => e.id === str) || teamLeads.find(t => t.id === str);
+    if (person) return person.name;
+    const project = projects.find(p => p.id === str);
+    if (project) return project.name;
+    return `${str.slice(0, 8)}… (deleted)`;
+  };
 
   // Authentication Submission — real backend, email + password, no fallback.
   const handleLoginSubmit = async (e) => {
@@ -692,6 +742,8 @@ export default function App() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
   const [selectedEmp, setSelectedEmp] = useState(null);
+  const [savingEmployee, setSavingEmployee] = useState(false);
+  const [savingEmployeeEdit, setSavingEmployeeEdit] = useState(false);
   const [empForm, setEmpForm] = useState({
     userType: 'employee', // 'employee' | 'lead'
     name: '',
@@ -708,6 +760,7 @@ export default function App() {
 
   const handleAddEmployee = async (e) => {
     e.preventDefault();
+    if (savingEmployee) return; // guard against double-submit creating duplicates
     const isLead = empForm.userType === 'lead';
     if (!empForm.name) { showToast('Please enter a name.', 'error'); return; }
     if (!isLead && !empForm.role) { showToast('Please enter a designation.', 'error'); return; }
@@ -717,6 +770,7 @@ export default function App() {
     const email =
       empForm.email ||
       `${empForm.name.toLowerCase().replace(/[^a-z0-9]+/g, '.')}@civilmantra.com`;
+    setSavingEmployee(true);
     try {
       if (isLead) {
         await api.users.create({
@@ -745,23 +799,29 @@ export default function App() {
       showToast(`Added ${empForm.name} (${isLead ? 'Team Lead' : 'Employee'}).`, 'success');
     } catch (err) {
       showToast(err.message || 'Failed to create user.', 'error');
+    } finally {
+      setSavingEmployee(false);
     }
   };
 
   const handleEditEmployee = async (e) => {
     e.preventDefault();
+    if (savingEmployeeEdit) return; // guard against double-submit
     if (!empForm.name || !empForm.role) {
       showToast('Please fill in name and role.', 'error');
       return;
     }
+    setSavingEmployeeEdit(true);
     try {
       await api.users.update(selectedEmp.id, {
         name: empForm.name,
         title: empForm.role,
         dept: empForm.dept,
+        team_lead_id: empForm.teamLeadId || null,
+        active_project_id: empForm.activeProject || null,
         base_salary: Number(empForm.baseSalary) || 0,
         benefits: Number(empForm.benefits) || 0,
-        status: empForm.status === 'Active' ? 'active' : 'disabled',
+        status: empForm.status === 'Active' ? 'active' : empForm.status === 'Inactive' ? 'invited' : 'disabled',
       });
       await loadServerData();
       setShowEditForm(false);
@@ -770,20 +830,27 @@ export default function App() {
       showToast('Employee account updated successfully.', 'success');
     } catch (err) {
       showToast(err.message || 'Update failed.', 'error');
+    } finally {
+      setSavingEmployeeEdit(false);
     }
   };
 
-  const handleDeleteEmployee = async (id) => {
+  const handleDeleteEmployee = (id) => {
     const target = employees.find((e) => e.id === id);
-    if (!window.confirm(`Permanently delete ${target?.name || 'this employee'} and all their data? This cannot be undone.`)) return;
-    try {
-      await api.users.remove(id);
-      await loadServerData();
-      logAudit('Admin', `Deleted employee ${target?.name}`);
-      showToast('Employee deleted.', 'info');
-    } catch (err) {
-      showToast(err.message || 'Delete failed.', 'error');
-    }
+    askConfirm(
+      `Permanently delete ${target?.name || 'this employee'} and all their data? This cannot be undone.`,
+      async () => {
+        try {
+          await api.users.remove(id);
+          await loadServerData();
+          logAudit('Admin', `Deleted employee ${target?.name}`);
+          showToast('Employee deleted.', 'info');
+        } catch (err) {
+          showToast(err.message || 'Delete failed.', 'error');
+        }
+      },
+      { title: 'Delete employee', danger: true, confirmLabel: 'Delete permanently' }
+    );
   };
 
   const openEditForm = (emp) => {
@@ -981,10 +1048,15 @@ export default function App() {
             </button>
             {activeProj && (
               <button
-                onClick={async () => {
-                  if (!window.confirm(`Archive project "${activeProj.name}"?`)) return;
-                  try { await api.projects.archive(activeProj.id); await loadServerData(); showToast('Project archived.', 'info'); }
-                  catch (err) { showToast(err.message || 'Failed.', 'error'); }
+                onClick={() => {
+                  askConfirm(
+                    `Archive project "${activeProj.name}"? It will no longer accept new logged hours.`,
+                    async () => {
+                      try { await api.projects.archive(activeProj.id); await loadServerData(); showToast('Project archived.', 'info'); }
+                      catch (err) { showToast(err.message || 'Failed.', 'error'); }
+                    },
+                    { title: 'Archive project', danger: true, confirmLabel: 'Archive' }
+                  );
                 }}
                 title="Archive project"
                 className="px-3 py-2 bg-zinc-900 border border-red-500/20 text-red-400 hover:bg-red-500/10 rounded-xl transition-all"
@@ -1006,7 +1078,7 @@ export default function App() {
               <input value={projForm.client} onChange={(e) => setProjForm({ ...projForm, client: e.target.value })} placeholder="Client (optional)" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-white outline-none" />
               <input type="number" value={projForm.billed_revenue} onChange={(e) => setProjForm({ ...projForm, billed_revenue: e.target.value })} placeholder="Contract value (Rs.)" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-white outline-none" />
             </div>
-            <button type="submit" className="px-5 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground font-black text-xs uppercase tracking-widest rounded-xl">Create Project</button>
+            <button type="submit" disabled={savingProject} className="px-5 py-2.5 bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-primary-foreground font-black text-xs uppercase tracking-widest rounded-xl">{savingProject ? 'Creating…' : 'Create Project'}</button>
           </form>
         )}
 
@@ -1101,6 +1173,87 @@ export default function App() {
         </div>
       )}
 
+      {/* CONFIRM MODAL — replaces window.confirm() */}
+      {confirmModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className={`w-full max-w-md rounded-3xl border p-6 space-y-4 shadow-2xl bg-card ${confirmModal.danger ? 'border-red-500/30' : 'border-border'}`}>
+            <div className="flex items-center space-x-2">
+              {confirmModal.danger && <AlertTriangle className="w-5 h-5 text-red-400 shrink-0" />}
+              <h3 className={`text-sm font-black uppercase tracking-wider ${confirmModal.danger ? 'text-red-400' : 'text-white'}`}>{confirmModal.title}</h3>
+            </div>
+            <p className="text-xs text-zinc-300 leading-relaxed">{confirmModal.message}</p>
+            {confirmModal.requireTypedWord && (
+              <div className="space-y-1">
+                <label className="text-[9px] uppercase font-black text-zinc-500">Type {confirmModal.requireTypedWord} to confirm</label>
+                <input
+                  autoFocus
+                  value={confirmTypedInput}
+                  onChange={(e) => setConfirmTypedInput(e.target.value)}
+                  className="w-full bg-background border border-red-500/30 rounded-xl px-3 py-2 text-xs text-white outline-none"
+                  placeholder={confirmModal.requireTypedWord}
+                />
+              </div>
+            )}
+            <div className="flex justify-end space-x-3 pt-2">
+              <button
+                onClick={() => { setConfirmModal(null); setConfirmTypedInput(''); }}
+                className="px-4 py-2 rounded-xl border border-border text-xs font-black uppercase tracking-wider text-zinc-400 hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={confirmModal.requireTypedWord && confirmTypedInput !== confirmModal.requireTypedWord}
+                onClick={async () => {
+                  const fn = confirmModal.onConfirm;
+                  setConfirmModal(null);
+                  setConfirmTypedInput('');
+                  await fn();
+                }}
+                className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                  confirmModal.danger ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-primary hover:bg-primary/90 text-primary-foreground'
+                }`}
+              >
+                {confirmModal.confirmLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* RENAME / TEXT-PROMPT MODAL — replaces window.prompt() */}
+      {renameModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm rounded-3xl border border-border p-6 space-y-4 shadow-2xl bg-card">
+            <h3 className="text-sm font-black uppercase tracking-wider text-white">{renameModal.label}</h3>
+            <input
+              autoFocus
+              value={renameModal.value}
+              onChange={(e) => setRenameModal({ ...renameModal, value: e.target.value })}
+              className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-white outline-none"
+            />
+            <div className="flex justify-end space-x-3 pt-2">
+              <button
+                onClick={() => setRenameModal(null)}
+                className="px-4 py-2 rounded-xl border border-border text-xs font-black uppercase tracking-wider text-zinc-400 hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  const fn = renameModal.onConfirm;
+                  const val = renameModal.value;
+                  setRenameModal(null);
+                  await fn(val);
+                }}
+                className="px-4 py-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black uppercase tracking-wider transition-colors"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* PROFILE / CHANGE PASSWORD MODAL */}
       {showProfile && (() => {
         const u = api.getUser() || {};
@@ -1181,7 +1334,7 @@ export default function App() {
               <span className="bg-gradient-to-r from-primary via-indigo-400 to-blue-500 bg-clip-text text-transparent">High-Trust Teams</span>
             </h1>
             <p className="text-zinc-400 text-sm md:text-base max-w-2xl leading-relaxed">
-              Verify resource utilization, map project costs, and prevent profitability leaks with transparent desktop analytics. No keystrokes, no screen buffers, complete privacy.
+              Verify resource utilization, map project costs, and prevent profitability leaks with transparent desktop analytics. No keystroke content or screen content is ever recorded — only activity counts and window titles, with full employee consent.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
               <button 
@@ -1546,8 +1699,12 @@ export default function App() {
                   <div className="p-6 rounded-3xl bg-card border border-border space-y-3 hover:border-zinc-800 transition-all">
                     <span className="text-[10px] uppercase font-black tracking-widest text-zinc-500 block">Net Profit Margin</span>
                     <div className="flex items-baseline space-x-1.5">
-                      <span className="text-2xl font-black text-white">{serverAnalytics?.overview ? `${serverAnalytics.overview.portfolio.margin_pct}%` : '—'}</span>
-                      <span className="text-[10px] text-emerald-400 font-bold">real</span>
+                      <span className="text-2xl font-black text-white">
+                        {serverAnalytics?.overview
+                          ? (serverAnalytics.overview.portfolio.margin_pct == null ? 'No cost data yet' : `${serverAnalytics.overview.portfolio.margin_pct}%`)
+                          : '—'}
+                      </span>
+                      {serverAnalytics?.overview?.portfolio.margin_pct != null && <span className="text-[10px] text-emerald-400 font-bold">real</span>}
                     </div>
                     <div className="w-full bg-zinc-900 h-1 rounded-full overflow-hidden">
                       <div className="bg-emerald-500 h-full w-[85%]"></div>
@@ -1555,7 +1712,7 @@ export default function App() {
                   </div>
 
                   <div className="p-6 rounded-3xl bg-card border border-border space-y-3 hover:border-zinc-800 transition-all">
-                    <span className="text-[10px] uppercase font-black tracking-widest text-zinc-500 block">Idle Bench Latency</span>
+                    <span className="text-[10px] uppercase font-black tracking-widest text-zinc-500 block">Idle Bench %</span>
                     <div className="flex items-baseline space-x-1.5">
                       <span className="text-2xl font-black text-white">{serverAnalytics?.overview ? `${serverAnalytics.overview.portfolio.bench_pct}%` : '—'}</span>
                       <span className="text-[10px] text-emerald-400 font-bold">{serverAnalytics?.overview ? `${serverAnalytics.overview.telemetry.active_hours}h active` : ''}</span>
@@ -1760,6 +1917,7 @@ export default function App() {
                           onChange={(e) => setEmpForm({...empForm, teamLeadId: e.target.value})} 
                           className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-white outline-none"
                         >
+                          <option value="">Select team lead…</option>
                           {teamLeads.map(tl => (
                             <option key={tl.id} value={tl.id}>{tl.name} ({tl.dept})</option>
                           ))}
@@ -1772,8 +1930,9 @@ export default function App() {
                           onChange={(e) => setEmpForm({...empForm, activeProject: e.target.value})} 
                           className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-white outline-none"
                         >
+                          <option value="">No project assigned</option>
                           {projects.map(p => (
-                            <option key={p.id} value={p.id}>{p.id}</option>
+                            <option key={p.id} value={p.id}>{p.name}</option>
                           ))}
                         </select>
                       </div>
@@ -1787,8 +1946,8 @@ export default function App() {
                         />
                       </div>
                     </div>
-                    <button type="submit" className="px-5 py-2.5 bg-primary text-primary-foreground font-black text-xs uppercase tracking-widest rounded-xl transition-all">
-                      Add to Registry
+                    <button type="submit" disabled={savingEmployee} className="px-5 py-2.5 bg-primary text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed font-black text-xs uppercase tracking-widest rounded-xl transition-all">
+                      {savingEmployee ? 'Adding…' : 'Add to Registry'}
                     </button>
                   </form>
                 )}
@@ -1843,6 +2002,7 @@ export default function App() {
                           onChange={(e) => setEmpForm({...empForm, teamLeadId: e.target.value})} 
                           className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-white outline-none"
                         >
+                          <option value="">Select team lead…</option>
                           {teamLeads.map(tl => (
                             <option key={tl.id} value={tl.id}>{tl.name}</option>
                           ))}
@@ -1855,21 +2015,22 @@ export default function App() {
                           onChange={(e) => setEmpForm({...empForm, activeProject: e.target.value})} 
                           className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-white outline-none"
                         >
+                          <option value="">No project assigned</option>
                           {projects.map(p => (
-                            <option key={p.id} value={p.id}>{p.id}</option>
+                            <option key={p.id} value={p.id}>{p.name}</option>
                           ))}
                         </select>
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[9px] uppercase font-black text-zinc-450 tracking-wider">Status</label>
-                        <select 
-                          value={empForm.status} 
-                          onChange={(e) => setEmpForm({...empForm, status: e.target.value})} 
+                        <label className="text-[9px] uppercase font-black text-zinc-450 tracking-wider">Account Status</label>
+                        <select
+                          value={empForm.status}
+                          onChange={(e) => setEmpForm({...empForm, status: e.target.value})}
                           className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-white outline-none"
                         >
                           <option value="Active">Active</option>
-                          <option value="On Leave">On Leave</option>
-                          <option value="Archived">Archived</option>
+                          <option value="Inactive">Inactive (hasn't activated the desktop agent yet)</option>
+                          <option value="Archived">Disabled</option>
                         </select>
                       </div>
                     </div>
@@ -1929,13 +2090,14 @@ export default function App() {
                         ))}
                         {employees.filter(e => { const q = dirSearch.trim().toLowerCase(); return !q || `${e.name} ${e.email || ''} ${e.dept || ''} ${e.role || ''}`.toLowerCase().includes(q); }).map(emp => {
                           const tl = teamLeads.find(l => l.id === emp.teamLeadId);
+                          const proj = projects.find(p => p.id === emp.activeProject);
                           return (
                             <tr key={emp.id} className="hover:bg-zinc-900/30 transition-colors">
-                              <td className="p-4 font-mono font-bold text-zinc-550">{emp.id}</td>
+                              <td className="p-4 font-mono font-bold text-zinc-550">{emp.id.slice(0, 8)}</td>
                               <td className="p-4 font-extrabold text-white">{emp.name}</td>
                               <td className="p-4 text-zinc-400">{emp.role}</td>
-                              <td className="p-4">{tl ? tl.name : emp.teamLeadId}</td>
-                              <td className="p-4 font-semibold">{emp.activeProject}</td>
+                              <td className="p-4">{tl ? tl.name : '—'}</td>
+                              <td className="p-4 font-semibold">{proj ? proj.name : '—'}</td>
                               <td className="p-4">
                                 <span className={`inline-flex px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
                                   emp.status === 'Active' 
@@ -2156,7 +2318,7 @@ export default function App() {
                     {serverAuditLogs.length === 0 && <span className="text-zinc-600">No audit events yet.</span>}
                     {serverAuditLogs.map(log => (
                       <div key={log.id} className="flex justify-between border-b border-zinc-900/50 pb-2 last:border-0 last:pb-0 gap-3">
-                        <span>[{new Date(log.ts).toLocaleString()}] <strong className="text-zinc-300">{log.actor_name || 'system'}:</strong> {log.action}{log.target ? ` (${String(log.target).slice(0,12)})` : ''}</span>
+                        <span>[{new Date(log.ts).toLocaleString()}] <strong className="text-zinc-300">{log.actor_name || 'system'}:</strong> {log.action}{log.target ? ` (${resolveAuditTarget(log.target)})` : ''}</span>
                         <span className="text-zinc-700 shrink-0">{log.ip || ''}</span>
                       </div>
                     ))}
@@ -2354,9 +2516,17 @@ export default function App() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Register Employee Form */}
+                  {/* Register Employee Form — only shown if this lead actually has
+                      authority to add employees; otherwise they'd fill out the whole
+                      form only to be rejected by the server at submit time. */}
                   <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
                     <span className="text-[10px] font-black uppercase text-zinc-450 block">Provision New Employee Account</span>
+                    {!api.getUser()?.can_manage_employees ? (
+                      <div className="p-4 rounded-2xl bg-zinc-900/50 border border-border/60 text-xs text-zinc-400 flex items-start gap-3">
+                        <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                        <span>You don't have permission to add employees yet. Ask your admin to grant "Can Manage" authority for your account.</span>
+                      </div>
+                    ) : (
                     <form onSubmit={async (e) => {
                       e.preventDefault();
                       if (!newEmpName || !newEmpEmail) {
@@ -2458,6 +2628,7 @@ export default function App() {
                         Generate ID & Activate Key
                       </button>
                     </form>
+                    )}
                   </div>
 
                   {/* Create Project Form */}
@@ -2465,10 +2636,12 @@ export default function App() {
                     <span className="text-[10px] font-black uppercase text-zinc-550 block">Register Project Contract</span>
                     <form onSubmit={async (e) => {
                       e.preventDefault();
+                      if (savingTLProject) return; // guard against double-submit creating duplicates
                       if (!newProjName) {
                         showToast('Enter project name.', 'error');
                         return;
                       }
+                      setSavingTLProject(true);
                       try {
                         await api.projects.create({
                           name: newProjName,
@@ -2481,6 +2654,8 @@ export default function App() {
                         setNewProjName('');
                       } catch (err) {
                         showToast(err.message || 'Failed to create project.', 'error');
+                      } finally {
+                        setSavingTLProject(false);
                       }
                     }} className="space-y-3">
                       <div className="space-y-1">
@@ -2514,8 +2689,8 @@ export default function App() {
                           className="w-full bg-background border border-border rounded-xl px-4 py-2 text-xs text-white outline-none"
                         />
                       </div>
-                      <button type="submit" className="w-full py-3 bg-zinc-900 border border-border text-white hover:bg-zinc-800 font-black text-xs uppercase tracking-widest rounded-xl transition-all">
-                        Register Contract
+                      <button type="submit" disabled={savingTLProject} className="w-full py-3 bg-zinc-900 border border-border text-white hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed font-black text-xs uppercase tracking-widest rounded-xl transition-all">
+                        {savingTLProject ? 'Registering…' : 'Register Contract'}
                       </button>
                     </form>
                   </div>
@@ -2921,26 +3096,43 @@ export default function App() {
                     </div>
                   )}
 
-                  {/* Right Cloud Database Sync Log status */}
+                  {/* Right Cloud Database Sync Log status — real, from the daemon's /api/status, never simulated */}
                   <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
                     <span className="text-xs font-black text-white uppercase tracking-wider flex items-center space-x-2">
                       <Server className="w-4 h-4 text-indigo-400" />
-                      <span>PostgreSQL Cloud Sync</span>
+                      <span>Cloud Sync Status</span>
                     </span>
 
-                    <div className="space-y-3 font-mono text-[9px] text-zinc-400">
-                      {syncLogs.map(l => (
-                        <div key={l.id} className="p-3 bg-zinc-900/50 border border-border/40 rounded-xl space-y-1">
-                          <div className="flex justify-between font-bold">
-                            <span className="text-white">{l.batch}</span>
-                            <span className="text-emerald-400">{l.status}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>{l.time}</span>
-                            <span>Pushed {l.records} events</span>
-                          </div>
+                    <div className="space-y-3">
+                      {!cloudSyncStatus.checked ? (
+                        <div className="p-3 bg-zinc-900/50 border border-border/40 rounded-xl text-[10px] text-zinc-400">
+                          Checking connection to the cloud database…
                         </div>
-                      ))}
+                      ) : cloudSyncStatus.lastError ? (
+                        <div className="p-3 bg-red-950/30 border border-red-900/50 rounded-xl space-y-1">
+                          <div className="flex justify-between font-bold text-[10px]">
+                            <span className="text-red-400">Not syncing</span>
+                          </div>
+                          <p className="text-[10px] text-red-300/80">{cloudSyncStatus.lastError}</p>
+                          {cloudSyncStatus.pendingSync != null && cloudSyncStatus.pendingSync > 0 && (
+                            <p className="text-[9px] text-zinc-500">{cloudSyncStatus.pendingSync} record(s) waiting to upload — kept safely on this device, not lost.</p>
+                          )}
+                        </div>
+                      ) : cloudSyncStatus.lastSuccessAt ? (
+                        <div className="p-3 bg-emerald-950/20 border border-emerald-900/40 rounded-xl space-y-1">
+                          <div className="flex justify-between font-bold text-[10px]">
+                            <span className="text-emerald-400">Synced</span>
+                            <span className="text-zinc-400">{new Date(cloudSyncStatus.lastSuccessAt * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                          </div>
+                          <p className="text-[10px] text-zinc-400">
+                            {cloudSyncStatus.pendingSync ? `${cloudSyncStatus.pendingSync} record(s) queued for the next sync.` : 'All recorded activity is up to date in the cloud.'}
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="p-3 bg-zinc-900/50 border border-border/40 rounded-xl text-[10px] text-zinc-400">
+                          No successful sync yet on this device.
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

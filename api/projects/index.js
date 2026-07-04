@@ -53,14 +53,23 @@ export default handler(async (req, res) => {
       throw new HttpError(403, 'Only admin or lead can create projects');
     const b = await readBody(req);
     if (!b.name) throw new HttpError(400, 'Missing project name');
+    const name = String(b.name).trim();
     const leadId = actor.role === 'lead' ? actor.id : b.team_lead_id || null;
+
+    // Guard against accidental duplicates (e.g. a double-click on Create) —
+    // same name already exists for this company.
+    const { rows: [dupe] } = await query(
+      `SELECT id FROM projects WHERE company_id = $1 AND lower(name) = lower($2) LIMIT 1`,
+      [actor.company_id, name]
+    );
+    if (dupe) throw new HttpError(409, `A project named "${name}" already exists.`);
 
     const { rows: [project] } = await query(
       `INSERT INTO projects (company_id, name, code, team_lead_id, client, budget, billed_revenue, status, start_date, end_date)
        VALUES ($1,$2,$3,$4,$5,$6,$7,COALESCE($8,'active'),$9,$10)
        RETURNING *`,
       [
-        actor.company_id, b.name, b.code || null, leadId, b.client || null,
+        actor.company_id, name, b.code || null, leadId, b.client || null,
         b.budget || 0, b.billed_revenue || 0, b.status || null, b.start_date || null, b.end_date || null,
       ]
     );

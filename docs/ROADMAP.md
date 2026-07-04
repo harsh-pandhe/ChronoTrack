@@ -1,7 +1,161 @@
 # ChronoTrack — Final Roadmap & Pilot Readiness
 
-_Last updated: 2026-07-03 (evening) — real-hardware Windows test + fixes, plan
-for an industry-grade v1.0 (rebrand pending user input, see bottom)._
+_Last updated: 2026-07-04 (later) — full admin/team-lead/employee web audit via
+Chrome, real telemetry root-caused, 13 confirmed bugs fixed same day._
+
+---
+
+## 🔧 2026-07-04 (later) — full web audit + same-day fixes
+
+Drove the live web app end-to-end via the Chrome extension as admin, then as
+a freshly-created team lead: user/employee/project creation, authority
+toggles, all analytics pages, the real desktop daemon's telemetry pipeline,
+landing/login pages, and network/console health (47 API calls, zero errors).
+Full findings and fixes below — everything found was fixed the same session.
+
+### Fixed
+1. **Silent data-loss bug** (`telemetry_daemon.py:251`) — `prune_db()` deleted
+   the oldest local rows once the buffer passed 5,000 entries regardless of
+   whether they'd synced to the cloud yet. Now only ever prunes rows already
+   confirmed `synced=1`; unsynced rows are kept until they actually sync, and
+   a warning is logged if the unsynced backlog itself exceeds the cap.
+2. **Cloud sync status was never surfaced** — the "Cloud Sync" panel only
+   ever populated from a demo-mode fake simulator (`VITE_DEMO_MODE`); in
+   production it silently showed nothing, success or failure. Daemon now
+   tracks `last_attempt_at` / `last_success_at` / `last_error` and exposes
+   them on `/api/status`; the Electron UI polls this and shows real
+   synced/error/pending state. The fake simulator effect was removed
+   entirely (it also conflicted with "no hardcoded data" going forward).
+3. **Raw UUIDs shown instead of names** — Admin's Active Project dropdown
+   (create + edit employee) rendered `{p.id}` instead of `{p.name}`; same
+   pattern in the Immutable Audit log (`target.slice(0,12)`). Fixed the
+   dropdowns and added `resolveAuditTarget()` to resolve audit IDs to real
+   employee/lead/project names, falling back to a short ID only if the
+   record was since deleted.
+4. **Project-assignment silently failing** — root cause was two missing
+   `<option value="">…</option>` defaults on controlled `<select>`s (Active
+   Project, Assign Team Lead): with no matching option, the browser visually
+   shows the first real option as "selected" while React state stays empty,
+   so the form submitted `null` even though a project looked chosen. Fixed
+   all four affected dropdowns. Also found `handleEditEmployee`'s PATCH call
+   never sent `active_project_id` or `team_lead_id` at all — added both.
+5. **Double-submit created duplicate projects** — reproduced live (one rapid
+   double-click created two identical projects). Added a `saving` guard +
+   disabled button state to all four create/edit forms (project ×2 flows,
+   employee create, employee edit).
+6. **No duplicate-name guard** — two prod projects were already named "CRM"
+   with no distinguishing info. Added a server-side case-insensitive
+   duplicate check on project creation (409 with a clear message). A DB-level
+   unique constraint is deferred until the existing duplicate "CRM" projects
+   are manually resolved (a migration would fail against that live data).
+7. **Native `window.confirm()`/`window.prompt()` dialogs** — used for delete,
+   archive, rename, and the data-purge action; unstyled, blocked the whole
+   tab (froze automated testing twice), no way to signal severity. Replaced
+   with custom modal components (`askConfirm`/`askText`) across all 5 call
+   sites.
+8. **Destructive data-purge action was too easy to trigger** — an unlabeled
+   warning-triangle icon + generic native confirm could permanently erase an
+   employee's telemetry history in two clicks with no severity cue (this
+   happened once by accident during testing). Now requires typing `ERASE`
+   in a clearly red, explicitly-worded modal before it proceeds.
+9. **Ambiguous "Status" field** — turned out to be one bug, not two concepts:
+   the edit-employee Status dropdown had no option matching `'invited'`
+   employees, so the same missing-default-option bug as #4 made it visually
+   show "Active" while the table correctly showed "Inactive". Added an
+   explicit Inactive option, fixed the save mapping to round-trip
+   active/invited/disabled correctly, and relabeled it "Account Status".
+10. **Net Profit Margin showing 100% with Rs 0 cost** — `(revenue-0)/revenue`
+    is mathematically valid but reads as "verified 100% margin" before any
+    real hours are logged. `margin_pct` now returns `null` until real cost
+    data exists; the UI shows "No cost data yet" instead of a number.
+11. **Mislabeled "Idle Bench Latency"** — not a latency measurement. Renamed
+    to "Idle Bench %".
+12. **Landing page privacy copy** — "No keystrokes… complete privacy" could
+    read as "keystrokes aren't tracked at all," when the product actually
+    logs keystroke *counts* (never content). Reworded for precision given
+    the DPDP consent stakes.
+13. **Team lead employee form didn't hide for unauthorized leads** — a lead
+    without `can_manage_employees` could fill out the whole "Provision New
+    Employee" form before being rejected at submit. Also found the login
+    response never even included `can_manage_employees`, so the frontend had
+    no way to check it — added it to `/api/auth/login`, then gated the form.
+
+### Verified working (no changes needed)
+- RBAC is enforced server-side, not just hidden client-side (confirmed via a
+  real 403 rejection, not just a hidden button).
+- Local telemetry capture on the real desktop daemon genuinely captures real
+  activity — the bug was purely in cloud-sync visibility and retention, not
+  capture.
+- `POST /api/projects`/`POST /api/users` already correctly upsert
+  `project_assignments` — the assignment bug was 100% frontend (see #4).
+- Network/console health: 47 API calls across the full session, zero
+  failures and zero console errors (one expected 403 for an authorization
+  test).
+
+### Verification
+`npm run build` clean, `npm run lint` back to the same 5 pre-existing
+cosmetic issues documented in the 2026-07-03 pass (0 new issues introduced),
+`node --check` clean on every touched API file, `python -m ast.parse` clean
+on `telemetry_daemon.py`. `npm run test:api` could not be run in this
+environment (needs a live Postgres connection) — recommend running it before
+merge.
+
+### Not done this pass
+- DB-level unique constraint on project names (blocked on existing duplicate
+  "CRM" projects — needs manual data cleanup first).
+- `POST /api/time-entries` project-assignment check (still open, unrelated
+  to this pass — see Stage 1 below).
+- Full responsive/mobile pass (the viewport-resize tool didn't register in
+  this environment — still unverified either way).
+
+---
+
+## 🔍 2026-07-04 — clean-install Windows retest (commit `102d2ff`)
+
+Triggered a fresh Windows build via `gh workflow run release.yml --ref
+claude/competent-gould-9bb9e5` (run
+[28701030135](https://github.com/harsh-pandhe/ChronoTrack/actions/runs/28701030135),
+built from `22de293` which includes `102d2ff`). Downloaded the
+`windows-installer` artifact, fully uninstalled the stale `CivilMantraAgent
+3.0.0` from Add/Remove Programs (this needed a UAC prompt the tester couldn't
+see/click — user approved manually), deleted the stale duplicate installer
+sitting in Downloads (`CivilMantraAgent Setup 3.0.0 (1).exe` — this was the
+prime suspect for why Exit Agent looked broken in the 07-03 test), then
+installed and ran the new build.
+
+### Confirmed fixed
+- **Exit Agent now works correctly.** Clicking it closes the app window
+  entirely — no more falling back to the marketing landing page. This was
+  the main unconfirmed item from the 07-03 pass.
+- Daemon (`CivilMantraDaemon.exe`) survives Exit Agent — still running in
+  Task Manager afterward, telemetry collection intended to keep going.
+- Clean install: no wizard hang, `CivilMantraDaemon.exe` never shows a
+  console window, confirmed via Task Manager → Details.
+- Re-opening the app after it was already activated does not re-prompt
+  activation (device token persisted correctly across the reinstall).
+
+### Confirmed still-open (not new — matches item 5 in the 07-03 findings)
+- The local app UI showed **"DAEMON ACTIVE (PORT 5050)"** and **"SYNCING LIVE
+  LOGS"**, but the web admin dashboard said **"No telemetry yet."** The
+  in-app status is not proof of a real cloud connection — exactly the
+  reliability/trust gap already flagged. Root cause is still the same:
+  local device state (OS keyring token) can outlive the server-side
+  `devices`/employee record, and the UI has no live-ping check to catch
+  that mismatch. Fix is already scoped in Stage 1 below ("make the sync
+  panel prove current connectivity").
+
+### New bug found
+- **No single-instance lock.** Launching `CivilMantraAgent` while an
+  instance is already running opens a brand-new window/process instead of
+  focusing the existing one (confirmed twice — Task Manager showed two
+  separate `CivilMantraAgent` app groups after a second launch). Wastes
+  resources and risks confusing/duplicate daemon state. Not previously
+  documented — needs `app.requestSingleInstanceLock()` in `main.cjs`.
+
+### Not re-tested this pass
+Reboot/autostart-survival (item 7) and the Linux-equivalent pass were
+deferred — this session covered install, daemon-visibility, and Exit Agent
+only.
 
 ---
 
@@ -296,24 +450,38 @@ Below is the concrete plan. A few decisions in it are yours, not mine (marked
 **[YOUR CALL]**) — see the questions accompanying this update.
 
 ### Stage 1 — Close out the bugs already found (no new scope)
-- [ ] Retest Exit Agent on a clean install (uninstall old app, delete stale
-  installers, download only the newest artifact) — confirm the fix actually
-  lands once tested cleanly.
-- [ ] Retest daemon-window + keyboard-hook-crash fixes after the next build
-  (needs a fresh Windows build with commit `102d2ff` — not triggered yet).
+- [x] Retest Exit Agent on a clean install (uninstall old app, delete stale
+  installers, download only the newest artifact) — confirmed fixed
+  2026-07-04, see above.
+- [x] Retest daemon-window fix after the next build (commit `102d2ff`,
+  built 2026-07-04) — confirmed: no console window, daemon runs invisibly.
+  Keyboard-hook-crash fix not separately re-exercised this pass (no keyboard
+  input was driven against the hook).
 - [ ] Fresh-activation test (this machine's state was contaminated by
-  earlier runs) — either a clean VM or reset via the web dashboard.
+  earlier runs) — either a clean VM or reset via the web dashboard. Still
+  not done: 2026-07-04's reinstall reused a persisted device token instead
+  of going through onboarding, so the activation flow itself remains
+  unverified end-to-end.
 - [ ] Same checklist pass on a clean Linux machine.
+- [ ] Reboot/autostart-survival retest (checklist item 7) — deferred
+  2026-07-04, not yet done on this build.
+- [ ] Fix the newly-found bug: no single-instance lock on the Electron app
+  (`main.cjs` needs `app.requestSingleInstanceLock()`) — see 2026-07-04
+  findings above.
 - [ ] `POST /api/time-entries` should reject hours logged against a project
   the employee isn't in `project_assignments` for (currently only checked
-  client-side via the dropdown) — closes the ROI-integrity gap.
-- [ ] Add a duplicate-name guard on project creation, and a generic
+  client-side via the dropdown) — closes the ROI-integrity gap. Still open.
+- [x] Add a duplicate-name guard on project creation, and a generic
   submit-in-flight guard (disable button while the request is pending) across
-  every create form — stops accidental double-records app-wide.
-- [ ] Make the "POSTGRESQL CLOUD SYNC" panel prove *current* connectivity
-  (e.g. a live ping to `/api/ingest` health, not just a replay of past sync
-  attempts), so it can't show "Success" for a device that no longer exists
-  server-side.
+  every create form — **done 2026-07-04** (server-side 409 on duplicate
+  names; disabled-while-saving guard on all 4 create/edit forms). DB-level
+  unique constraint still deferred — see 2026-07-04 fix log above.
+- [x] Make the cloud sync panel prove *current* connectivity instead of
+  showing stale/fake state — **done 2026-07-04**. Root-caused: the panel
+  only ever populated from a demo-mode simulator, never real data. Daemon now
+  tracks and exposes real last-success/last-error/pending-count; UI polls and
+  displays it honestly. Also fixed the actual data-loss bug this masked (see
+  2026-07-04 fix log above).
 
 ### Stage 2 — Test everything, systematically (not spot checks)
 The current test suite covers backend logic well (56 real API tests + 9

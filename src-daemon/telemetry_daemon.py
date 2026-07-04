@@ -256,9 +256,21 @@ def prune_db():
         count = cursor.fetchone()[0]
         if count > MAX_LOG_RETENTION:
             excess = count - MAX_LOG_RETENTION
-            cursor.execute(f"DELETE FROM telemetry_logs WHERE id IN (SELECT id FROM telemetry_logs ORDER BY id ASC LIMIT {excess})")
+            # Only ever prune rows already confirmed synced to the cloud —
+            # never discard data that hasn't been uploaded yet, or a slow/down
+            # cloud sync silently loses real telemetry.
+            cursor.execute(
+                "DELETE FROM telemetry_logs WHERE id IN ("
+                "SELECT id FROM telemetry_logs WHERE synced = 1 "
+                "ORDER BY id ASC LIMIT ?)", (excess,)
+            )
+            deleted = cursor.rowcount
             conn.commit()
-            print(f"[Database] Retention policy: Pruned {excess} oldest records.")
+            if deleted:
+                print(f"[Database] Retention policy: Pruned {deleted} oldest synced records.")
+            if deleted < excess:
+                print(f"[Database] Retention policy: {excess - deleted} unsynced records over the "
+                      f"{MAX_LOG_RETENTION} cap are being kept until cloud sync catches up.")
         conn.close()
     except Exception as e:
         print(f"[Database] Error pruning table: {e}")
@@ -278,6 +290,8 @@ SYNC_BATCH = 200            # rows per request (server cap is 500)
 
 cloud_lock = threading.Lock()
 CLOUD = {"cloud_url": None, "device_token": None, "activated": False, "revoked": False}
+# Sync visibility: so the UI can show real status instead of a silent hang.
+SYNC_STATE = {"last_attempt_at": None, "last_success_at": None, "last_error": None}
 
 # Productivity rules pushed from the server (admin-defined whitelist/blacklist),
 # refreshed on each sync. Used to label samples productive/unproductive.
@@ -410,10 +424,13 @@ def sync_once():
         return 0, 204
     samples = [row_to_sample(r) for r in rows]
     ingest_url = url.rstrip("/") + "/api/ingest"
+    SYNC_STATE["last_attempt_at"] = time.time()
     try:
         status, body = cloud_post(ingest_url, token, {"samples": samples})
         if status == 200:
             mark_synced([r[0] for r in rows])
+            SYNC_STATE["last_success_at"] = time.time()
+            SYNC_STATE["last_error"] = None
             # Refresh productivity rules pushed back by the server.
             try:
                 resp = json.loads(body or "{}")
@@ -424,6 +441,7 @@ def sync_once():
             except Exception:
                 pass
             return len(rows), 200
+        SYNC_STATE["last_error"] = f"Server returned status {status}"
         return 0, status
     except urllib.error.HTTPError as e:
         if e.code == 403:
@@ -433,10 +451,14 @@ def sync_once():
                 CLOUD["activated"] = False
                 CLOUD["revoked"] = True
             save_cloud_config(url, token, revoked=True)
+            SYNC_STATE["last_error"] = "Device revoked by server"
+        else:
+            SYNC_STATE["last_error"] = f"Server rejected upload (HTTP {e.code})"
         return 0, e.code
     except (urllib.error.URLError, OSError) as e:
         # Offline / unreachable: keep rows buffered, retry next cycle.
         print(f"[Cloud] Sync deferred (offline): {e}")
+        SYNC_STATE["last_error"] = f"Cannot reach cloud server: {e}"
         return 0, "offline"
 
 
@@ -944,6 +966,9 @@ class TelemetryAPIHandler(BaseHTTPRequestHandler):
                     "revoked": CLOUD["revoked"],
                     "cloud_url": CLOUD["cloud_url"],
                 }
+            cloud_state["last_attempt_at"] = SYNC_STATE["last_attempt_at"]
+            cloud_state["last_success_at"] = SYNC_STATE["last_success_at"]
+            cloud_state["last_error"] = SYNC_STATE["last_error"]
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
