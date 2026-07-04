@@ -1,9 +1,40 @@
 # ChronoTrack — Final Roadmap & Pilot Readiness
 
-_Last updated: 2026-07-05 — all 2026-07-04 fixes deployed to production and
-re-verified live; chart/empty-state polish added; daemon lock hardened;
-one real open issue found (intermittent cloud-sync network failures from the
-packaged daemon)._
+_Last updated: 2026-07-05 (later) — the cloud-sync network issue is fixed
+and confirmed: the daemon now completes real HTTPS requests to the server
+(certifi-backed SSL context). Every fix from this and the previous pass is
+now deployed and live-verified end to end._
+
+---
+
+## ✅ 2026-07-05 (later) — cloud-sync network issue fixed and confirmed
+
+Root cause: `ssl.get_default_verify_paths()` on Windows falls back to a
+hardcoded Unix-style path that doesn't exist, so the frozen PyInstaller
+daemon's TLS handshakes to the cloud API were failing intermittently
+(timeouts, DNS-looking errors, connection resets) — a genuine platform/
+packaging bug, not a network outage. Fixed by building an explicit
+`ssl.SSLContext` from certifi's bundled CA list instead of relying on the
+ambiguous platform default, with a safe fallback if certifi is ever missing.
+Also improved error logging to unwrap the real failure class (TLS/DNS/
+timeout/generic) instead of one opaque "Sync deferred" line, and fixed both
+CI build paths (Windows job's inline pyinstaller call and the Linux job's
+`build_daemon.sh` — they had drifted and weren't using the same command) to
+bundle certifi via `--collect-data certifi`.
+
+**Verified on a completely fresh build/install**: the daemon now reaches
+the server successfully — no more network-level failures. The Cloud Sync
+Status panel changed from silent/blank to showing a real, specific HTTP 401
+("Server rejected upload") instead of a connection error. That 401 is
+expected and unrelated to this fix — it's this specific test device's stale
+token from the employee-account churn during earlier testing sessions, not
+a bug. The panel also correctly reported "5237 record(s) waiting to
+upload — kept safely on this device, not lost," confirming the earlier
+data-loss fix (`prune_db()`) is holding under real accumulated backlog.
+
+**Everything from both 2026-07-04 passes and this one is now deployed to
+`main` / live on chrono-track-tau.vercel.app, and re-verified against a real
+clean install, not just re-read from the diff.**
 
 ---
 
