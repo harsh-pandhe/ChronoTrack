@@ -2,9 +2,9 @@
 # Build a self-contained telemetry daemon binary so target machines need no
 # Python/pip. Output: dist-daemon/CivilMantraDaemon (single executable).
 #
-# Requires a venv with: pyinstaller cryptography keyring
+# Requires a venv with: pyinstaller cryptography keyring certifi
 #   python3 -m venv .build-venv
-#   .build-venv/bin/pip install pyinstaller cryptography keyring
+#   .build-venv/bin/pip install pyinstaller cryptography keyring certifi
 #   PYINSTALLER=.build-venv/bin/pyinstaller src-daemon/build_daemon.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -25,6 +25,7 @@ rm -rf build "$OUT"
   --hidden-import keyring.backends.Windows \
   --hidden-import keyring.backends.macOS \
   --hidden-import cryptography.fernet \
+  --collect-data certifi \
   src-daemon/telemetry_daemon.py
 
 echo "Built $OUT/$NAME"

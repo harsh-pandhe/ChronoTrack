@@ -298,9 +298,29 @@ init_db()
 # ==================== CLOUD SYNC (central backend) ====================
 # The daemon buffers every sample in local SQLite (offline-safe) and pushes
 # unsynced rows to the central ingest endpoint. Auth = per-device bearer token
-# issued at activation. Uses only stdlib urllib so the binary bundles cleanly.
+# issued at activation. Uses stdlib urllib (not requests) so the binary
+# bundles small; certifi is the one exception (see _build_ssl_context below).
+import socket
+import ssl
 import urllib.request
 import urllib.error
+
+# On Windows, ssl.get_default_verify_paths() falls back to a hardcoded
+# Unix-style path (C:\Program Files\Common Files\SSL\cert.pem) that usually
+# doesn't exist — this made cloud sync fail intermittently (timeouts, DNS
+# lookups even, connection resets) depending on whether Python's OpenSSL
+# build happened to fall back to the Windows cert store correctly. Building
+# an explicit SSLContext from certifi's bundled CA list sidesteps that
+# platform ambiguity entirely, at the cost of one small pure-data dependency.
+def _build_ssl_context():
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception as e:
+        print(f"[Cloud] certifi unavailable ({type(e).__name__}: {e}), falling back to system default SSL context.")
+        return ssl.create_default_context()
+
+SSL_CONTEXT = _build_ssl_context()
 
 CLOUD_CONFIG_PATH = os.path.join(CONFIG_DIR, "cloud.json")
 SYNC_INTERVAL = 30          # seconds between upload attempts
@@ -424,7 +444,7 @@ def cloud_post(url, token, payload):
     req = urllib.request.Request(url, data=body, method="POST")
     req.add_header("Content-Type", "application/json")
     req.add_header("Authorization", f"Bearer {token}")
-    with urllib.request.urlopen(req, timeout=15) as resp:
+    with urllib.request.urlopen(req, timeout=15, context=SSL_CONTEXT) as resp:
         return resp.status, resp.read().decode("utf-8")
 
 
@@ -475,8 +495,22 @@ def sync_once():
         return 0, e.code
     except (urllib.error.URLError, OSError) as e:
         # Offline / unreachable: keep rows buffered, retry next cycle.
-        print(f"[Cloud] Sync deferred (offline): {e}")
-        SYNC_STATE["last_error"] = f"Cannot reach cloud server: {e}"
+        # Unwrap URLError to see what actually failed (DNS/socket/SSL) rather
+        # than only ever logging "URLError" — this is what let the 2026-07-04
+        # investigation tell a genuine SSL cert-bundling issue apart from
+        # plain network flakiness instead of guessing.
+        reason = getattr(e, "reason", e)
+        reason_type = type(reason).__name__
+        if isinstance(reason, ssl.SSLError):
+            category = "TLS/certificate error"
+        elif isinstance(reason, socket.gaierror):
+            category = "DNS lookup failed"
+        elif isinstance(reason, TimeoutError):
+            category = "connection timed out"
+        else:
+            category = "network unreachable"
+        print(f"[Cloud] Sync deferred ({category}, {reason_type}): {e}")
+        SYNC_STATE["last_error"] = f"Cannot reach cloud server ({category})"
         return 0, "offline"
 
 
