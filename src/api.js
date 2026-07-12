@@ -155,6 +155,13 @@ export const analytics = {
     const q = userId ? `&user_id=${userId}` : '';
     return request('GET', `/api/analytics?scope=employee&days=${days}${q}`);
   },
+  // Day's tracked active blocks + already-allocated entries + assigned projects.
+  timeline(day, userId) {
+    const q = new URLSearchParams({ scope: 'timeline' });
+    if (day) q.set('day', day);
+    if (userId) q.set('user_id', userId);
+    return request('GET', `/api/analytics?${q.toString()}`);
+  },
 };
 
 // --- Productivity rules --------------------------------------------------

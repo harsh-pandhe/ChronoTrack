@@ -105,6 +105,37 @@ async function projectRoi(companyId) {
   }));
 }
 
+// Contiguous runs of tracked activity for a single day. A gap larger than
+// BLOCK_GAP_SECONDS between samples starts a new block, so a lunch break or an
+// afternoon away splits the day into the real "active blocks" an employee then
+// allocates to projects. seconds = samples * 10 to match active-hours math.
+const BLOCK_GAP_SECONDS = 120;
+async function timelineBlocks(companyId, userId, day) {
+  const { rows } = await query(
+    `WITH s AS (
+        SELECT ts, app_category, LAG(ts) OVER (ORDER BY ts) AS prev_ts
+          FROM telemetry_logs
+         WHERE company_id=$1 AND user_id=$2 AND NOT is_idle AND ts::date = $3::date
+     ), grp AS (
+        SELECT ts, app_category,
+               SUM(CASE WHEN prev_ts IS NULL OR ts - prev_ts > interval '${BLOCK_GAP_SECONDS} seconds'
+                        THEN 1 ELSE 0 END) OVER (ORDER BY ts) AS block_id
+          FROM s
+     )
+     SELECT min(ts) AS start_ts, max(ts) AS end_ts, count(*)::int AS samples,
+            mode() WITHIN GROUP (ORDER BY app_category) AS top_category
+       FROM grp GROUP BY block_id ORDER BY start_ts`,
+    [companyId, userId, day]
+  );
+  return rows.map((b) => ({
+    start_ts: b.start_ts,
+    end_ts: b.end_ts,
+    seconds: b.samples * SAMPLE_SECONDS,
+    hours: Math.round((b.samples * SAMPLE_SECONDS) / 360) / 10,
+    top_category: b.top_category,
+  }));
+}
+
 export default handler(async (req, res) => {
   if (req.method !== 'GET') throw new HttpError(405, 'Method Not Allowed');
   const actor = await requireAuth(req);
@@ -112,6 +143,56 @@ export default handler(async (req, res) => {
   const scope = url.searchParams.get('scope') || 'employee';
   const days = Math.min(90, Math.max(1, Number(url.searchParams.get('days')) || 7));
   const sinceSql = `now() - interval '${days} days'`;
+
+  // Authorize viewing another user's data (self always; lead own team; admin any).
+  async function authorizeTarget(targetId) {
+    if (targetId === actor.id) return;
+    if (actor.role === 'employee') throw new HttpError(403, 'Forbidden');
+    const { rows } = await query(
+      `SELECT team_lead_id FROM users WHERE id=$1 AND company_id=$2`,
+      [targetId, actor.company_id]
+    );
+    if (!rows[0]) throw new HttpError(404, 'User not found');
+    if (actor.role === 'lead' && rows[0].team_lead_id !== actor.id)
+      throw new HttpError(403, 'Not your team member');
+  }
+
+  if (scope === 'timeline') {
+    const targetId = url.searchParams.get('user_id') || actor.id;
+    await authorizeTarget(targetId);
+    const dayParam = url.searchParams.get('day');
+    const day = /^\d{4}-\d{2}-\d{2}$/.test(dayParam || '') ? dayParam : null;
+    const daySql = day ? `$3::date` : `current_date`;
+    const [blocks, entriesQ, projQ] = await Promise.all([
+      timelineBlocks(actor.company_id, targetId, day || new Date().toISOString().slice(0, 10)),
+      query(
+        `SELECT te.id, te.project_id, p.name AS project_name, te.start_ts, te.end_ts,
+                te.hours, te.note
+           FROM time_entries te LEFT JOIN projects p ON p.id = te.project_id
+          WHERE te.company_id=$1 AND te.user_id=$2 AND te.start_ts::date = ${daySql}
+          ORDER BY te.start_ts`,
+        day ? [actor.company_id, targetId, day] : [actor.company_id, targetId]
+      ),
+      query(
+        `SELECT p.id, p.name FROM projects p
+           JOIN project_assignments pa ON pa.project_id = p.id
+          WHERE pa.user_id=$1 AND p.company_id=$2 AND p.status='active'
+          ORDER BY p.name`,
+        [targetId, actor.company_id]
+      ),
+    ]);
+    const trackedHours = blocks.reduce((s, b) => s + b.hours, 0);
+    const allocatedHours = entriesQ.rows.reduce((s, e) => s + Number(e.hours), 0);
+    return send(res, 200, {
+      scope, user_id: targetId, day: day || new Date().toISOString().slice(0, 10),
+      blocks, entries: entriesQ.rows, projects: projQ.rows,
+      summary: {
+        tracked_hours: Math.round(trackedHours * 10) / 10,
+        allocated_hours: Math.round(allocatedHours * 10) / 10,
+        remaining_hours: Math.round(Math.max(0, trackedHours - allocatedHours) * 10) / 10,
+      },
+    });
+  }
 
   if (scope === 'employee') {
     const targetId = url.searchParams.get('user_id') || actor.id;

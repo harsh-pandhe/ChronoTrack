@@ -65,6 +65,199 @@ function SizedChart({ children }) {
   );
 }
 
+// Visual timeline allocation: shows the day's real tracked active blocks and lets
+// the employee assign each block to one of their projects. Hours are grounded in
+// tracked activity (the server enforces the same), so ROI reflects real work.
+function hourOfDay(ts) {
+  const d = new Date(ts);
+  return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
+}
+function fmtClock(ts) {
+  return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+function rangesOverlap(aS, aE, bS, bE) {
+  return new Date(aS) < new Date(bE) && new Date(bS) < new Date(aE);
+}
+
+function TimelineAllocator({ onLogged, showToast }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [selectedIdx, setSelectedIdx] = useState(null);
+  const [projectId, setProjectId] = useState('');
+  const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const load = async () => {
+    const d = await api.analytics.timeline();
+    setData(d);
+    return d;
+  };
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const d = await api.analytics.timeline();
+        if (alive) setData(d);
+      } catch (err) {
+        if (alive) showToast(err.message || 'Could not load your timeline.', 'error');
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const blocks = data?.blocks || [];
+  const entries = data?.entries || [];
+  const projList = data?.projects || [];
+
+  // Which tracked blocks are already covered by an allocation (so we grey them out).
+  const isAllocated = (b) => entries.some((e) => rangesOverlap(b.start_ts, b.end_ts, e.start_ts, e.end_ts));
+
+  // Timeline domain (hours). Clamp to the data with a sensible workday fallback.
+  const allTs = [...blocks, ...entries].flatMap((x) => [hourOfDay(x.start_ts), hourOfDay(x.end_ts)]);
+  const domainStart = allTs.length ? Math.floor(Math.min(...allTs)) : 9;
+  const domainEnd = allTs.length ? Math.ceil(Math.max(...allTs)) : 18;
+  const span = Math.max(1, domainEnd - domainStart);
+  const xOf = (ts) => ((hourOfDay(ts) - domainStart) / span) * 100;
+  const wOf = (s, e) => Math.max(0.6, ((hourOfDay(e) - hourOfDay(s)) / span) * 100);
+
+  const selected = selectedIdx != null ? blocks[selectedIdx] : null;
+
+  const allocate = async () => {
+    if (!selected) return;
+    if (!projectId) { showToast('Pick a project for this block.', 'error'); return; }
+    setSaving(true);
+    try {
+      await api.timeEntries.create({
+        project_id: projectId,
+        start_ts: selected.start_ts,
+        end_ts: selected.end_ts,
+        hours: selected.hours,
+        source: 'prompt',
+        note: note || null,
+      });
+      showToast('Block allocated to project.', 'success');
+      setSelectedIdx(null);
+      setNote('');
+      setProjectId('');
+      await load();
+      onLogged && onLogged();
+    } catch (err) {
+      showToast(err.message || 'Could not allocate this block.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="p-6 rounded-3xl bg-indigo-500/10 border border-indigo-500/30 space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-2 text-indigo-400">
+          <Clock className="w-4 h-4" />
+          <span className="text-xs font-black uppercase tracking-wider">Allocate Your Tracked Hours</span>
+        </div>
+        {data && (
+          <div className="text-[10px] text-zinc-400">
+            <span className="text-white font-black">{data.summary.tracked_hours}h</span> tracked ·{' '}
+            <span className="text-emerald-400 font-black">{data.summary.allocated_hours}h</span> allocated ·{' '}
+            <span className="text-amber-400 font-black">{data.summary.remaining_hours}h</span> open
+          </div>
+        )}
+      </div>
+      <p className="text-[11px] text-zinc-350 leading-relaxed">
+        These are the active blocks the agent recorded today. Click a block, then tag it to the
+        project you worked on. You can only allocate time you were actually active.
+      </p>
+
+      {loading ? (
+        <div className="p-4 text-[11px] text-zinc-500">Loading your day…</div>
+      ) : blocks.length === 0 ? (
+        <div className="p-4 rounded-xl bg-zinc-900/40 border border-border/60 text-[11px] text-zinc-400 text-center">
+          No tracked activity yet today. As you work, the agent records active blocks here for you to allocate.
+        </div>
+      ) : (
+        <>
+          {/* SVG lane: tracked blocks (top) + existing allocations (bottom). */}
+          <div className="rounded-xl bg-background/60 border border-border/60 p-3 space-y-1">
+            <svg viewBox="0 0 100 16" preserveAspectRatio="none" className="w-full h-16">
+              {/* hour gridlines */}
+              {Array.from({ length: span + 1 }, (_, i) => (
+                <line key={i} x1={(i / span) * 100} y1="0" x2={(i / span) * 100} y2="16"
+                  stroke="currentColor" strokeWidth="0.1" className="text-border" />
+              ))}
+              {/* tracked blocks */}
+              {blocks.map((b, i) => {
+                const done = isAllocated(b);
+                const sel = i === selectedIdx;
+                return (
+                  <rect key={`b${i}`} x={xOf(b.start_ts)} y="1" width={wOf(b.start_ts, b.end_ts)} height="6"
+                    rx="0.6" style={{ cursor: done ? 'default' : 'pointer' }}
+                    onClick={() => !done && setSelectedIdx(i)}
+                    className={done ? 'text-emerald-500/40' : sel ? 'text-indigo-400' : 'text-indigo-500/60'}
+                    fill="currentColor" stroke={sel ? '#a5b4fc' : 'none'} strokeWidth={sel ? 0.4 : 0} />
+                );
+              })}
+              {/* existing allocations */}
+              {entries.map((e, i) => (
+                <rect key={`e${i}`} x={xOf(e.start_ts)} y="9" width={wOf(e.start_ts, e.end_ts)} height="5"
+                  rx="0.6" className="text-emerald-500/70" fill="currentColor" />
+              ))}
+            </svg>
+            <div className="flex justify-between text-[8px] text-zinc-500 font-mono">
+              <span>{String(domainStart).padStart(2, '0')}:00</span>
+              <span>{String(domainEnd).padStart(2, '0')}:00</span>
+            </div>
+            <div className="flex items-center gap-3 text-[8px] text-zinc-500">
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-indigo-500/60 inline-block" />Tracked (click to allocate)</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-emerald-500/70 inline-block" />Already allocated</span>
+            </div>
+          </div>
+
+          {selected ? (
+            <div className="space-y-3 rounded-xl bg-background/60 border border-indigo-500/30 p-3">
+              <div className="text-[11px] text-white font-bold">
+                {fmtClock(selected.start_ts)}–{fmtClock(selected.end_ts)} · {selected.hours}h
+                {selected.top_category && <span className="text-zinc-400 font-normal"> · mostly {selected.top_category}</span>}
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] uppercase font-black text-zinc-450">Project</label>
+                <select value={projectId} onChange={(e) => setProjectId(e.target.value)}
+                  className="w-full bg-background border border-border rounded-lg p-2 text-xs text-white outline-none">
+                  <option value="">Select project…</option>
+                  {projList.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+                {projList.length === 0 && (
+                  <p className="text-[9px] text-amber-400">You have no assigned projects yet — ask your team lead to add you to one.</p>
+                )}
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] uppercase font-black text-zinc-450">Note (optional)</label>
+                <input value={note} onChange={(e) => setNote(e.target.value)}
+                  placeholder="e.g. NHAI Section D alignment"
+                  className="w-full bg-background border border-border rounded-lg p-2 text-xs text-white outline-none" />
+              </div>
+              <div className="flex gap-2">
+                <button onClick={allocate} disabled={saving || !projectId}
+                  className="flex-1 py-2 bg-primary hover:bg-primary/95 disabled:opacity-50 text-primary-foreground font-black text-[10px] uppercase tracking-widest rounded-xl transition-all">
+                  {saving ? 'Allocating…' : 'Allocate to Project'}
+                </button>
+                <button onClick={() => { setSelectedIdx(null); setNote(''); }}
+                  className="px-4 py-2 border border-border text-zinc-400 hover:text-white font-black text-[10px] uppercase tracking-widest rounded-xl">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-[10px] text-zinc-500 text-center py-2">Select a tracked block above to allocate it.</p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   const isEmployeeOnlyMode = new URLSearchParams(window.location.search).get('app') === 'employee';
 
@@ -97,10 +290,6 @@ export default function App() {
   const [savingTLProject, setSavingTLProject] = useState(false);
 
   // Employee Validation Ping Prompt States
-  const [verificationTaskDescription, setVerificationTaskDescription] = useState('');
-  const [verificationTaskCategory, setVerificationTaskCategory] = useState('Engineering / Design');
-  const [verificationTaskDuration, setVerificationTaskDuration] = useState('2');
-  const [verificationProject, setVerificationProject] = useState('');
   const [showVerificationPrompt, setShowVerificationPrompt] = useState(true);
 
   // Global Session Authentication State
@@ -3014,119 +3203,19 @@ export default function App() {
 
                 {/* Right Column: Validation & Cloud Sync */}
                 <div className="space-y-6">
-                  {/* Active Validation Ping Prompt */}
-                  {showVerificationPrompt ? (
-                    <div className="p-6 rounded-3xl bg-indigo-500/10 border border-indigo-500/30 space-y-4">
-                      <div className="flex items-center space-x-2 text-indigo-400">
-                        <AlertTriangle className="w-4 h-4 animate-bounce" />
-                        <span className="text-xs font-black uppercase tracking-wider">Active Telemetry Validation Ping</span>
-                      </div>
-                      <p className="text-[11px] text-zinc-350 leading-relaxed">
-                        Your team lead has requested validation of your activity for the past 2 hours.
-                      </p>
-
-                      <form onSubmit={async (e) => {
-                        e.preventDefault();
-                        if (!verificationTaskDescription.trim()) {
-                          showToast('Please type your task description.', 'error');
-                          return;
-                        }
-                        const hrs = parseInt(verificationTaskDuration) || 1;
-                        const end = new Date();
-                        const start = new Date(end.getTime() - hrs * 3600000);
-                        const projectId = verificationProject || (projects[0] && projects[0].id);
-                        try {
-                          if (api.getToken() && projectId) {
-                            // Real ROI attribution -> /api/time-entries.
-                            await api.timeEntries.create({
-                              project_id: projectId,
-                              start_ts: start.toISOString(),
-                              end_ts: end.toISOString(),
-                              hours: hrs,
-                              source: 'prompt',
-                              note: verificationTaskDescription,
-                            });
-                            showToast('Activity logged to project ledger.', 'success');
-                          } else {
-                            showToast('Logged locally (no session/project).', 'info');
-                          }
-                          logAudit('Employee Desktop', `Logged ${hrs}h: "${verificationTaskDescription}"`);
-                          setShowVerificationPrompt(false);
-                          setVerificationTaskDescription('');
-                        } catch (err) {
-                          showToast(err.message || 'Failed to log activity.', 'error');
-                        }
-                      }} className="space-y-3">
-                        <div className="space-y-1">
-                          <label className="text-[9px] uppercase font-black text-zinc-450">What have you been working on?</label>
-                          <textarea
-                            required
-                            rows={2}
-                            value={verificationTaskDescription}
-                            onChange={(e) => setVerificationTaskDescription(e.target.value)}
-                            placeholder="e.g. Drafting NHAI Section D blueprint alignments..."
-                            className="w-full bg-background border border-border/80 focus:border-indigo-500 rounded-xl p-2.5 text-xs text-white outline-none resize-none"
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <label className="text-[9px] uppercase font-black text-zinc-450">Project</label>
-                          <select
-                            value={verificationProject}
-                            onChange={(e) => setVerificationProject(e.target.value)}
-                            className="w-full bg-background border border-border rounded-lg p-2 text-xs text-white outline-none"
-                          >
-                            <option value="">Select project…</option>
-                            {projects.map((p) => (
-                              <option key={p.id} value={p.id}>{p.name}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className="space-y-1">
-                            <label className="text-[9px] uppercase font-black text-zinc-450">Sector</label>
-                            <select
-                              value={verificationTaskCategory}
-                              onChange={(e) => setVerificationTaskCategory(e.target.value)}
-                              className="w-full bg-background border border-border rounded-lg p-2 text-xs text-white outline-none animate-none"
-                            >
-                              <option value="Engineering / Design">Engineering / Design</option>
-                              <option value="Software Development">Software Development</option>
-                              <option value="Finance / Analysis">Finance / Analysis</option>
-                              <option value="Communication">Communication</option>
-                            </select>
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-[9px] uppercase font-black text-zinc-450">Duration</label>
-                            <select
-                              value={verificationTaskDuration}
-                              onChange={(e) => setVerificationTaskDuration(e.target.value)}
-                              className="w-full bg-background border border-border rounded-lg p-2 text-xs text-white outline-none"
-                            >
-                              <option value="1">1 Hour</option>
-                              <option value="2">2 Hours</option>
-                              <option value="3">3 Hours</option>
-                              <option value="4">4 Hours</option>
-                            </select>
-                          </div>
-                        </div>
-                        <button type="submit" className="w-full py-2.5 bg-primary hover:bg-primary/95 text-primary-foreground font-black text-[10px] uppercase tracking-widest rounded-xl transition-all">
-                          Sync Verified Hours
-                        </button>
-                      </form>
-                    </div>
-                  ) : (
-                    <div className="p-6 rounded-3xl bg-zinc-900/40 border border-border/60 text-center space-y-2">
-                      <CheckCircle2 className="w-6 h-6 text-emerald-400 mx-auto" />
-                      <span className="text-xs font-black text-white uppercase tracking-wider block">Activity Verified</span>
-                      <p className="text-[10px] text-zinc-400">All recent hours synced and verified with Vercel.</p>
-                      <button 
-                        onClick={() => setShowVerificationPrompt(true)}
-                        className="text-[9px] text-primary hover:underline uppercase font-black"
-                      >
-                        Trigger New Validation
-                      </button>
+                  {/* Visual timeline allocation — assign real tracked blocks to projects. */}
+                  {showVerificationPrompt && (
+                    <div className="flex items-center justify-between px-1 text-[10px] text-indigo-300/80">
+                      <span className="flex items-center gap-1.5"><AlertTriangle className="w-3.5 h-3.5" /> Time to log your hours — allocate your tracked blocks below.</span>
+                      <button onClick={() => setShowVerificationPrompt(false)} className="text-zinc-500 hover:text-white uppercase font-black">Dismiss</button>
                     </div>
                   )}
+                  <TimelineAllocator
+                    showToast={showToast}
+                    onLogged={async () => {
+                      try { setSelfAnalytics(await api.analytics.employee(null, 7)); } catch { /* non-fatal */ }
+                    }}
+                  />
 
                   {/* Right Cloud Database Sync Log status — real, from the daemon's /api/status, never simulated */}
                   <div className="p-6 rounded-3xl bg-card border border-border space-y-4">

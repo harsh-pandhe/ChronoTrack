@@ -210,6 +210,15 @@ async function main() {
   r = await call('POST', `/api/projects/${project2Id}?action=assign`, { token: leadToken, body: { user_id: empId } });
   ok(r.status === 403, "lead cannot assign to another lead's project");
 
+  // 8g. Timeline scope: tracked active blocks + allocated entries + assigned projects.
+  r = await call('GET', '/api/analytics?scope=timeline', { token: empToken });
+  ok(r.status === 200 && Array.isArray(r.json.blocks) && r.json.blocks.length >= 1,
+    'timeline returns tracked active blocks');
+  ok(r.json.entries.some((e) => e.project_id === projectId) && r.json.summary.allocated_hours === 2,
+    'timeline reflects the 2h allocation');
+  ok(r.json.projects.some((p) => p.id === projectId),
+    'timeline lists the employee\'s assigned projects');
+
   // 9. ROI computed: cost = 2h * 500 = 1000; revenue 100000 → roi = 99
   r = await call('GET', '/api/projects', { token: leadToken });
   const proj = r.json.projects.find((p) => p.id === projectId);
