@@ -236,9 +236,53 @@ export default handler(async (req, res) => {
     const teamExtra = actor.role === 'lead'
       ? 'AND user_id IN (SELECT id FROM users WHERE team_lead_id=$2)'
       : `AND user_id IN (SELECT id FROM users WHERE company_id=$1 AND role='employee')`;
-    const trend = await dailyTrend(actor.company_id, sinceSql, teamExtra,
-      actor.role === 'lead' ? [actor.id] : []);
-    return send(res, 200, { scope, days, members: list, trend });
+    const teamParams = actor.role === 'lead' ? [actor.id] : [];
+    const trend = await dailyTrend(actor.company_id, sinceSql, teamExtra, teamParams);
+
+    // Per-employee → per-project logged hours (drill-down): "which projects did
+    // X work on, and how much." Grounded in the now-validated time_entries.
+    const userFilter = actor.role === 'lead'
+      ? 'AND u.team_lead_id = $2'
+      : `AND u.role = 'employee'`;
+    const projectHours = await query(
+      `SELECT te.user_id, u.name AS user_name, te.project_id, p.name AS project_name,
+              SUM(te.hours)::float AS hours,
+              SUM(te.hours * u.hourly_cost)::float AS cost
+         FROM time_entries te
+         JOIN users u ON u.id = te.user_id
+         LEFT JOIN projects p ON p.id = te.project_id
+        WHERE te.company_id = $1 AND te.start_ts > ${sinceSql} ${userFilter}
+        GROUP BY te.user_id, u.name, te.project_id, p.name
+        ORDER BY u.name, hours DESC`,
+      [actor.company_id, ...teamParams]
+    );
+
+    // Team most-used app categories + idle rollup (the "what are they on / how
+    // much bench" report leads asked for).
+    const topApps = await query(
+      `SELECT app_category AS category, count(*)::int AS samples
+         FROM telemetry_logs
+        WHERE company_id=$1 AND ts > ${sinceSql} AND NOT is_idle ${teamExtra}
+        GROUP BY 1 ORDER BY 2 DESC LIMIT 8`,
+      [actor.company_id, ...teamParams]
+    );
+    const idleRow = await query(
+      `SELECT count(*)::int AS samples,
+              COALESCE(sum(CASE WHEN is_idle THEN 1 ELSE 0 END),0)::int AS idle_samples
+         FROM telemetry_logs
+        WHERE company_id=$1 AND ts > ${sinceSql} ${teamExtra}`,
+      [actor.company_id, ...teamParams]
+    );
+    const ir = idleRow.rows[0];
+    const idle = {
+      samples: ir.samples,
+      idle_pct: ir.samples > 0 ? Math.round((100 * ir.idle_samples) / ir.samples) : 0,
+      idle_hours: Math.round((ir.idle_samples * SAMPLE_SECONDS) / 360) / 10,
+    };
+    return send(res, 200, {
+      scope, days, members: list, trend,
+      project_hours: projectHours.rows, top_apps: topApps.rows, idle,
+    });
   }
 
   if (scope === 'overview') {
@@ -264,17 +308,43 @@ export default handler(async (req, res) => {
       : null;
     const t = tele[0];
     const activePct = t.samples > 0 ? Math.round((100 * t.active_samples) / t.samples) : 0;
-    const [trend, catRows] = await Promise.all([
+    const [trend, catRows, leadRows] = await Promise.all([
       dailyTrend(actor.company_id, sinceSql),
       query(`SELECT app_category AS category, count(*)::int AS samples
                FROM telemetry_logs WHERE company_id=$1 AND ts > ${sinceSql} AND NOT is_idle
                GROUP BY 1 ORDER BY 2 DESC LIMIT 8`, [actor.company_id]),
+      // Per-lead cross-tab: which lead runs how many projects, how many people,
+      // how much revenue/cost/return. Correlated scalar subqueries avoid the
+      // projects×employees join fan-out that would inflate the sums.
+      query(
+        `SELECT l.id AS lead_id, l.name AS lead_name,
+           (SELECT count(*) FROM projects p
+              WHERE p.team_lead_id = l.id AND p.company_id = $1)::int AS projects,
+           (SELECT count(*) FROM users e
+              WHERE e.team_lead_id = l.id AND e.role = 'employee')::int AS employees,
+           (SELECT COALESCE(sum(p.billed_revenue),0) FROM projects p
+              WHERE p.team_lead_id = l.id AND p.company_id = $1)::float AS revenue,
+           (SELECT COALESCE(sum(te.hours * u.hourly_cost),0)
+              FROM projects p
+              JOIN time_entries te ON te.project_id = p.id
+              JOIN users u ON u.id = te.user_id
+             WHERE p.team_lead_id = l.id AND p.company_id = $1)::float AS cost
+         FROM users l
+        WHERE l.company_id = $1 AND l.role = 'lead'
+        ORDER BY l.name`,
+        [actor.company_id]
+      ),
     ]);
+    const leads = leadRows.rows.map((r) => ({
+      ...r,
+      roi: r.cost > 0 ? Math.round(((r.revenue - r.cost) / r.cost) * 10) / 10 : null,
+    }));
     return send(res, 200, {
       scope, days,
       headcount: hc[0],
       portfolio: { revenue: totalRevenue, cost: totalCost, margin_pct: margin, bench_pct: 100 - activePct },
       projects,
+      leads,
       telemetry: { samples: t.samples, active_pct: activePct, active_hours: activeHours(t.samples, t.active_samples) },
       trend,
       categories: catRows.rows,

@@ -267,6 +267,11 @@ async function main() {
   r = await call('GET', '/api/analytics?scope=team&days=7', { token: leadToken });
   ok(r.status === 200 && r.json.members.some((m) => m.id === empId && m.active_pct === 100),
      'lead team analytics shows employee active%');
+  // Phase 3: per-employee per-project hours drill-down + team idle/top-apps.
+  ok(r.json.project_hours.some((ph) => ph.user_id === empId && ph.project_id === projectId && ph.hours === 2),
+     'team analytics includes per-employee per-project hours');
+  ok(r.json.idle && typeof r.json.idle.idle_pct === 'number' && Array.isArray(r.json.top_apps),
+     'team analytics includes idle summary + top apps');
 
   r = await call('GET', `/api/analytics?scope=employee&user_id=${empId}&days=7`, { token: leadToken });
   ok(r.status === 200 && r.json.rollup.samples === 3, 'lead sees own member employee analytics');
@@ -281,6 +286,9 @@ async function main() {
   r = await call('GET', '/api/analytics?scope=overview&days=7', { token: adminToken });
   ok(Array.isArray(r.json.trend) && r.json.trend.length >= 1 && r.json.trend[0].active_hours >= 0,
      'overview returns daily trend for charts');
+  // Phase 3: per-lead cross-tab (who owns what, return per lead).
+  ok(Array.isArray(r.json.leads) && r.json.leads.some((l) => l.lead_id === leadId && l.projects >= 1 && l.employees >= 1),
+     'overview includes per-lead cross-tab with project + employee counts');
   ok(Array.isArray(r.json.categories) && r.json.categories.length >= 1, 'overview returns category breakdown');
   r = await call('GET', `/api/analytics?scope=employee&user_id=${empId}`, { token: adminToken });
   ok(Array.isArray(r.json.trend), 'employee analytics returns trend');

@@ -1985,6 +1985,41 @@ export default function App() {
                     </div>
                   </div>
                 </div>
+
+                {/* Portfolio by Team Lead — who owns what, and the return per lead. */}
+                {serverAnalytics?.overview?.leads?.length > 0 && (
+                  <div className="rounded-3xl bg-card border border-border p-6 space-y-4">
+                    <span className="text-xs font-black text-white uppercase tracking-wider">Portfolio by Team Lead</span>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left">
+                        <thead>
+                          <tr className="text-[9px] uppercase text-zinc-500 border-b border-border">
+                            <th className="py-2 font-black">Team Lead</th>
+                            <th className="py-2 font-black">Projects</th>
+                            <th className="py-2 font-black">Employees</th>
+                            <th className="py-2 font-black">Revenue</th>
+                            <th className="py-2 font-black">Resource Cost</th>
+                            <th className="py-2 font-black">Return</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {serverAnalytics.overview.leads.map((l) => (
+                            <tr key={l.lead_id} className="text-xs text-zinc-300 border-b border-border/40">
+                              <td className="py-2.5 font-bold text-white">{l.lead_name}</td>
+                              <td className="py-2.5">{l.projects}</td>
+                              <td className="py-2.5">{l.employees}</td>
+                              <td className="py-2.5">Rs. {(l.revenue / 1e7).toFixed(2)} Cr</td>
+                              <td className="py-2.5">Rs. {(l.cost / 1e7).toFixed(2)} Cr</td>
+                              <td className={`py-2.5 font-black ${l.roi == null ? 'text-zinc-500' : l.roi >= 1 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                                {l.roi == null ? 'No cost yet' : `${l.roi}x`}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -2680,6 +2715,64 @@ export default function App() {
                 <div className="border-b border-border pb-4">
                   <h2 className="text-xl font-black text-white uppercase tracking-wider">Detailed Team Telemetry Logs</h2>
                   <p className="text-xs text-zinc-400 mt-1">Review verified active application logs, keystroke/pointer densities, and manual inputs.</p>
+                </div>
+
+                {/* Team idle/focus + most-used apps summary. */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  <div className="p-6 rounded-3xl bg-card border border-border space-y-2">
+                    <span className="text-[10px] font-black text-zinc-500 uppercase tracking-wider block">Team Idle (last 7d)</span>
+                    <span className="text-3xl font-black text-amber-400">{serverAnalytics?.team?.idle?.idle_pct ?? '—'}%</span>
+                    <p className="text-[10px] text-zinc-500">{serverAnalytics?.team?.idle?.idle_hours ?? 0}h idle across {serverAnalytics?.team?.idle?.samples ?? 0} samples</p>
+                  </div>
+                  <div className="p-6 rounded-3xl bg-card border border-border space-y-3 lg:col-span-2">
+                    <span className="text-[10px] font-black text-zinc-500 uppercase tracking-wider block">Most-Used Applications</span>
+                    {(serverAnalytics?.team?.top_apps?.length || 0) === 0 ? (
+                      <p className="text-xs text-zinc-500">No activity data yet.</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {serverAnalytics.team.top_apps.map((a, i) => (
+                          <span key={i} className="px-2.5 py-1 rounded-full bg-zinc-900 border border-border text-[10px] text-zinc-300">
+                            <span className="font-bold text-white">{a.category || 'uncategorised'}</span>
+                            <span className="text-zinc-500"> · {a.samples}</span>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Per-employee → per-project logged hours drill-down. */}
+                <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
+                  <span className="text-xs font-black text-white uppercase tracking-wider block">Hours by Employee &amp; Project</span>
+                  {(serverAnalytics?.team?.project_hours?.length || 0) === 0 ? (
+                    <p className="text-xs text-zinc-500">No project hours logged yet.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left">
+                        <thead>
+                          <tr className="text-[9px] uppercase text-zinc-500 border-b border-border">
+                            <th className="py-2 font-black">Employee</th>
+                            <th className="py-2 font-black">Project</th>
+                            <th className="py-2 font-black text-right">Hours</th>
+                            <th className="py-2 font-black text-right">Resource Cost</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {serverAnalytics.team.project_hours.map((ph, i, arr) => {
+                            const firstForUser = i === 0 || arr[i - 1].user_id !== ph.user_id;
+                            return (
+                              <tr key={i} className="text-xs text-zinc-300 border-b border-border/40">
+                                <td className="py-2.5 font-bold text-white">{firstForUser ? ph.user_name : ''}</td>
+                                <td className="py-2.5">{ph.project_name || <span className="text-zinc-600">Unassigned</span>}</td>
+                                <td className="py-2.5 text-right font-mono">{Number(ph.hours).toFixed(1)}h</td>
+                                <td className="py-2.5 text-right font-mono text-zinc-400">Rs. {Math.round(ph.cost).toLocaleString('en-IN')}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
 
                 <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
