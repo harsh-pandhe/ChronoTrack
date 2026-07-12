@@ -2,10 +2,13 @@ import { createContext, useContext, useEffect, useState } from 'react';
 
 const ThemeContext = createContext({ theme: 'light', setTheme: () => {}, toggle: () => {} });
 
-// Light-first. Persisted in localStorage; applies the `dark` class to <html> so
-// the Tailwind CSS-variable theme (index.css) switches palettes.
+// TRANSITIONAL DEFAULT = dark. The new design is light-first, but until every
+// role console is migrated off the old dark utility classes, defaulting to light
+// would render those not-yet-redone pages as white-on-white on the live site.
+// Dark keeps them looking as before; the redesigned screens (login onward) also
+// support dark. Flip this default to 'light' once all roles are migrated.
 export function ThemeProvider({ children }) {
-  const [theme, setThemeState] = useState(() => localStorage.getItem('ct_theme') || 'light');
+  const [theme, setThemeState] = useState(() => localStorage.getItem('ct_theme') || 'dark');
 
   useEffect(() => {
     const root = document.documentElement;

@@ -19,6 +19,13 @@ export default defineConfig([
     },
   },
   {
+    // shadcn/ui primitives + context providers idiomatically co-export a
+    // component and a helper (cva variants / a hook), which react-refresh flags.
+    // This is the standard shadcn exception.
+    files: ['src/components/ui/**/*.{js,jsx}', 'src/context/**/*.{js,jsx}'],
+    rules: { 'react-refresh/only-export-components': 'off' },
+  },
+  {
     files: ['scripts/**/*.js', 'tests/**/*.js', 'api/**/*.js', 'lib/**/*.js', 'main.cjs', 'preload.cjs'],
     extends: [js.configs.recommended],
     languageOptions: {
