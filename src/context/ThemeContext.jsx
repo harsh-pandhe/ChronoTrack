@@ -2,13 +2,10 @@ import { createContext, useContext, useEffect, useState } from 'react';
 
 const ThemeContext = createContext({ theme: 'light', setTheme: () => {}, toggle: () => {} });
 
-// TRANSITIONAL DEFAULT = dark. The new design is light-first, but until every
-// role console is migrated off the old dark utility classes, defaulting to light
-// would render those not-yet-redone pages as white-on-white on the live site.
-// Dark keeps them looking as before; the redesigned screens (login onward) also
-// support dark. Flip this default to 'light' once all roles are migrated.
+// Light-first default. Every role is now theme-aware (semantic tokens), so light
+// is coherent app-wide; users can still switch to dark (persisted).
 export function ThemeProvider({ children }) {
-  const [theme, setThemeState] = useState(() => localStorage.getItem('ct_theme') || 'dark');
+  const [theme, setThemeState] = useState(() => localStorage.getItem('ct_theme') || 'light');
 
   useEffect(() => {
     const root = document.documentElement;

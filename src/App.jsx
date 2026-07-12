@@ -157,29 +157,29 @@ function TimelineAllocator({ onLogged, showToast }) {
   };
 
   return (
-    <div className="p-6 rounded-3xl bg-indigo-500/10 border border-indigo-500/30 space-y-4">
+    <div className="p-6 rounded-xl bg-indigo-500/10 border border-indigo-500/30 space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-2 text-indigo-400">
           <Clock className="w-4 h-4" />
-          <span className="text-xs font-black uppercase tracking-wider">Allocate Your Tracked Hours</span>
+          <span className="text-xs font-semibold uppercase tracking-wider">Allocate Your Tracked Hours</span>
         </div>
         {data && (
-          <div className="text-[10px] text-zinc-400">
-            <span className="text-white font-black">{data.summary.tracked_hours}h</span> tracked ·{' '}
-            <span className="text-emerald-400 font-black">{data.summary.allocated_hours}h</span> allocated ·{' '}
-            <span className="text-amber-400 font-black">{data.summary.remaining_hours}h</span> open
+          <div className="text-[10px] text-muted-foreground">
+            <span className="text-foreground font-semibold">{data.summary.tracked_hours}h</span> tracked ·{' '}
+            <span className="text-emerald-400 font-semibold">{data.summary.allocated_hours}h</span> allocated ·{' '}
+            <span className="text-amber-400 font-semibold">{data.summary.remaining_hours}h</span> open
           </div>
         )}
       </div>
-      <p className="text-[11px] text-zinc-350 leading-relaxed">
+      <p className="text-[11px] text-muted-foreground leading-relaxed">
         These are the active blocks the agent recorded today. Click a block, then tag it to the
         project you worked on. You can only allocate time you were actually active.
       </p>
 
       {loading ? (
-        <div className="p-4 text-[11px] text-zinc-500">Loading your day…</div>
+        <div className="p-4 text-[11px] text-muted-foreground">Loading your day…</div>
       ) : blocks.length === 0 ? (
-        <div className="p-4 rounded-xl bg-zinc-900/40 border border-border/60 text-[11px] text-zinc-400 text-center">
+        <div className="p-4 rounded-xl bg-muted/40 border border-border/60 text-[11px] text-muted-foreground text-center">
           No tracked activity yet today. As you work, the agent records active blocks here for you to allocate.
         </div>
       ) : (
@@ -210,11 +210,11 @@ function TimelineAllocator({ onLogged, showToast }) {
                   rx="0.6" className="text-emerald-500/70" fill="currentColor" />
               ))}
             </svg>
-            <div className="flex justify-between text-[8px] text-zinc-500 font-mono">
+            <div className="flex justify-between text-[8px] text-muted-foreground font-mono">
               <span>{String(domainStart).padStart(2, '0')}:00</span>
               <span>{String(domainEnd).padStart(2, '0')}:00</span>
             </div>
-            <div className="flex items-center gap-3 text-[8px] text-zinc-500">
+            <div className="flex items-center gap-3 text-[8px] text-muted-foreground">
               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-indigo-500/60 inline-block" />Tracked (click to allocate)</span>
               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-emerald-500/70 inline-block" />Already allocated</span>
             </div>
@@ -222,14 +222,14 @@ function TimelineAllocator({ onLogged, showToast }) {
 
           {selected ? (
             <div className="space-y-3 rounded-xl bg-background/60 border border-indigo-500/30 p-3">
-              <div className="text-[11px] text-white font-bold">
+              <div className="text-[11px] text-foreground font-bold">
                 {fmtClock(selected.start_ts)}–{fmtClock(selected.end_ts)} · {selected.hours}h
-                {selected.top_category && <span className="text-zinc-400 font-normal"> · mostly {selected.top_category}</span>}
+                {selected.top_category && <span className="text-muted-foreground font-normal"> · mostly {selected.top_category}</span>}
               </div>
               <div className="space-y-1">
-                <label className="text-[9px] uppercase font-black text-zinc-450">Project</label>
+                <label className="text-[9px] uppercase font-semibold text-muted-foreground">Project</label>
                 <select value={projectId} onChange={(e) => setProjectId(e.target.value)}
-                  className="w-full bg-background border border-border rounded-lg p-2 text-xs text-white outline-none">
+                  className="w-full bg-background border border-border rounded-lg p-2 text-xs text-foreground outline-none">
                   <option value="">Select project…</option>
                   {projList.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
@@ -238,24 +238,24 @@ function TimelineAllocator({ onLogged, showToast }) {
                 )}
               </div>
               <div className="space-y-1">
-                <label className="text-[9px] uppercase font-black text-zinc-450">Note (optional)</label>
+                <label className="text-[9px] uppercase font-semibold text-muted-foreground">Note (optional)</label>
                 <input value={note} onChange={(e) => setNote(e.target.value)}
                   placeholder="e.g. NHAI Section D alignment"
-                  className="w-full bg-background border border-border rounded-lg p-2 text-xs text-white outline-none" />
+                  className="w-full bg-background border border-border rounded-lg p-2 text-xs text-foreground outline-none" />
               </div>
               <div className="flex gap-2">
                 <button onClick={allocate} disabled={saving || !projectId}
-                  className="flex-1 py-2 bg-primary hover:bg-primary/95 disabled:opacity-50 text-primary-foreground font-black text-[10px] uppercase tracking-widest rounded-xl transition-all">
+                  className="flex-1 py-2 bg-primary hover:bg-primary/95 disabled:opacity-50 text-primary-foreground font-semibold text-[10px] uppercase tracking-widest rounded-xl transition-all">
                   {saving ? 'Allocating…' : 'Allocate to Project'}
                 </button>
                 <button onClick={() => { setSelectedIdx(null); setNote(''); }}
-                  className="px-4 py-2 border border-border text-zinc-400 hover:text-white font-black text-[10px] uppercase tracking-widest rounded-xl">
+                  className="px-4 py-2 border border-border text-muted-foreground hover:text-foreground font-semibold text-[10px] uppercase tracking-widest rounded-xl">
                   Cancel
                 </button>
               </div>
             </div>
           ) : (
-            <p className="text-[10px] text-zinc-500 text-center py-2">Select a tracked block above to allocate it.</p>
+            <p className="text-[10px] text-muted-foreground text-center py-2">Select a tracked block above to allocate it.</p>
           )}
         </>
       )}
@@ -1220,14 +1220,14 @@ export default function App() {
       <div className="space-y-6">
         <div className="border-b border-border pb-4 flex justify-between items-center flex-wrap gap-4">
           <div>
-            <h2 className="text-xl font-black text-white uppercase tracking-wider">Contribution & ROI Attribution</h2>
-            <p className="text-xs text-zinc-400 mt-1">Calculates salary costs, logged hours, and revenue generation ratios per engineer.</p>
+            <h2 className="text-xl font-semibold text-foreground uppercase tracking-wider">Contribution & ROI Attribution</h2>
+            <p className="text-xs text-muted-foreground mt-1">Calculates salary costs, logged hours, and revenue generation ratios per engineer.</p>
           </div>
           <div className="flex items-center gap-2">
             <select
               value={selectedAttributionProject}
               onChange={(e) => setSelectedAttributionProject(e.target.value)}
-              className="bg-card border border-border rounded-xl px-4 py-2 text-xs text-white outline-none"
+              className="bg-card border border-border rounded-xl px-4 py-2 text-xs text-foreground outline-none"
             >
               {projects.length === 0 && <option value="">No projects yet</option>}
               {projects.map(p => (
@@ -1236,7 +1236,7 @@ export default function App() {
             </select>
             <button
               onClick={() => setShowAddProject(true)}
-              className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground font-black text-xs uppercase tracking-widest rounded-xl transition-all flex items-center space-x-1.5 whitespace-nowrap"
+              className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs uppercase tracking-widest rounded-xl transition-all flex items-center space-x-1.5 whitespace-nowrap"
             >
               <Plus className="w-4 h-4" /><span>New Project</span>
             </button>
@@ -1253,7 +1253,7 @@ export default function App() {
                   );
                 }}
                 title="Archive project"
-                className="px-3 py-2 bg-zinc-900 border border-red-500/20 text-red-400 hover:bg-red-500/10 rounded-xl transition-all"
+                className="px-3 py-2 bg-muted border border-red-500/20 text-red-400 hover:bg-red-500/10 rounded-xl transition-all"
               >
                 <Trash2 className="w-4 h-4" />
               </button>
@@ -1262,43 +1262,43 @@ export default function App() {
         </div>
 
         {showAddProject && (
-          <form onSubmit={handleAddProject} className="p-6 rounded-3xl bg-card border border-primary/20 space-y-4 animate-fade-in">
+          <form onSubmit={handleAddProject} className="p-6 rounded-xl bg-card border border-primary/20 space-y-4 animate-fade-in">
             <div className="flex justify-between items-center">
-              <h3 className="text-xs font-black uppercase tracking-widest text-primary">New Project</h3>
-              <button type="button" onClick={() => setShowAddProject(false)} className="text-zinc-500 hover:text-white"><X className="w-4 h-4" /></button>
+              <h3 className="text-xs font-semibold uppercase tracking-widest text-primary">New Project</h3>
+              <button type="button" onClick={() => setShowAddProject(false)} className="text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <input value={projForm.name} onChange={(e) => setProjForm({ ...projForm, name: e.target.value })} placeholder="Project name" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-white outline-none" />
-              <input value={projForm.client} onChange={(e) => setProjForm({ ...projForm, client: e.target.value })} placeholder="Client (optional)" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-white outline-none" />
-              <input type="number" value={projForm.billed_revenue} onChange={(e) => setProjForm({ ...projForm, billed_revenue: e.target.value })} placeholder="Contract value (Rs.)" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-white outline-none" />
+              <input value={projForm.name} onChange={(e) => setProjForm({ ...projForm, name: e.target.value })} placeholder="Project name" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-foreground outline-none" />
+              <input value={projForm.client} onChange={(e) => setProjForm({ ...projForm, client: e.target.value })} placeholder="Client (optional)" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-foreground outline-none" />
+              <input type="number" value={projForm.billed_revenue} onChange={(e) => setProjForm({ ...projForm, billed_revenue: e.target.value })} placeholder="Contract value (Rs.)" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-foreground outline-none" />
             </div>
-            <button type="submit" disabled={savingProject} className="px-5 py-2.5 bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-primary-foreground font-black text-xs uppercase tracking-widest rounded-xl">{savingProject ? 'Creating…' : 'Create Project'}</button>
+            <button type="submit" disabled={savingProject} className="px-5 py-2.5 bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-primary-foreground font-semibold text-xs uppercase tracking-widest rounded-xl">{savingProject ? 'Creating…' : 'Create Project'}</button>
           </form>
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="p-6 rounded-3xl bg-card border border-border shadow-md">
-            <span className="text-[10px] font-black uppercase text-zinc-500 block">Project Contract Value</span>
-            <span className="text-2xl font-black text-white mt-2 block">Rs. {(contractValue / 10000000).toFixed(2)} Cr</span>
+          <div className="p-6 rounded-xl bg-card border border-border shadow-md">
+            <span className="text-[10px] font-semibold uppercase text-muted-foreground block">Project Contract Value</span>
+            <span className="text-2xl font-semibold text-foreground mt-2 block">Rs. {(contractValue / 10000000).toFixed(2)} Cr</span>
           </div>
-          <div className="p-6 rounded-3xl bg-card border border-border shadow-md">
-            <span className="text-[10px] font-black uppercase text-zinc-500 block">Logged Project Hours</span>
-            <span className="text-2xl font-black text-primary mt-2 block">{Number(activeProj?.totalHours || 0).toFixed(1)} hrs</span>
+          <div className="p-6 rounded-xl bg-card border border-border shadow-md">
+            <span className="text-[10px] font-semibold uppercase text-muted-foreground block">Logged Project Hours</span>
+            <span className="text-2xl font-semibold text-primary mt-2 block">{Number(activeProj?.totalHours || 0).toFixed(1)} hrs</span>
           </div>
-          <div className="p-6 rounded-3xl bg-card border border-border shadow-md">
-            <span className="text-[10px] font-black uppercase text-zinc-500 block">Attributed Resource Cost</span>
-            <span className="text-2xl font-black text-emerald-400 mt-2 block">
+          <div className="p-6 rounded-xl bg-card border border-border shadow-md">
+            <span className="text-[10px] font-semibold uppercase text-muted-foreground block">Attributed Resource Cost</span>
+            <span className="text-2xl font-semibold text-emerald-400 mt-2 block">
               Rs. {Number(activeProj?.cost || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
             </span>
           </div>
         </div>
 
-        <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
-          <span className="text-xs font-black text-white uppercase tracking-wider block">Individual Financial Attribution Ledger</span>
+        <div className="p-6 rounded-xl bg-card border border-border space-y-4">
+          <span className="text-xs font-semibold text-foreground uppercase tracking-wider block">Individual Financial Attribution Ledger</span>
           <div className="border border-border rounded-2xl overflow-hidden">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="border-b border-border bg-zinc-900/30 text-[9px] uppercase font-black tracking-wider text-zinc-500">
+                <tr className="border-b border-border bg-muted/30 text-[9px] uppercase font-semibold tracking-wider text-muted-foreground">
                   <th className="p-3">Engineer & Designation</th>
                   <th className="p-3">Logged Hours</th>
                   <th className="p-3">Resource Cost</th>
@@ -1307,31 +1307,31 @@ export default function App() {
                   <th className="p-3 text-right">ROI Return</th>
                 </tr>
               </thead>
-              <tbody className="text-xs text-zinc-300 divide-y divide-border">
+              <tbody className="text-xs text-foreground/80 divide-y divide-border">
                 {statsList.filter(s => s.totalHrs > 0 || s.emp.activeProject === selectedAttributionProject).map(item => {
                   const contribWeight = totalProjectHours > 0 ? (item.totalHrs / totalProjectHours) : 0;
                   const attributedVal = contractValue * contribWeight;
                   const roiMultiple = item.adjustedCost > 0 ? (attributedVal / item.adjustedCost) : 0;
 
                   return (
-                    <tr key={item.emp.id} className="hover:bg-zinc-900/10">
+                    <tr key={item.emp.id} className="hover:bg-muted/10">
                       <td className="p-3">
-                        <div className="font-extrabold text-white">{item.emp.name}</div>
-                        <div className="text-[10px] text-zinc-500 uppercase">{item.emp.role}</div>
+                        <div className="font-extrabold text-foreground">{item.emp.name}</div>
+                        <div className="text-[10px] text-muted-foreground uppercase">{item.emp.role}</div>
                       </td>
                       <td className="p-3 font-semibold">{item.totalHrs.toFixed(1)} hrs</td>
                       <td className="p-3 font-medium">Rs. {item.adjustedCost.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
                       <td className="p-3">
                         <div className="flex items-center space-x-2">
                           <span className="font-bold text-indigo-400">{(contribWeight * 100).toFixed(1)}%</span>
-                          <div className="w-16 bg-zinc-900 h-1.5 rounded-full overflow-hidden border border-border/50">
+                          <div className="w-16 bg-muted h-1.5 rounded-full overflow-hidden border border-border/50">
                             <div className="bg-primary h-full" style={{ width: `${contribWeight * 100}%` }}></div>
                           </div>
                         </div>
                       </td>
-                      <td className="p-3 font-extrabold text-zinc-400">Rs. {(attributedVal / 100000).toFixed(2)} Lacs</td>
+                      <td className="p-3 font-extrabold text-muted-foreground">Rs. {(attributedVal / 100000).toFixed(2)} Lacs</td>
                       <td className="p-3 text-right">
-                        <span className={`inline-flex px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
+                        <span className={`inline-flex px-2 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider ${
                           roiMultiple > 10 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'
                         }`}>
                           {roiMultiple > 0 ? `${roiMultiple.toFixed(1)}x ROI` : '0x'}
@@ -1349,7 +1349,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground selection:bg-primary/30 selection:text-white font-sans antialiased">
+    <div className="min-h-screen bg-background text-foreground selection:bg-primary/30 selection:text-foreground font-sans antialiased">
       
       {/* TOAST SYSTEM */}
       {toast && (
@@ -1359,7 +1359,7 @@ export default function App() {
               ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
               : toast.type === 'error'
               ? 'bg-red-500/10 border-red-500/20 text-red-400'
-              : 'bg-zinc-900/90 border-zinc-800 text-zinc-300'
+              : 'bg-muted/90 border-border text-foreground/80'
           }`}>
             <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse"></span>
             <span className="text-xs font-semibold">{toast.message}</span>
@@ -1369,21 +1369,21 @@ export default function App() {
 
       {/* CONFIRM MODAL — replaces window.confirm() */}
       {confirmModal && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className={`w-full max-w-md rounded-3xl border p-6 space-y-4 shadow-2xl bg-card ${confirmModal.danger ? 'border-red-500/30' : 'border-border'}`}>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-muted/70 backdrop-blur-sm p-4">
+          <div className={`w-full max-w-md rounded-xl border p-6 space-y-4 shadow-2xl bg-card ${confirmModal.danger ? 'border-red-500/30' : 'border-border'}`}>
             <div className="flex items-center space-x-2">
               {confirmModal.danger && <AlertTriangle className="w-5 h-5 text-red-400 shrink-0" />}
-              <h3 className={`text-sm font-black uppercase tracking-wider ${confirmModal.danger ? 'text-red-400' : 'text-white'}`}>{confirmModal.title}</h3>
+              <h3 className={`text-sm font-semibold uppercase tracking-wider ${confirmModal.danger ? 'text-red-400' : 'text-foreground'}`}>{confirmModal.title}</h3>
             </div>
-            <p className="text-xs text-zinc-300 leading-relaxed">{confirmModal.message}</p>
+            <p className="text-xs text-foreground/80 leading-relaxed">{confirmModal.message}</p>
             {confirmModal.requireTypedWord && (
               <div className="space-y-1">
-                <label className="text-[9px] uppercase font-black text-zinc-500">Type {confirmModal.requireTypedWord} to confirm</label>
+                <label className="text-[9px] uppercase font-semibold text-muted-foreground">Type {confirmModal.requireTypedWord} to confirm</label>
                 <input
                   autoFocus
                   value={confirmTypedInput}
                   onChange={(e) => setConfirmTypedInput(e.target.value)}
-                  className="w-full bg-background border border-red-500/30 rounded-xl px-3 py-2 text-xs text-white outline-none"
+                  className="w-full bg-background border border-red-500/30 rounded-xl px-3 py-2 text-xs text-foreground outline-none"
                   placeholder={confirmModal.requireTypedWord}
                 />
               </div>
@@ -1391,7 +1391,7 @@ export default function App() {
             <div className="flex justify-end space-x-3 pt-2">
               <button
                 onClick={() => { setConfirmModal(null); setConfirmTypedInput(''); }}
-                className="px-4 py-2 rounded-xl border border-border text-xs font-black uppercase tracking-wider text-zinc-400 hover:text-white transition-colors"
+                className="px-4 py-2 rounded-xl border border-border text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors"
               >
                 Cancel
               </button>
@@ -1403,7 +1403,7 @@ export default function App() {
                   setConfirmTypedInput('');
                   await fn();
                 }}
-                className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                className={`px-4 py-2 rounded-xl text-xs font-semibold uppercase tracking-wider transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                   confirmModal.danger ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-primary hover:bg-primary/90 text-primary-foreground'
                 }`}
               >
@@ -1416,19 +1416,19 @@ export default function App() {
 
       {/* RENAME / TEXT-PROMPT MODAL — replaces window.prompt() */}
       {renameModal && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm rounded-3xl border border-border p-6 space-y-4 shadow-2xl bg-card">
-            <h3 className="text-sm font-black uppercase tracking-wider text-white">{renameModal.label}</h3>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-muted/70 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm rounded-xl border border-border p-6 space-y-4 shadow-2xl bg-card">
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-foreground">{renameModal.label}</h3>
             <input
               autoFocus
               value={renameModal.value}
               onChange={(e) => setRenameModal({ ...renameModal, value: e.target.value })}
-              className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-white outline-none"
+              className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground outline-none"
             />
             <div className="flex justify-end space-x-3 pt-2">
               <button
                 onClick={() => setRenameModal(null)}
-                className="px-4 py-2 rounded-xl border border-border text-xs font-black uppercase tracking-wider text-zinc-400 hover:text-white transition-colors"
+                className="px-4 py-2 rounded-xl border border-border text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors"
               >
                 Cancel
               </button>
@@ -1439,7 +1439,7 @@ export default function App() {
                   setRenameModal(null);
                   await fn(val);
                 }}
-                className="px-4 py-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black uppercase tracking-wider transition-colors"
+                className="px-4 py-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-semibold uppercase tracking-wider transition-colors"
               >
                 Save
               </button>
@@ -1452,33 +1452,33 @@ export default function App() {
       {showProfile && (() => {
         const u = api.getUser() || {};
         return (
-          <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-6" onClick={() => setShowProfile(false)}>
-            <div className="w-full max-w-md bg-card border border-border rounded-3xl p-6 space-y-5" onClick={(e) => e.stopPropagation()}>
+          <div className="fixed inset-0 z-50 bg-muted/70 flex items-center justify-center p-6" onClick={() => setShowProfile(false)}>
+            <div className="w-full max-w-md bg-card border border-border rounded-xl p-6 space-y-5" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-black text-white uppercase tracking-wider flex items-center space-x-2">
+                <h3 className="text-sm font-semibold text-foreground uppercase tracking-wider flex items-center space-x-2">
                   <User className="w-4 h-4 text-primary" /><span>My Profile</span>
                 </h3>
-                <button onClick={() => setShowProfile(false)} className="text-zinc-500 hover:text-white"><X className="w-4 h-4" /></button>
+                <button onClick={() => setShowProfile(false)} className="text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>
               </div>
-              <div className="text-[11px] text-zinc-400 space-y-1">
-                <div className="flex justify-between"><span>Email</span><span className="text-white">{u.email}</span></div>
-                <div className="flex justify-between"><span>Role</span><span className="text-white uppercase">{u.role}</span></div>
+              <div className="text-[11px] text-muted-foreground space-y-1">
+                <div className="flex justify-between"><span>Email</span><span className="text-foreground">{u.email}</span></div>
+                <div className="flex justify-between"><span>Role</span><span className="text-foreground uppercase">{u.role}</span></div>
               </div>
               <div className="space-y-2">
-                <label className="text-[9px] uppercase font-black text-zinc-500">Display Name</label>
+                <label className="text-[9px] uppercase font-semibold text-muted-foreground">Display Name</label>
                 <div className="flex gap-2">
                   <input value={profileName} onChange={(e) => setProfileName(e.target.value)}
-                    className="flex-1 bg-background border border-border focus:border-primary rounded-xl px-3 py-2 text-xs text-white outline-none" />
-                  <button onClick={saveProfileName} className="px-3 py-2 bg-primary text-primary-foreground rounded-xl text-[10px] font-black uppercase">Save</button>
+                    className="flex-1 bg-background border border-border focus:border-primary rounded-xl px-3 py-2 text-xs text-foreground outline-none" />
+                  <button onClick={saveProfileName} className="px-3 py-2 bg-primary text-primary-foreground rounded-xl text-[10px] font-semibold uppercase">Save</button>
                 </div>
               </div>
               <div className="border-t border-border pt-4 space-y-2">
-                <label className="text-[9px] uppercase font-black text-zinc-500">Change Password</label>
+                <label className="text-[9px] uppercase font-semibold text-muted-foreground">Change Password</label>
                 <input type="password" value={pwCurrent} onChange={(e) => setPwCurrent(e.target.value)} placeholder="Current password"
-                  className="w-full bg-background border border-border focus:border-primary rounded-xl px-3 py-2 text-xs text-white outline-none" />
+                  className="w-full bg-background border border-border focus:border-primary rounded-xl px-3 py-2 text-xs text-foreground outline-none" />
                 <input type="password" value={pwNew} onChange={(e) => setPwNew(e.target.value)} placeholder="New password (8+ chars)"
-                  className="w-full bg-background border border-border focus:border-primary rounded-xl px-3 py-2 text-xs text-white outline-none" />
-                <button onClick={changePassword} className="w-full py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl text-[10px] font-black uppercase tracking-widest">Update Password</button>
+                  className="w-full bg-background border border-border focus:border-primary rounded-xl px-3 py-2 text-xs text-foreground outline-none" />
+                <button onClick={changePassword} className="w-full py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl text-[10px] font-semibold uppercase tracking-widest">Update Password</button>
               </div>
             </div>
           </div>
@@ -1495,15 +1495,15 @@ export default function App() {
                 <Shield className="w-5 h-5 text-primary" />
                 <span className="font-extrabold text-sm tracking-widest bg-gradient-to-r from-white via-zinc-200 to-zinc-400 bg-clip-text text-transparent uppercase">CIVIL MANTRA</span>
               </div>
-              <nav className="hidden md:flex items-center space-x-8 text-xs font-bold uppercase tracking-wider text-zinc-400">
-                <a href="#features" className="hover:text-white transition-colors">Features</a>
-                <a href="#about" className="hover:text-white transition-colors">Security</a>
-                <a href="#contact" className="hover:text-white transition-colors">Contact</a>
+              <nav className="hidden md:flex items-center space-x-8 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                <a href="#features" className="hover:text-foreground transition-colors">Features</a>
+                <a href="#about" className="hover:text-foreground transition-colors">Security</a>
+                <a href="#contact" className="hover:text-foreground transition-colors">Contact</a>
               </nav>
               <div className="flex items-center space-x-4">
                 <button 
                   onClick={() => setCurrentRole('login')} 
-                  className="px-4 py-2 bg-secondary hover:bg-zinc-800 text-white font-bold text-xs uppercase rounded-full border border-zinc-800 transition-all duration-200"
+                  className="px-4 py-2 bg-secondary hover:bg-muted text-foreground font-bold text-xs uppercase rounded-full border border-border transition-all duration-200"
                 >
                   Console Access
                 </button>
@@ -1519,27 +1519,27 @@ export default function App() {
 
           {/* Hero Section */}
           <section className="relative pt-32 pb-24 md:pt-40 md:pb-36 bg-dot-pattern max-w-7xl mx-auto px-6 text-center space-y-8 flex flex-col items-center">
-            <div className="inline-flex items-center space-x-2 px-3.5 py-1 rounded-full border border-primary/20 bg-primary/5 text-primary text-[10px] font-black uppercase tracking-widest">
+            <div className="inline-flex items-center space-x-2 px-3.5 py-1 rounded-full border border-primary/20 bg-primary/5 text-primary text-[10px] font-semibold uppercase tracking-widest">
               <Activity className="w-3.5 h-3.5 animate-pulse" />
               <span>Next-Gen Telemetry Pipeline</span>
             </div>
-            <h1 className="text-4xl md:text-6xl font-black tracking-tight text-white max-w-4xl leading-tight">
+            <h1 className="text-4xl md:text-6xl font-semibold tracking-tight text-foreground max-w-4xl leading-tight">
               Privacy-First Telemetry for <br />
               <span className="bg-gradient-to-r from-primary via-indigo-400 to-blue-500 bg-clip-text text-transparent">High-Trust Teams</span>
             </h1>
-            <p className="text-zinc-400 text-sm md:text-base max-w-2xl leading-relaxed">
+            <p className="text-muted-foreground text-sm md:text-base max-w-2xl leading-relaxed">
               Verify resource utilization, map project costs, and prevent profitability leaks with transparent desktop analytics. No keystroke content or screen content is ever recorded — only activity counts and window titles, with full employee consent.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
               <button 
                 onClick={() => setCurrentRole('login')} 
-                className="w-full sm:w-auto px-8 py-3.5 bg-primary hover:bg-primary/95 text-primary-foreground font-black text-xs uppercase tracking-widest rounded-full transition-all active:scale-[0.98]"
+                className="w-full sm:w-auto px-8 py-3.5 bg-primary hover:bg-primary/95 text-primary-foreground font-semibold text-xs uppercase tracking-widest rounded-full transition-all active:scale-[0.98]"
               >
                 Access Work Console
               </button>
               <button 
                 onClick={() => showToast('Standalone installation wizard initiated.', 'info')} 
-                className="w-full sm:w-auto px-8 py-3.5 bg-secondary hover:bg-zinc-800 text-white font-bold text-xs uppercase tracking-widest rounded-full border border-zinc-800 transition-all"
+                className="w-full sm:w-auto px-8 py-3.5 bg-secondary hover:bg-muted text-foreground font-bold text-xs uppercase tracking-widest rounded-full border border-border transition-all"
               >
                 Download Desktop App
               </button>
@@ -1547,40 +1547,40 @@ export default function App() {
           </section>
 
           {/* Features Grid */}
-          <section id="features" className="py-20 bg-zinc-950/40 border-t border-b border-border">
+          <section id="features" className="py-20 bg-background/40 border-t border-b border-border">
             <div className="max-w-7xl mx-auto px-6 space-y-12">
               <div className="text-center space-y-3">
-                <h2 className="text-2xl font-black text-white uppercase tracking-wider">Engine Capabilities</h2>
-                <p className="text-xs text-zinc-500 max-w-xl mx-auto uppercase tracking-wide">Structured tracking features mapped directly to organizational workflows.</p>
+                <h2 className="text-2xl font-semibold text-foreground uppercase tracking-wider">Engine Capabilities</h2>
+                <p className="text-xs text-muted-foreground max-w-xl mx-auto uppercase tracking-wide">Structured tracking features mapped directly to organizational workflows.</p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="p-8 rounded-3xl bg-card border border-border space-y-4 hover:border-zinc-800 transition-all duration-300">
+                <div className="p-8 rounded-xl bg-card border border-border space-y-4 hover:border-border transition-all duration-300">
                   <div className="w-10 h-10 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
                     <Activity className="w-5 h-5" />
                   </div>
-                  <h3 className="text-base font-extrabold text-white">Non-Intrusive Polling</h3>
-                  <p className="text-xs text-zinc-400 leading-relaxed">
+                  <h3 className="text-base font-extrabold text-foreground">Non-Intrusive Polling</h3>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
                     Queries active window titles and maps keyboard/mouse events per interval. Does not capture sensitive inputs, logs, or tabs.
                   </p>
                 </div>
 
-                <div className="p-8 rounded-3xl bg-card border border-border space-y-4 hover:border-zinc-800 transition-all duration-300">
+                <div className="p-8 rounded-xl bg-card border border-border space-y-4 hover:border-border transition-all duration-300">
                   <div className="w-10 h-10 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
                     <Lock className="w-5 h-5" />
                   </div>
-                  <h3 className="text-base font-extrabold text-white">At-Rest Database Encryption</h3>
-                  <p className="text-xs text-zinc-400 leading-relaxed">
+                  <h3 className="text-base font-extrabold text-foreground">At-Rest Database Encryption</h3>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
                     Telemetry logs are stored in a local SQLite file securely locked with AES-256 Fernet ciphers to prevent administrative data tampering.
                   </p>
                 </div>
 
-                <div className="p-8 rounded-3xl bg-card border border-border space-y-4 hover:border-zinc-800 transition-all duration-300">
+                <div className="p-8 rounded-xl bg-card border border-border space-y-4 hover:border-border transition-all duration-300">
                   <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
                     <Cpu className="w-5 h-5" />
                   </div>
-                  <h3 className="text-base font-extrabold text-white">AI-Driven Anomaly Mapping</h3>
-                  <p className="text-xs text-zinc-400 leading-relaxed">
+                  <h3 className="text-base font-extrabold text-foreground">AI-Driven Anomaly Mapping</h3>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
                     Predictive models forecast idle benches and flag active outliers without disrupting employee focus.
                   </p>
                 </div>
@@ -1591,8 +1591,8 @@ export default function App() {
           {/* About Section */}
           <section id="about" className="py-20 max-w-7xl mx-auto px-6 grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
             <div className="space-y-6">
-              <h2 className="text-2xl font-black text-white uppercase tracking-wider">High Trust Telemetry</h2>
-              <p className="text-xs text-zinc-400 leading-relaxed">
+              <h2 className="text-2xl font-semibold text-foreground uppercase tracking-wider">High Trust Telemetry</h2>
+              <p className="text-xs text-muted-foreground leading-relaxed">
                 Organizations must operate at scale without compromising privacy. Civil Mantra replaces legacy screen recorders with metadata-driven pipelines. By tracking active applications and input density counters, it provides clear workforce analytics while preserving absolute employee safety.
               </p>
               <div className="space-y-3">
@@ -1601,72 +1601,72 @@ export default function App() {
                   'Local SQLite caches allow offline mapping capabilities',
                   'Fully signed installer targets for Linux, macOS & Windows'
                 ].map((txt, idx) => (
-                  <div key={idx} className="flex items-center space-x-3 text-xs text-zinc-300">
+                  <div key={idx} className="flex items-center space-x-3 text-xs text-foreground/80">
                     <CheckCircle2 className="w-4 h-4 text-primary" />
                     <span>{txt}</span>
                   </div>
                 ))}
               </div>
             </div>
-            <div className="p-8 rounded-3xl bg-zinc-900/40 border border-border space-y-4">
+            <div className="p-8 rounded-xl bg-muted/40 border border-border space-y-4">
               <div className="flex justify-between items-center border-b border-border pb-4">
-                <span className="text-xs font-black text-white uppercase tracking-wider">Telemetry Profile</span>
+                <span className="text-xs font-semibold text-foreground uppercase tracking-wider">Telemetry Profile</span>
                 <span className="text-[10px] bg-primary/10 border border-primary/20 text-primary px-2.5 py-0.5 rounded-full font-bold uppercase">Active</span>
               </div>
-              <div className="font-mono text-[10px] text-zinc-400 space-y-2">
+              <div className="font-mono text-[10px] text-muted-foreground space-y-2">
                 <div>[SYSTEM] Initiating local daemon port check on 5050...</div>
                 <div className="text-emerald-400">[SYSTEM] Connection secure. Auth token accepted.</div>
                 <div>[DAEMON] Active Window: AutoCAD 2026 (Focus verified)</div>
                 <div>[DAEMON] Keystrokes: 18 | Mouse Movements: 104</div>
-                <div className="text-zinc-500">[DAEMON] Encrypting SQLite telemetry block [AES-256]</div>
+                <div className="text-muted-foreground">[DAEMON] Encrypting SQLite telemetry block [AES-256]</div>
               </div>
             </div>
           </section>
 
           {/* Contact Section */}
-          <section id="contact" className="py-20 bg-zinc-950/40 border-t border-border">
+          <section id="contact" className="py-20 bg-background/40 border-t border-border">
             <div className="max-w-xl mx-auto px-6 space-y-8">
               <div className="text-center space-y-2">
-                <h2 className="text-2xl font-black text-white uppercase tracking-wider">Enterprise Inquiries</h2>
-                <p className="text-xs text-zinc-500 uppercase tracking-wide">Request a sandbox instance for your organization.</p>
+                <h2 className="text-2xl font-semibold text-foreground uppercase tracking-wider">Enterprise Inquiries</h2>
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">Request a sandbox instance for your organization.</p>
               </div>
 
               <form onSubmit={handleContactSubmit} className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <label className="text-[10px] uppercase font-black tracking-wider text-zinc-400">Full Name</label>
+                    <label className="text-[10px] uppercase font-semibold tracking-wider text-muted-foreground">Full Name</label>
                     <input 
                       type="text" 
                       value={contactName} 
                       onChange={(e) => setContactName(e.target.value)} 
-                      className="w-full bg-background border border-border focus:border-primary rounded-xl px-4 py-3 text-xs text-white placeholder-zinc-700 outline-none transition-colors"
+                      className="w-full bg-background border border-border focus:border-primary rounded-xl px-4 py-3 text-xs text-foreground placeholder:text-muted-foreground outline-none transition-colors"
                       placeholder="Jane Doe"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-[10px] uppercase font-black tracking-wider text-zinc-400">Corporate Email</label>
+                    <label className="text-[10px] uppercase font-semibold tracking-wider text-muted-foreground">Corporate Email</label>
                     <input 
                       type="email" 
                       value={contactEmail} 
                       onChange={(e) => setContactEmail(e.target.value)} 
-                      className="w-full bg-background border border-border focus:border-primary rounded-xl px-4 py-3 text-xs text-white placeholder-zinc-700 outline-none transition-colors"
+                      className="w-full bg-background border border-border focus:border-primary rounded-xl px-4 py-3 text-xs text-foreground placeholder:text-muted-foreground outline-none transition-colors"
                       placeholder="jane@company.com"
                     />
                   </div>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-[10px] uppercase font-black tracking-wider text-zinc-400">Message</label>
+                  <label className="text-[10px] uppercase font-semibold tracking-wider text-muted-foreground">Message</label>
                   <textarea 
                     rows="4" 
                     value={contactMsg} 
                     onChange={(e) => setContactMsg(e.target.value)} 
-                    className="w-full bg-background border border-border focus:border-primary rounded-xl px-4 py-3 text-xs text-white placeholder-zinc-700 outline-none transition-colors resize-none"
+                    className="w-full bg-background border border-border focus:border-primary rounded-xl px-4 py-3 text-xs text-foreground placeholder:text-muted-foreground outline-none transition-colors resize-none"
                     placeholder="Describe your organization and requirement..."
                   />
                 </div>
                 <button 
                   type="submit" 
-                  className="w-full py-3.5 bg-primary hover:bg-primary/95 text-primary-foreground font-black text-xs uppercase tracking-widest rounded-xl transition-all"
+                  className="w-full py-3.5 bg-primary hover:bg-primary/95 text-primary-foreground font-semibold text-xs uppercase tracking-widest rounded-xl transition-all"
                 >
                   Submit Inquiry
                 </button>
@@ -1675,7 +1675,7 @@ export default function App() {
           </section>
 
           {/* Footer */}
-          <footer className="mt-auto border-t border-border bg-background py-8 text-center text-[10px] text-zinc-650 uppercase tracking-widest">
+          <footer className="mt-auto border-t border-border bg-background py-8 text-center text-[10px] text-muted-foreground uppercase tracking-widest">
             Civil Mantra Telemetry Systems License MIT.
           </footer>
         </div>
@@ -1792,9 +1792,9 @@ export default function App() {
             <div className="p-6 border-b border-border flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <Shield className="w-5 h-5 text-primary" />
-                <span className="font-extrabold text-xs tracking-widest text-white uppercase">ADMIN PANEL</span>
+                <span className="font-extrabold text-xs tracking-widest text-foreground uppercase">ADMIN PANEL</span>
               </div>
-              <button onClick={handleLogout} className="p-1 text-zinc-500 hover:text-white transition-colors md:hidden">
+              <button onClick={handleLogout} className="p-1 text-muted-foreground hover:text-foreground transition-colors md:hidden">
                 <LogOut className="w-4 h-4" />
               </button>
             </div>
@@ -1814,7 +1814,7 @@ export default function App() {
                   className={`w-full px-4 py-3 rounded-xl text-xs font-bold uppercase flex items-center space-x-3 transition-all ${
                     activeAdminTab === tab.id 
                       ? 'bg-primary/10 border border-primary/20 text-primary' 
-                      : 'text-zinc-400 hover:bg-zinc-900/60 hover:text-white border border-transparent'
+                      : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground border border-transparent'
                   }`}
                 >
                   <tab.icon className="w-4 h-4" />
@@ -1823,18 +1823,18 @@ export default function App() {
               ))}
             </nav>
 
-            <div className="p-4 border-t border-border flex items-center justify-between text-xs text-zinc-500">
+            <div className="p-4 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
               <div className="flex items-center space-x-2">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
                 <span className="font-semibold uppercase tracking-wider">Session Active</span>
               </div>
               <div className="flex items-center space-x-2">
                 <button onClick={openProfile}
-                  className="px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-border hover:text-white rounded-lg transition-all flex items-center space-x-1 uppercase text-[10px] font-bold">
+                  className="px-2.5 py-1 bg-muted hover:bg-muted border border-border hover:text-foreground rounded-lg transition-all flex items-center space-x-1 uppercase text-[10px] font-bold">
                   <User className="w-3 h-3" /><span>Profile</span>
                 </button>
                 <button onClick={handleLogout}
-                  className="px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-border hover:text-white rounded-lg transition-all flex items-center space-x-1 uppercase text-[10px] font-bold">
+                  className="px-2.5 py-1 bg-muted hover:bg-muted border border-border hover:text-foreground rounded-lg transition-all flex items-center space-x-1 uppercase text-[10px] font-bold">
                   <LogOut className="w-3 h-3" /><span>Logout</span>
                 </button>
               </div>
@@ -1849,17 +1849,17 @@ export default function App() {
               <div className="space-y-6">
                 <div className="flex justify-between items-center border-b border-border pb-4 flex-wrap gap-4">
                   <div>
-                    <h2 className="text-xl font-black text-white uppercase tracking-wider">AI Predictive Workspace Analytics</h2>
-                    <p className="text-xs text-zinc-400 mt-1">Simulated intelligence outputs forecasting bench capacity and profit optimizations.</p>
+                    <h2 className="text-xl font-semibold text-foreground uppercase tracking-wider">Workspace Analytics</h2>
+                    <p className="text-xs text-muted-foreground mt-1">Live utilisation, bench capacity, and project ROI from real telemetry.</p>
                   </div>
-                  <div className="flex items-center space-x-2 text-[10px] bg-primary/5 border border-primary/15 px-3 py-1.5 rounded-full text-primary font-black uppercase tracking-wider">
+                  <div className="flex items-center space-x-2 text-[10px] bg-primary/5 border border-primary/15 px-3 py-1.5 rounded-full text-primary font-semibold uppercase tracking-wider">
                     <Activity className="w-3.5 h-3.5" />
                     <span>Live Modeling: Active</span>
                   </div>
                 </div>
 
                 {serverAnalytics?.overview && serverAnalytics.overview.telemetry.samples === 0 && (
-                  <div className="p-4 rounded-2xl bg-primary/5 border border-primary/15 text-xs text-zinc-400 flex items-center gap-3">
+                  <div className="p-4 rounded-2xl bg-primary/5 border border-primary/15 text-xs text-muted-foreground flex items-center gap-3">
                     <AlertTriangle className="w-4 h-4 text-primary shrink-0" />
                     <span>No telemetry yet. Create team leads &amp; employees, then have them install and activate the agent — analytics fill in automatically.</span>
                   </div>
@@ -1867,61 +1867,61 @@ export default function App() {
 
                 {/* Bento Grid KPIs */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                  <div className="p-6 rounded-3xl bg-card border border-border space-y-3 hover:border-zinc-800 transition-all">
-                    <span className="text-[10px] uppercase font-black tracking-widest text-zinc-500 block">Total Portfolio Revenue</span>
+                  <div className="p-6 rounded-xl bg-card border border-border space-y-3 hover:border-border transition-all">
+                    <span className="text-[10px] uppercase font-semibold tracking-widest text-muted-foreground block">Total Portfolio Revenue</span>
                     <div className="flex items-baseline space-x-1.5">
-                      <span className="text-2xl font-black text-white">{serverAnalytics?.overview ? `Rs. ${(serverAnalytics.overview.portfolio.revenue/1e7).toFixed(2)} Cr` : '—'}</span>
+                      <span className="text-2xl font-semibold text-foreground">{serverAnalytics?.overview ? `Rs. ${(serverAnalytics.overview.portfolio.revenue/1e7).toFixed(2)} Cr` : '—'}</span>
                       <span className="text-[10px] text-emerald-400 font-bold">real</span>
                     </div>
-                    <div className="w-full bg-zinc-900 h-1 rounded-full overflow-hidden">
+                    <div className="w-full bg-muted h-1 rounded-full overflow-hidden">
                       <div className="bg-primary h-full w-3/4"></div>
                     </div>
                   </div>
 
-                  <div className="p-6 rounded-3xl bg-card border border-border space-y-3 hover:border-zinc-800 transition-all">
-                    <span className="text-[10px] uppercase font-black tracking-widest text-zinc-500 block">Total Resource Costs</span>
+                  <div className="p-6 rounded-xl bg-card border border-border space-y-3 hover:border-border transition-all">
+                    <span className="text-[10px] uppercase font-semibold tracking-widest text-muted-foreground block">Total Resource Costs</span>
                     <div className="flex items-baseline space-x-1.5">
-                      <span className="text-2xl font-black text-white">{serverAnalytics?.overview ? `Rs. ${(serverAnalytics.overview.portfolio.cost/1e7).toFixed(2)} Cr` : '—'}</span>
-                      <span className="text-[10px] text-zinc-500 font-semibold">Actual (logged)</span>
+                      <span className="text-2xl font-semibold text-foreground">{serverAnalytics?.overview ? `Rs. ${(serverAnalytics.overview.portfolio.cost/1e7).toFixed(2)} Cr` : '—'}</span>
+                      <span className="text-[10px] text-muted-foreground font-semibold">Actual (logged)</span>
                     </div>
-                    <div className="w-full bg-zinc-900 h-1 rounded-full overflow-hidden">
+                    <div className="w-full bg-muted h-1 rounded-full overflow-hidden">
                       <div className="bg-indigo-500 h-full w-[66%]"></div>
                     </div>
                   </div>
 
-                  <div className="p-6 rounded-3xl bg-card border border-border space-y-3 hover:border-zinc-800 transition-all">
-                    <span className="text-[10px] uppercase font-black tracking-widest text-zinc-500 block">Net Profit Margin</span>
+                  <div className="p-6 rounded-xl bg-card border border-border space-y-3 hover:border-border transition-all">
+                    <span className="text-[10px] uppercase font-semibold tracking-widest text-muted-foreground block">Net Profit Margin</span>
                     <div className="flex items-baseline space-x-1.5">
-                      <span className="text-2xl font-black text-white">
+                      <span className="text-2xl font-semibold text-foreground">
                         {serverAnalytics?.overview
                           ? (serverAnalytics.overview.portfolio.margin_pct == null ? 'No cost data yet' : `${serverAnalytics.overview.portfolio.margin_pct}%`)
                           : '—'}
                       </span>
                       {serverAnalytics?.overview?.portfolio.margin_pct != null && <span className="text-[10px] text-emerald-400 font-bold">real</span>}
                     </div>
-                    <div className="w-full bg-zinc-900 h-1 rounded-full overflow-hidden">
+                    <div className="w-full bg-muted h-1 rounded-full overflow-hidden">
                       <div className="bg-emerald-500 h-full w-[85%]"></div>
                     </div>
                   </div>
 
-                  <div className="p-6 rounded-3xl bg-card border border-border space-y-3 hover:border-zinc-800 transition-all">
-                    <span className="text-[10px] uppercase font-black tracking-widest text-zinc-500 block">Idle Bench %</span>
+                  <div className="p-6 rounded-xl bg-card border border-border space-y-3 hover:border-border transition-all">
+                    <span className="text-[10px] uppercase font-semibold tracking-widest text-muted-foreground block">Idle Bench %</span>
                     <div className="flex items-baseline space-x-1.5">
-                      <span className="text-2xl font-black text-white">{serverAnalytics?.overview ? `${serverAnalytics.overview.portfolio.bench_pct}%` : '—'}</span>
+                      <span className="text-2xl font-semibold text-foreground">{serverAnalytics?.overview ? `${serverAnalytics.overview.portfolio.bench_pct}%` : '—'}</span>
                       <span className="text-[10px] text-emerald-400 font-bold">{serverAnalytics?.overview ? `${serverAnalytics.overview.telemetry.active_hours}h active` : ''}</span>
                     </div>
-                    <div className="w-full bg-zinc-900 h-1 rounded-full overflow-hidden">
+                    <div className="w-full bg-muted h-1 rounded-full overflow-hidden">
                       <div className="bg-emerald-400 h-full w-[96%]"></div>
                     </div>
                   </div>
                 </div>
 
                 {/* AI / ML Forecast Panel */}
-                <div className="p-6 rounded-3xl bg-primary/5 border border-primary/10 flex flex-col md:flex-row justify-between gap-6">
+                <div className="p-6 rounded-xl bg-primary/5 border border-primary/10 flex flex-col md:flex-row justify-between gap-6">
                   <div className="space-y-2 max-w-xl">
-                    <span className="text-[9px] bg-primary/10 border border-primary/20 text-primary px-3 py-1 rounded-full font-black uppercase tracking-widest inline-block">Insights (Real Telemetry)</span>
-                    <h3 className="text-sm font-extrabold text-white">Workforce Utilisation & Bench Capacity</h3>
-                    <p className="text-xs text-zinc-400 leading-relaxed">
+                    <span className="text-[9px] bg-primary/10 border border-primary/20 text-primary px-3 py-1 rounded-full font-semibold uppercase tracking-widest inline-block">Insights (Real Telemetry)</span>
+                    <h3 className="text-sm font-extrabold text-foreground">Workforce Utilisation & Bench Capacity</h3>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
                       {serverAnalytics?.overview ? (() => {
                         const o = serverAnalytics.overview;
                         const top = o.categories && o.categories[0] ? o.categories[0].category : 'n/a';
@@ -1931,23 +1931,23 @@ export default function App() {
                   </div>
                   <div className="flex items-center space-x-4 shrink-0">
                     <div className="text-center p-3.5 bg-card border border-border rounded-2xl w-24">
-                      <span className="text-[9px] uppercase font-bold text-zinc-500 block">Idle Bench</span>
-                      <span className="text-sm font-black text-emerald-400">{serverAnalytics?.overview ? `${serverAnalytics.overview.portfolio.bench_pct}%` : '—'}</span>
+                      <span className="text-[9px] uppercase font-bold text-muted-foreground block">Idle Bench</span>
+                      <span className="text-sm font-semibold text-emerald-400">{serverAnalytics?.overview ? `${serverAnalytics.overview.portfolio.bench_pct}%` : '—'}</span>
                     </div>
                     <div className="text-center p-3.5 bg-card border border-border rounded-2xl w-24">
-                      <span className="text-[9px] uppercase font-bold text-zinc-500 block">Risk Status</span>
-                      <span className="text-sm font-black text-primary">{serverAnalytics?.overview ? (serverAnalytics.overview.telemetry.active_pct < 40 ? 'HIGH' : serverAnalytics.overview.telemetry.active_pct < 70 ? 'MED' : 'LOW') : '—'}</span>
+                      <span className="text-[9px] uppercase font-bold text-muted-foreground block">Risk Status</span>
+                      <span className="text-sm font-semibold text-primary">{serverAnalytics?.overview ? (serverAnalytics.overview.telemetry.active_pct < 40 ? 'HIGH' : serverAnalytics.overview.telemetry.active_pct < 70 ? 'MED' : 'LOW') : '—'}</span>
                     </div>
                   </div>
                 </div>
 
                 {/* Recharts Area / Bar Graphs */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
-                    <span className="text-xs font-black text-white uppercase tracking-wider">Daily Active Hours (last {serverAnalytics?.overview?.days || 7}d)</span>
+                  <div className="p-6 rounded-xl bg-card border border-border space-y-4">
+                    <span className="text-xs font-semibold text-foreground uppercase tracking-wider">Daily Active Hours (last {serverAnalytics?.overview?.days || 7}d)</span>
                     <div className="h-64 w-full relative">
                       {!serverAnalytics?.overview?.trend?.length && (
-                        <div className="absolute inset-0 flex items-center justify-center text-xs text-zinc-600 pointer-events-none">
+                        <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground pointer-events-none">
                           No activity data yet
                         </div>
                       )}
@@ -1969,11 +1969,11 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
-                    <span className="text-xs font-black text-white uppercase tracking-wider">Activity by Category (samples)</span>
+                  <div className="p-6 rounded-xl bg-card border border-border space-y-4">
+                    <span className="text-xs font-semibold text-foreground uppercase tracking-wider">Activity by Category (samples)</span>
                     <div className="h-64 w-full relative">
                       {!serverAnalytics?.overview?.categories?.length && (
-                        <div className="absolute inset-0 flex items-center justify-center text-xs text-zinc-600 pointer-events-none">
+                        <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground pointer-events-none">
                           No activity data yet
                         </div>
                       )}
@@ -1992,29 +1992,29 @@ export default function App() {
 
                 {/* Portfolio by Team Lead — who owns what, and the return per lead. */}
                 {serverAnalytics?.overview?.leads?.length > 0 && (
-                  <div className="rounded-3xl bg-card border border-border p-6 space-y-4">
-                    <span className="text-xs font-black text-white uppercase tracking-wider">Portfolio by Team Lead</span>
+                  <div className="rounded-xl bg-card border border-border p-6 space-y-4">
+                    <span className="text-xs font-semibold text-foreground uppercase tracking-wider">Portfolio by Team Lead</span>
                     <div className="overflow-x-auto">
                       <table className="w-full text-left">
                         <thead>
-                          <tr className="text-[9px] uppercase text-zinc-500 border-b border-border">
-                            <th className="py-2 font-black">Team Lead</th>
-                            <th className="py-2 font-black">Projects</th>
-                            <th className="py-2 font-black">Employees</th>
-                            <th className="py-2 font-black">Revenue</th>
-                            <th className="py-2 font-black">Resource Cost</th>
-                            <th className="py-2 font-black">Return</th>
+                          <tr className="text-[9px] uppercase text-muted-foreground border-b border-border">
+                            <th className="py-2 font-semibold">Team Lead</th>
+                            <th className="py-2 font-semibold">Projects</th>
+                            <th className="py-2 font-semibold">Employees</th>
+                            <th className="py-2 font-semibold">Revenue</th>
+                            <th className="py-2 font-semibold">Resource Cost</th>
+                            <th className="py-2 font-semibold">Return</th>
                           </tr>
                         </thead>
                         <tbody>
                           {serverAnalytics.overview.leads.map((l) => (
-                            <tr key={l.lead_id} className="text-xs text-zinc-300 border-b border-border/40">
-                              <td className="py-2.5 font-bold text-white">{l.lead_name}</td>
+                            <tr key={l.lead_id} className="text-xs text-foreground/80 border-b border-border/40">
+                              <td className="py-2.5 font-bold text-foreground">{l.lead_name}</td>
                               <td className="py-2.5">{l.projects}</td>
                               <td className="py-2.5">{l.employees}</td>
                               <td className="py-2.5">Rs. {(l.revenue / 1e7).toFixed(2)} Cr</td>
                               <td className="py-2.5">Rs. {(l.cost / 1e7).toFixed(2)} Cr</td>
-                              <td className={`py-2.5 font-black ${l.roi == null ? 'text-zinc-500' : l.roi >= 1 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                              <td className={`py-2.5 font-semibold ${l.roi == null ? 'text-muted-foreground' : l.roi >= 1 ? 'text-emerald-400' : 'text-amber-400'}`}>
                                 {l.roi == null ? 'No cost yet' : `${l.roi}x`}
                               </td>
                             </tr>
@@ -2032,20 +2032,20 @@ export default function App() {
               <div className="space-y-6">
                 <div className="flex justify-between items-center border-b border-border pb-4 flex-wrap gap-4">
                   <div>
-                    <h2 className="text-xl font-black text-white uppercase tracking-wider">User Directory & Assignments</h2>
-                    <p className="text-xs text-zinc-400 mt-1">Manage corporate accounts, roles, and project mapping.</p>
+                    <h2 className="text-xl font-semibold text-foreground uppercase tracking-wider">User Directory & Assignments</h2>
+                    <p className="text-xs text-muted-foreground mt-1">Manage corporate accounts, roles, and project mapping.</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => { setShowAddLead(true); setShowAddForm(false); setShowEditForm(false); }}
-                      className="px-4 py-2 bg-zinc-900 border border-border hover:text-white text-zinc-300 font-black text-xs uppercase tracking-widest rounded-full transition-all flex items-center space-x-1.5"
+                      className="px-4 py-2 bg-muted border border-border hover:text-foreground text-foreground/80 font-semibold text-xs uppercase tracking-widest rounded-full transition-all flex items-center space-x-1.5"
                     >
                       <Users className="w-4 h-4" />
                       <span>Add Team Lead</span>
                     </button>
                     <button
                       onClick={() => { setShowAddForm(true); setShowEditForm(false); setShowAddLead(false); }}
-                      className="px-4 py-2 bg-primary hover:bg-primary/95 text-primary-foreground font-black text-xs uppercase tracking-widest rounded-full transition-all flex items-center space-x-1.5 active:scale-[0.98]"
+                      className="px-4 py-2 bg-primary hover:bg-primary/95 text-primary-foreground font-semibold text-xs uppercase tracking-widest rounded-full transition-all flex items-center space-x-1.5 active:scale-[0.98]"
                     >
                       <Plus className="w-4 h-4" />
                       <span>Add Employee</span>
@@ -2055,92 +2055,92 @@ export default function App() {
 
                 {/* Add Team Lead Form */}
                 {showAddLead && (
-                  <form onSubmit={handleAddLead} className="p-6 rounded-3xl bg-card border border-primary/20 space-y-4 animate-fade-in">
+                  <form onSubmit={handleAddLead} className="p-6 rounded-xl bg-card border border-primary/20 space-y-4 animate-fade-in">
                     <div className="flex justify-between items-center">
-                      <h3 className="text-xs font-black uppercase tracking-widest text-primary">Create Team Lead</h3>
-                      <button type="button" onClick={() => setShowAddLead(false)} className="text-zinc-500 hover:text-white"><X className="w-4 h-4" /></button>
+                      <h3 className="text-xs font-semibold uppercase tracking-widest text-primary">Create Team Lead</h3>
+                      <button type="button" onClick={() => setShowAddLead(false)} className="text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <input value={leadForm.name} onChange={(e) => setLeadForm({ ...leadForm, name: e.target.value })} placeholder="Full name" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-white outline-none" />
-                      <input type="email" value={leadForm.email} onChange={(e) => setLeadForm({ ...leadForm, email: e.target.value })} placeholder="Corporate email" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-white outline-none" />
-                      <input value={leadForm.dept} onChange={(e) => setLeadForm({ ...leadForm, dept: e.target.value })} placeholder="Department" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-white outline-none" />
-                      <input type="password" value={leadForm.password} onChange={(e) => setLeadForm({ ...leadForm, password: e.target.value })} placeholder="Temp password (8+ chars)" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-white outline-none" />
+                      <input value={leadForm.name} onChange={(e) => setLeadForm({ ...leadForm, name: e.target.value })} placeholder="Full name" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-foreground outline-none" />
+                      <input type="email" value={leadForm.email} onChange={(e) => setLeadForm({ ...leadForm, email: e.target.value })} placeholder="Corporate email" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-foreground outline-none" />
+                      <input value={leadForm.dept} onChange={(e) => setLeadForm({ ...leadForm, dept: e.target.value })} placeholder="Department" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-foreground outline-none" />
+                      <input type="password" value={leadForm.password} onChange={(e) => setLeadForm({ ...leadForm, password: e.target.value })} placeholder="Temp password (8+ chars)" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-foreground outline-none" />
                     </div>
-                    <button type="submit" className="px-5 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground font-black text-xs uppercase tracking-widest rounded-xl">Create Team Lead</button>
+                    <button type="submit" className="px-5 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs uppercase tracking-widest rounded-xl">Create Team Lead</button>
                   </form>
                 )}
 
                 {/* Add Employee Form */}
                 {showAddForm && (
-                  <form onSubmit={handleAddEmployee} className="p-6 rounded-3xl bg-card border border-primary/20 space-y-4 animate-fade-in">
+                  <form onSubmit={handleAddEmployee} className="p-6 rounded-xl bg-card border border-primary/20 space-y-4 animate-fade-in">
                     <div className="flex justify-between items-center">
-                      <h3 className="text-xs font-black text-white uppercase tracking-widest text-primary">Provision New User (Employee or Team Lead)</h3>
-                      <button type="button" onClick={() => setShowAddForm(false)} className="text-zinc-500 hover:text-white transition-colors">
+                      <h3 className="text-xs font-semibold text-foreground uppercase tracking-widest text-primary">Provision New User (Employee or Team Lead)</h3>
+                      <button type="button" onClick={() => setShowAddForm(false)} className="text-muted-foreground hover:text-foreground transition-colors">
                         <X className="w-4 h-4" />
                       </button>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                       <div className="space-y-1">
-                        <label className="text-[9px] uppercase font-black text-zinc-450 tracking-wider">Account Type</label>
+                        <label className="text-[9px] uppercase font-semibold text-muted-foreground tracking-wider">Account Type</label>
                         <select
                           value={empForm.userType}
                           onChange={(e) => setEmpForm({...empForm, userType: e.target.value})}
-                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-white outline-none"
+                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground outline-none"
                         >
                           <option value="employee">Employee</option>
                           <option value="lead">Team Lead</option>
                         </select>
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[9px] uppercase font-black text-zinc-450 tracking-wider">Full Name</label>
+                        <label className="text-[9px] uppercase font-semibold text-muted-foreground tracking-wider">Full Name</label>
                         <input
                           type="text"
                           required
                           value={empForm.name}
                           onChange={(e) => setEmpForm({...empForm, name: e.target.value})}
-                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-white outline-none"
+                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground outline-none"
                           placeholder="Full name"
                         />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[9px] uppercase font-black text-zinc-450 tracking-wider">Corporate Email</label>
+                        <label className="text-[9px] uppercase font-semibold text-muted-foreground tracking-wider">Corporate Email</label>
                         <input
                           type="email"
                           value={empForm.email}
                           onChange={(e) => setEmpForm({...empForm, email: e.target.value})}
-                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-white outline-none"
+                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground outline-none"
                           placeholder="name@civilmantra.com"
                         />
                       </div>
                       {empForm.userType === 'lead' && (
                         <div className="space-y-1">
-                          <label className="text-[9px] uppercase font-black text-zinc-450 tracking-wider">Temp Password (8+)</label>
+                          <label className="text-[9px] uppercase font-semibold text-muted-foreground tracking-wider">Temp Password (8+)</label>
                           <input
                             type="text"
                             value={empForm.password}
                             onChange={(e) => setEmpForm({...empForm, password: e.target.value})}
-                            className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-white outline-none"
+                            className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground outline-none"
                             placeholder="lead login password"
                           />
                         </div>
                       )}
                       <div className="space-y-1">
-                        <label className="text-[9px] uppercase font-black text-zinc-450 tracking-wider">Designation / Role</label>
+                        <label className="text-[9px] uppercase font-semibold text-muted-foreground tracking-wider">Designation / Role</label>
                         <input 
                           type="text" 
                           required
                           value={empForm.role} 
                           onChange={(e) => setEmpForm({...empForm, role: e.target.value})} 
-                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-white outline-none"
+                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground outline-none"
                           placeholder="CAD Designer"
                         />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[9px] uppercase font-black text-zinc-450 tracking-wider">Department</label>
+                        <label className="text-[9px] uppercase font-semibold text-muted-foreground tracking-wider">Department</label>
                         <select 
                           value={empForm.dept} 
                           onChange={(e) => setEmpForm({...empForm, dept: e.target.value})} 
-                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-white outline-none"
+                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground outline-none"
                         >
                           <option value="Civil Engineering">Civil Engineering</option>
                           <option value="Structural Design">Structural Design</option>
@@ -2149,11 +2149,11 @@ export default function App() {
                         </select>
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[9px] uppercase font-black text-zinc-450 tracking-wider">Assign Team Lead</label>
+                        <label className="text-[9px] uppercase font-semibold text-muted-foreground tracking-wider">Assign Team Lead</label>
                         <select 
                           value={empForm.teamLeadId} 
                           onChange={(e) => setEmpForm({...empForm, teamLeadId: e.target.value})} 
-                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-white outline-none"
+                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground outline-none"
                         >
                           <option value="">Select team lead…</option>
                           {teamLeads.map(tl => (
@@ -2162,11 +2162,11 @@ export default function App() {
                         </select>
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[9px] uppercase font-black text-zinc-450 tracking-wider">Active Project</label>
+                        <label className="text-[9px] uppercase font-semibold text-muted-foreground tracking-wider">Active Project</label>
                         <select 
                           value={empForm.activeProject} 
                           onChange={(e) => setEmpForm({...empForm, activeProject: e.target.value})} 
-                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-white outline-none"
+                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground outline-none"
                         >
                           <option value="">No project assigned</option>
                           {projects.map(p => (
@@ -2175,16 +2175,16 @@ export default function App() {
                         </select>
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[9px] uppercase font-black text-zinc-450 tracking-wider">Base Salary (Rs/mo)</label>
+                        <label className="text-[9px] uppercase font-semibold text-muted-foreground tracking-wider">Base Salary (Rs/mo)</label>
                         <input 
                           type="number" 
                           value={empForm.baseSalary} 
                           onChange={(e) => setEmpForm({...empForm, baseSalary: Number(e.target.value)})} 
-                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-white outline-none"
+                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground outline-none"
                         />
                       </div>
                     </div>
-                    <button type="submit" disabled={savingEmployee} className="px-5 py-2.5 bg-primary text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed font-black text-xs uppercase tracking-widest rounded-xl transition-all">
+                    <button type="submit" disabled={savingEmployee} className="px-5 py-2.5 bg-primary text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed font-semibold text-xs uppercase tracking-widest rounded-xl transition-all">
                       {savingEmployee ? 'Adding…' : 'Add to Registry'}
                     </button>
                   </form>
@@ -2192,40 +2192,40 @@ export default function App() {
 
                 {/* Edit Employee Form */}
                 {showEditForm && (
-                  <form onSubmit={handleEditEmployee} className="p-6 rounded-3xl bg-card border border-indigo-500/20 space-y-4 animate-fade-in">
+                  <form onSubmit={handleEditEmployee} className="p-6 rounded-xl bg-card border border-indigo-500/20 space-y-4 animate-fade-in">
                     <div className="flex justify-between items-center">
-                      <h3 className="text-xs font-black text-white uppercase tracking-widest text-indigo-400">Edit Employee Profile: {selectedEmp?.id}</h3>
-                      <button type="button" onClick={() => setShowEditForm(false)} className="text-zinc-500 hover:text-white transition-colors">
+                      <h3 className="text-xs font-semibold text-foreground uppercase tracking-widest text-indigo-400">Edit Employee Profile: {selectedEmp?.id}</h3>
+                      <button type="button" onClick={() => setShowEditForm(false)} className="text-muted-foreground hover:text-foreground transition-colors">
                         <X className="w-4 h-4" />
                       </button>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                       <div className="space-y-1">
-                        <label className="text-[9px] uppercase font-black text-zinc-450 tracking-wider">Full Name</label>
+                        <label className="text-[9px] uppercase font-semibold text-muted-foreground tracking-wider">Full Name</label>
                         <input 
                           type="text" 
                           required
                           value={empForm.name} 
                           onChange={(e) => setEmpForm({...empForm, name: e.target.value})} 
-                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-white outline-none"
+                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground outline-none"
                         />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[9px] uppercase font-black text-zinc-450 tracking-wider">Designation / Role</label>
+                        <label className="text-[9px] uppercase font-semibold text-muted-foreground tracking-wider">Designation / Role</label>
                         <input 
                           type="text" 
                           required
                           value={empForm.role} 
                           onChange={(e) => setEmpForm({...empForm, role: e.target.value})} 
-                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-white outline-none"
+                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground outline-none"
                         />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[9px] uppercase font-black text-zinc-450 tracking-wider">Department</label>
+                        <label className="text-[9px] uppercase font-semibold text-muted-foreground tracking-wider">Department</label>
                         <select 
                           value={empForm.dept} 
                           onChange={(e) => setEmpForm({...empForm, dept: e.target.value})} 
-                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-white outline-none"
+                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground outline-none"
                         >
                           <option value="Civil Engineering">Civil Engineering</option>
                           <option value="Structural Design">Structural Design</option>
@@ -2234,11 +2234,11 @@ export default function App() {
                         </select>
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[9px] uppercase font-black text-zinc-450 tracking-wider">Team Lead</label>
+                        <label className="text-[9px] uppercase font-semibold text-muted-foreground tracking-wider">Team Lead</label>
                         <select 
                           value={empForm.teamLeadId} 
                           onChange={(e) => setEmpForm({...empForm, teamLeadId: e.target.value})} 
-                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-white outline-none"
+                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground outline-none"
                         >
                           <option value="">Select team lead…</option>
                           {teamLeads.map(tl => (
@@ -2247,11 +2247,11 @@ export default function App() {
                         </select>
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[9px] uppercase font-black text-zinc-450 tracking-wider">Active Project</label>
+                        <label className="text-[9px] uppercase font-semibold text-muted-foreground tracking-wider">Active Project</label>
                         <select 
                           value={empForm.activeProject} 
                           onChange={(e) => setEmpForm({...empForm, activeProject: e.target.value})} 
-                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-white outline-none"
+                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground outline-none"
                         >
                           <option value="">No project assigned</option>
                           {projects.map(p => (
@@ -2260,11 +2260,11 @@ export default function App() {
                         </select>
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[9px] uppercase font-black text-zinc-450 tracking-wider">Account Status</label>
+                        <label className="text-[9px] uppercase font-semibold text-muted-foreground tracking-wider">Account Status</label>
                         <select
                           value={empForm.status}
                           onChange={(e) => setEmpForm({...empForm, status: e.target.value})}
-                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-white outline-none"
+                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground outline-none"
                         >
                           <option value="Active">Active</option>
                           <option value="Inactive">Inactive (hasn't activated the desktop agent yet)</option>
@@ -2272,7 +2272,7 @@ export default function App() {
                         </select>
                       </div>
                     </div>
-                    <button type="submit" className="px-5 py-2.5 bg-indigo-650 hover:bg-indigo-600 text-white font-black text-xs uppercase tracking-widest rounded-xl transition-all">
+                    <button type="submit" className="px-5 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs uppercase tracking-widest rounded-xl transition-all">
                       Update Profile
                     </button>
                   </form>
@@ -2284,16 +2284,16 @@ export default function App() {
                     value={dirSearch}
                     onChange={(e) => setDirSearch(e.target.value)}
                     placeholder="Search by name, email, or department…"
-                    className="w-full bg-card border border-border focus:border-primary rounded-xl pl-4 pr-4 py-2.5 text-xs text-white placeholder-zinc-600 outline-none"
+                    className="w-full bg-card border border-border focus:border-primary rounded-xl pl-4 pr-4 py-2.5 text-xs text-foreground placeholder-zinc-600 outline-none"
                   />
                 </div>
 
                 {/* Directory Table */}
-                <div className="bg-card border border-border rounded-3xl overflow-hidden shadow-xl">
+                <div className="bg-card border border-border rounded-xl overflow-hidden shadow-xl">
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                       <thead>
-                        <tr className="border-b border-border bg-zinc-900/50 text-[10px] uppercase font-black tracking-wider text-zinc-500">
+                        <tr className="border-b border-border bg-muted/50 text-[10px] uppercase font-semibold tracking-wider text-muted-foreground">
                           <th className="p-4">Employee ID</th>
                           <th className="p-4">Name</th>
                           <th className="p-4">Role</th>
@@ -2303,25 +2303,25 @@ export default function App() {
                           <th className="p-4 text-right">Actions</th>
                         </tr>
                       </thead>
-                      <tbody className="text-xs text-zinc-300 divide-y divide-border">
+                      <tbody className="text-xs text-foreground/80 divide-y divide-border">
                         {teamLeads.length === 0 && employees.length === 0 && (
-                          <tr><td colSpan={7} className="p-8 text-center text-zinc-500">No users yet — add a team lead, then employees under them.</td></tr>
+                          <tr><td colSpan={7} className="p-8 text-center text-muted-foreground">No users yet — add a team lead, then employees under them.</td></tr>
                         )}
                         {teamLeads.filter(l => { const q = dirSearch.trim().toLowerCase(); return !q || `${l.name} ${l.email || ''} ${l.dept || ''}`.toLowerCase().includes(q); }).map(lead => (
-                          <tr key={lead.id} className="hover:bg-zinc-900/30 transition-colors bg-primary/[0.03]">
-                            <td className="p-4 font-mono font-bold text-zinc-600">{lead.id.slice(0, 8)}</td>
-                            <td className="p-4 font-extrabold text-white">{lead.name}</td>
-                            <td className="p-4"><span className="px-2 py-0.5 rounded text-[8px] font-black uppercase bg-primary/10 text-primary">Team Lead</span></td>
-                            <td className="p-4 text-zinc-500">—</td>
-                            <td className="p-4 text-zinc-500">{lead.dept || '—'}</td>
+                          <tr key={lead.id} className="hover:bg-muted/30 transition-colors bg-primary/[0.03]">
+                            <td className="p-4 font-mono font-bold text-muted-foreground">{lead.id.slice(0, 8)}</td>
+                            <td className="p-4 font-extrabold text-foreground">{lead.name}</td>
+                            <td className="p-4"><span className="px-2 py-0.5 rounded text-[8px] font-semibold uppercase bg-primary/10 text-primary">Team Lead</span></td>
+                            <td className="p-4 text-muted-foreground">—</td>
+                            <td className="p-4 text-muted-foreground">{lead.dept || '—'}</td>
                             <td className="p-4">
                               <button onClick={() => toggleLeadAuthority(lead)} title="Toggle manage-employees authority"
-                                className={`inline-flex px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${lead.canManage ? 'bg-emerald-500/10 text-emerald-400' : 'bg-zinc-800 text-zinc-400'}`}>
+                                className={`inline-flex px-2 py-0.5 rounded text-[8px] font-semibold uppercase tracking-wider ${lead.canManage ? 'bg-emerald-500/10 text-emerald-400' : 'bg-muted text-muted-foreground'}`}>
                                 {lead.canManage ? 'Can manage ✓' : 'No authority'}
                               </button>
                             </td>
                             <td className="p-4 text-right space-x-2">
-                              <button onClick={() => editLeadName(lead)} className="p-1.5 rounded-lg border border-border bg-zinc-900 hover:text-white transition-colors"><Edit2 className="w-3.5 h-3.5" /></button>
+                              <button onClick={() => editLeadName(lead)} className="p-1.5 rounded-lg border border-border bg-muted hover:text-foreground transition-colors"><Edit2 className="w-3.5 h-3.5" /></button>
                               <button onClick={() => disableUser(lead.id, lead.name)} className="p-1.5 rounded-lg border border-red-500/20 bg-red-500/5 text-red-400 hover:bg-red-500/15 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
                             </td>
                           </tr>
@@ -2330,28 +2330,28 @@ export default function App() {
                           const tl = teamLeads.find(l => l.id === emp.teamLeadId);
                           const proj = projects.find(p => p.id === emp.activeProject);
                           return (
-                            <tr key={emp.id} className="hover:bg-zinc-900/30 transition-colors">
-                              <td className="p-4 font-mono font-bold text-zinc-550">{emp.id.slice(0, 8)}</td>
-                              <td className="p-4 font-extrabold text-white">{emp.name}</td>
-                              <td className="p-4 text-zinc-400">{emp.role}</td>
+                            <tr key={emp.id} className="hover:bg-muted/30 transition-colors">
+                              <td className="p-4 font-mono font-bold text-muted-foreground">{emp.id.slice(0, 8)}</td>
+                              <td className="p-4 font-extrabold text-foreground">{emp.name}</td>
+                              <td className="p-4 text-muted-foreground">{emp.role}</td>
                               <td className="p-4">{tl ? tl.name : '—'}</td>
                               <td className="p-4 font-semibold">{proj ? proj.name : '—'}</td>
                               <td className="p-4">
-                                <span className={`inline-flex px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
+                                <span className={`inline-flex px-2 py-0.5 rounded text-[8px] font-semibold uppercase tracking-wider ${
                                   emp.status === 'Active' 
                                     ? 'bg-emerald-500/10 text-emerald-400' 
-                                    : 'bg-zinc-800 text-zinc-400'
+                                    : 'bg-muted text-muted-foreground'
                                 }`}>
                                   {emp.status}
                                 </span>
                               </td>
                               <td className="p-4 text-right space-x-2 whitespace-nowrap">
                                 <button onClick={() => exportUserData(emp)} title="Export data (DPDP)"
-                                  className="p-1.5 rounded-lg border border-border bg-zinc-900 hover:text-white transition-colors">
+                                  className="p-1.5 rounded-lg border border-border bg-muted hover:text-foreground transition-colors">
                                   <Download className="w-3.5 h-3.5" />
                                 </button>
                                 <button onClick={() => openEditForm(emp)} title="Edit"
-                                  className="p-1.5 rounded-lg border border-border bg-zinc-900 hover:text-white transition-colors">
+                                  className="p-1.5 rounded-lg border border-border bg-muted hover:text-foreground transition-colors">
                                   <Edit2 className="w-3.5 h-3.5" />
                                 </button>
                                 <button onClick={() => purgeUserData(emp)} title="Erase data (DPDP)"
@@ -2379,71 +2379,71 @@ export default function App() {
             {activeAdminTab === 'provision' && (
               <div className="space-y-6">
                 <div className="border-b border-border pb-4">
-                  <h2 className="text-xl font-black text-white uppercase tracking-wider">Account Provisioning Console</h2>
-                  <p className="text-xs text-zinc-400 mt-1">Generate dynamic keys to register standalone desktop clients and coordinate onboarding flows.</p>
+                  <h2 className="text-xl font-semibold text-foreground uppercase tracking-wider">Account Provisioning Console</h2>
+                  <p className="text-xs text-muted-foreground mt-1">Generate dynamic keys to register standalone desktop clients and coordinate onboarding flows.</p>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   {/* Left input card */}
-                  <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-zinc-550 block">Generate Activation Key</span>
+                  <div className="p-6 rounded-xl bg-card border border-border space-y-4">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block">Generate Activation Key</span>
                     <form onSubmit={generateActivationCode} className="space-y-4">
                       <div className="space-y-1.5">
-                        <label className="text-[9px] uppercase font-black text-zinc-400">Employee Name</label>
+                        <label className="text-[9px] uppercase font-semibold text-muted-foreground">Employee Name</label>
                         <input 
                           type="text" 
                           required
                           value={provisionName} 
                           onChange={(e) => setProvisionName(e.target.value)} 
-                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-white outline-none"
+                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground outline-none"
                           placeholder="John Doe"
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <label className="text-[9px] uppercase font-black text-zinc-450">Corporate Email</label>
+                        <label className="text-[9px] uppercase font-semibold text-muted-foreground">Corporate Email</label>
                         <input 
                           type="email" 
                           required
                           value={provisionEmail} 
                           onChange={(e) => setProvisionEmail(e.target.value)} 
-                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-white outline-none"
+                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground outline-none"
                           placeholder="john@civilmantra.com"
                         />
                       </div>
-                      <button type="submit" className="w-full py-3 bg-primary hover:bg-primary/95 text-primary-foreground font-black text-xs uppercase tracking-widest rounded-xl transition-all">
+                      <button type="submit" className="w-full py-3 bg-primary hover:bg-primary/95 text-primary-foreground font-semibold text-xs uppercase tracking-widest rounded-xl transition-all">
                         Generate Key
                       </button>
                     </form>
                   </div>
 
                   {/* Middle pending activations list */}
-                  <div className="md:col-span-2 p-6 rounded-3xl bg-card border border-border space-y-4">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-zinc-550 block">Pending Registration Keys</span>
-                    <p className="text-[10px] text-zinc-500 -mt-2">
+                  <div className="md:col-span-2 p-6 rounded-xl bg-card border border-border space-y-4">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block">Pending Registration Keys</span>
+                    <p className="text-[10px] text-muted-foreground -mt-2">
                       Keys are only shown once, right after generating — codes are stored hashed and can't be
                       retrieved again later, so copy it before navigating away.
                     </p>
                     <div className="border border-border rounded-2xl overflow-hidden">
                       <table className="w-full text-left border-collapse">
                         <thead>
-                          <tr className="border-b border-border bg-zinc-900/30 text-[9px] uppercase font-black tracking-wider text-zinc-500">
+                          <tr className="border-b border-border bg-muted/30 text-[9px] uppercase font-semibold tracking-wider text-muted-foreground">
                             <th className="p-3">Candidate</th>
                             <th className="p-3">Email</th>
                             <th className="p-3">Activation Key</th>
                             <th className="p-3">Status</th>
                           </tr>
                         </thead>
-                        <tbody className="text-xs text-zinc-300 divide-y divide-border font-mono">
+                        <tbody className="text-xs text-foreground/80 divide-y divide-border font-mono">
                           {pendingActivations.length === 0 && (
-                            <tr><td colSpan={4} className="p-4 text-center text-zinc-600 font-sans">No keys generated this session yet.</td></tr>
+                            <tr><td colSpan={4} className="p-4 text-center text-muted-foreground font-sans">No keys generated this session yet.</td></tr>
                           )}
                           {pendingActivations.map((p, idx) => (
-                            <tr key={idx} className="hover:bg-zinc-900/10">
-                              <td className="p-3 font-sans font-extrabold text-white">{p.name}</td>
-                              <td className="p-3 text-[10px] text-zinc-500">{p.email}</td>
+                            <tr key={idx} className="hover:bg-muted/10">
+                              <td className="p-3 font-sans font-extrabold text-foreground">{p.name}</td>
+                              <td className="p-3 text-[10px] text-muted-foreground">{p.email}</td>
                               <td className="p-3 text-primary font-bold">{p.code}</td>
                               <td className="p-3">
-                                <span className={`inline-flex px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
+                                <span className={`inline-flex px-2 py-0.5 rounded text-[8px] font-semibold uppercase tracking-wider ${
                                   p.status === 'Active' 
                                     ? 'bg-emerald-500/10 text-emerald-400' 
                                     : 'bg-amber-500/10 text-amber-400'
@@ -2465,28 +2465,28 @@ export default function App() {
             {activeAdminTab === 'rules' && (
               <div className="space-y-6">
                 <div className="border-b border-border pb-4">
-                  <h2 className="text-xl font-black text-white uppercase tracking-wider">Productivity Keyword Configurator</h2>
-                  <p className="text-xs text-zinc-400 mt-1">Configure whitelisted (productive) and blacklisted (unproductive) software triggers for telemetry activity ratings.</p>
+                  <h2 className="text-xl font-semibold text-foreground uppercase tracking-wider">Productivity Keyword Configurator</h2>
+                  <p className="text-xs text-muted-foreground mt-1">Configure whitelisted (productive) and blacklisted (unproductive) software triggers for telemetry activity ratings.</p>
                 </div>
 
-                <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
+                <div className="p-6 rounded-xl bg-card border border-border space-y-4">
                   <div className="flex items-end gap-4 flex-wrap">
                     <div className="space-y-1.5 flex-1 min-w-[200px]">
-                      <label className="text-[9px] uppercase font-black text-zinc-450 tracking-wider">Add Rule Keyword</label>
+                      <label className="text-[9px] uppercase font-semibold text-muted-foreground tracking-wider">Add Rule Keyword</label>
                       <input 
                         type="text" 
                         value={newKeyword} 
                         onChange={(e) => setNewKeyword(e.target.value)} 
-                        className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-white outline-none"
+                        className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground outline-none"
                         placeholder="e.g. autocad, netflix, slither.io"
                       />
                     </div>
                     <div className="space-y-1.5 w-40">
-                      <label className="text-[9px] uppercase font-black text-zinc-450 tracking-wider">Rule Category</label>
+                      <label className="text-[9px] uppercase font-semibold text-muted-foreground tracking-wider">Rule Category</label>
                       <select 
                         value={keywordTarget} 
                         onChange={(e) => setKeywordTarget(e.target.value)} 
-                        className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-white outline-none"
+                        className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground outline-none"
                       >
                         <option value="whitelist">Whitelist</option>
                         <option value="blacklist">Blacklist</option>
@@ -2494,7 +2494,7 @@ export default function App() {
                     </div>
                     <button 
                       onClick={addKeyword}
-                      className="px-6 py-2.5 bg-primary hover:bg-primary/95 text-primary-foreground font-black text-xs uppercase tracking-widest rounded-xl transition-all h-10 flex items-center space-x-1.5"
+                      className="px-6 py-2.5 bg-primary hover:bg-primary/95 text-primary-foreground font-semibold text-xs uppercase tracking-widest rounded-xl transition-all h-10 flex items-center space-x-1.5"
                     >
                       <Plus className="w-4 h-4" />
                       <span>Add Rule</span>
@@ -2504,16 +2504,16 @@ export default function App() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* Whitelist keywords */}
-                  <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
-                    <span className="text-xs font-black text-white uppercase tracking-wider flex items-center space-x-2">
+                  <div className="p-6 rounded-xl bg-card border border-border space-y-4">
+                    <span className="text-xs font-semibold text-foreground uppercase tracking-wider flex items-center space-x-2">
                       <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
                       <span>Whitelisted (Productive App Keywords)</span>
                     </span>
                     <div className="flex flex-wrap gap-2">
                       {productiveKeywords.map(key => (
-                        <div key={key} className="px-3 py-1.5 rounded-xl bg-zinc-900 border border-border text-xs text-zinc-350 flex items-center space-x-2">
+                        <div key={key} className="px-3 py-1.5 rounded-xl bg-muted border border-border text-xs text-muted-foreground flex items-center space-x-2">
                           <span className="font-mono">{key}</span>
-                          <button onClick={() => removeKeyword(key, 'whitelist')} className="text-zinc-600 hover:text-white transition-colors">
+                          <button onClick={() => removeKeyword(key, 'whitelist')} className="text-muted-foreground hover:text-foreground transition-colors">
                             <X className="w-3 h-3" />
                           </button>
                         </div>
@@ -2522,16 +2522,16 @@ export default function App() {
                   </div>
 
                   {/* Blacklist keywords */}
-                  <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
-                    <span className="text-xs font-black text-white uppercase tracking-wider flex items-center space-x-2">
+                  <div className="p-6 rounded-xl bg-card border border-border space-y-4">
+                    <span className="text-xs font-semibold text-foreground uppercase tracking-wider flex items-center space-x-2">
                       <span className="w-2 h-2 rounded-full bg-red-500"></span>
                       <span>Blacklisted (Unproductive App Keywords)</span>
                     </span>
                     <div className="flex flex-wrap gap-2">
                       {unproductiveKeywords.map(key => (
-                        <div key={key} className="px-3 py-1.5 rounded-xl bg-zinc-900 border border-border text-xs text-zinc-350 flex items-center space-x-2">
+                        <div key={key} className="px-3 py-1.5 rounded-xl bg-muted border border-border text-xs text-muted-foreground flex items-center space-x-2">
                           <span className="font-mono">{key}</span>
-                          <button onClick={() => removeKeyword(key, 'blacklist')} className="text-zinc-600 hover:text-white transition-colors">
+                          <button onClick={() => removeKeyword(key, 'blacklist')} className="text-muted-foreground hover:text-foreground transition-colors">
                             <X className="w-3 h-3" />
                           </button>
                         </div>
@@ -2546,25 +2546,25 @@ export default function App() {
             {activeAdminTab === 'audit' && (
               <div className="space-y-6">
                 <div className="border-b border-border pb-4">
-                  <h2 className="text-xl font-black text-white uppercase tracking-wider">Immutable System Audit Log Trail</h2>
-                  <p className="text-xs text-zinc-400 mt-1">Read-only ledger logging access actions, manager key configurations, and telemetry events.</p>
+                  <h2 className="text-xl font-semibold text-foreground uppercase tracking-wider">Immutable System Audit Log Trail</h2>
+                  <p className="text-xs text-muted-foreground mt-1">Read-only ledger logging access actions, manager key configurations, and telemetry events.</p>
                 </div>
 
-                <div className="bg-card border border-border p-6 rounded-3xl space-y-4 shadow-xl">
+                <div className="bg-card border border-border p-6 rounded-xl space-y-4 shadow-xl">
                   <div className="flex justify-between items-center">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-zinc-550 flex items-center space-x-2">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center space-x-2">
                       <Terminal className="w-4 h-4 text-primary" />
                       <span>Ledger Storage Block Feed</span>
                     </span>
-                    <span className="text-[8px] bg-zinc-900 border border-border px-2.5 py-1 rounded-full text-zinc-400 font-bold uppercase">SECURED</span>
+                    <span className="text-[8px] bg-muted border border-border px-2.5 py-1 rounded-full text-muted-foreground font-bold uppercase">SECURED</span>
                   </div>
 
-                  <div className="bg-black/80 border border-zinc-900 p-5 rounded-2xl font-mono text-[10px] text-zinc-400 space-y-2.5 max-h-96 overflow-y-auto">
-                    {serverAuditLogs.length === 0 && <span className="text-zinc-600">No audit events yet.</span>}
+                  <div className="bg-muted/80 border border-border p-5 rounded-2xl font-mono text-[10px] text-muted-foreground space-y-2.5 max-h-96 overflow-y-auto">
+                    {serverAuditLogs.length === 0 && <span className="text-muted-foreground">No audit events yet.</span>}
                     {serverAuditLogs.map(log => (
-                      <div key={log.id} className="flex justify-between border-b border-zinc-900/50 pb-2 last:border-0 last:pb-0 gap-3">
-                        <span>[{new Date(log.ts).toLocaleString()}] <strong className="text-zinc-300">{log.actor_name || 'system'}:</strong> {log.action}{log.target ? ` (${resolveAuditTarget(log.target)})` : ''}</span>
-                        <span className="text-zinc-700 shrink-0">{log.ip || ''}</span>
+                      <div key={log.id} className="flex justify-between border-b border-border/50 pb-2 last:border-0 last:pb-0 gap-3">
+                        <span>[{new Date(log.ts).toLocaleString()}] <strong className="text-foreground/80">{log.actor_name || 'system'}:</strong> {log.action}{log.target ? ` (${resolveAuditTarget(log.target)})` : ''}</span>
+                        <span className="text-muted-foreground shrink-0">{log.ip || ''}</span>
                       </div>
                     ))}
                   </div>
@@ -2584,9 +2584,9 @@ export default function App() {
             <div className="p-6 border-b border-border flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <Users className="w-5 h-5 text-indigo-400" />
-                <span className="font-extrabold text-xs tracking-widest text-white uppercase">TEAM LEAD PORTAL</span>
+                <span className="font-extrabold text-xs tracking-widest text-foreground uppercase">TEAM LEAD PORTAL</span>
               </div>
-              <button onClick={handleLogout} className="p-1 text-zinc-500 hover:text-white transition-colors md:hidden">
+              <button onClick={handleLogout} className="p-1 text-muted-foreground hover:text-foreground transition-colors md:hidden">
                 <LogOut className="w-4 h-4" />
               </button>
             </div>
@@ -2604,7 +2604,7 @@ export default function App() {
                   className={`w-full px-4 py-3 rounded-xl text-xs font-bold uppercase flex items-center space-x-3 transition-all ${
                     activeTlTab === tab.id 
                       ? 'bg-indigo-500/10 border border-indigo-500/20 text-indigo-400' 
-                      : 'text-zinc-400 hover:bg-zinc-900/60 hover:text-white border border-transparent'
+                      : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground border border-transparent'
                   }`}
                 >
                   <tab.icon className="w-4 h-4" />
@@ -2613,12 +2613,12 @@ export default function App() {
               ))}
             </nav>
 
-            <div className="p-4 border-t border-border flex items-center justify-between text-xs text-zinc-500">
+            <div className="p-4 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
               <span className="font-semibold uppercase tracking-wider">TL Mode active</span>
-              <button onClick={openProfile} className="px-2.5 py-1 bg-zinc-900 border border-border hover:text-white rounded-lg transition-all uppercase text-[10px] font-bold mr-2">
+              <button onClick={openProfile} className="px-2.5 py-1 bg-muted border border-border hover:text-foreground rounded-lg transition-all uppercase text-[10px] font-bold mr-2">
                 Profile
               </button>
-              <button onClick={handleLogout} className="px-2.5 py-1 bg-zinc-900 border border-border hover:text-white rounded-lg transition-all uppercase text-[10px] font-bold">
+              <button onClick={handleLogout} className="px-2.5 py-1 bg-muted border border-border hover:text-foreground rounded-lg transition-all uppercase text-[10px] font-bold">
                 Logout
               </button>
             </div>
@@ -2630,17 +2630,17 @@ export default function App() {
             {activeTlTab === 'overview' && (
               <div className="space-y-6">
                 <div className="border-b border-border pb-4">
-                  <h2 className="text-xl font-black text-white uppercase tracking-wider">Team Activity & Uptime Live Board</h2>
-                  <p className="text-xs text-zinc-400 mt-1">Real-time application polling and timesheet validations for assigned engineers.</p>
+                  <h2 className="text-xl font-semibold text-foreground uppercase tracking-wider">Team Activity & Uptime Live Board</h2>
+                  <p className="text-xs text-muted-foreground mt-1">Real-time application polling and timesheet validations for assigned engineers.</p>
                 </div>
 
                 {/* Team charts — real telemetry */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
-                    <span className="text-xs font-black text-white uppercase tracking-wider">Team Daily Active Hours</span>
+                  <div className="p-6 rounded-xl bg-card border border-border space-y-4">
+                    <span className="text-xs font-semibold text-foreground uppercase tracking-wider">Team Daily Active Hours</span>
                     <div className="h-56 w-full relative">
                       {!serverAnalytics?.team?.trend?.length && (
-                        <div className="absolute inset-0 flex items-center justify-center text-xs text-zinc-600 pointer-events-none">
+                        <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground pointer-events-none">
                           No activity data yet
                         </div>
                       )}
@@ -2661,11 +2661,11 @@ export default function App() {
                       </SizedChart>
                     </div>
                   </div>
-                  <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
-                    <span className="text-xs font-black text-white uppercase tracking-wider">Per-Employee Active %</span>
+                  <div className="p-6 rounded-xl bg-card border border-border space-y-4">
+                    <span className="text-xs font-semibold text-foreground uppercase tracking-wider">Per-Employee Active %</span>
                     <div className="h-56 w-full relative">
                       {!serverAnalytics?.team?.members?.length && (
-                        <div className="absolute inset-0 flex items-center justify-center text-xs text-zinc-600 pointer-events-none">
+                        <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground pointer-events-none">
                           No activity data yet
                         </div>
                       )}
@@ -2684,29 +2684,29 @@ export default function App() {
 
                 {/* Team member status grid — real telemetry rollup (last 7 days) */}
                 {(!serverAnalytics?.team?.members || serverAnalytics.team.members.length === 0) && (
-                  <p className="text-xs text-zinc-500">No team telemetry yet. Provision employees and have them activate the desktop agent.</p>
+                  <p className="text-xs text-muted-foreground">No team telemetry yet. Provision employees and have them activate the desktop agent.</p>
                 )}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {(serverAnalytics?.team?.members || []).map(m => (
-                    <div key={m.id} className="p-6 rounded-3xl bg-card border border-border space-y-4 hover:border-zinc-800 transition-all">
+                    <div key={m.id} className="p-6 rounded-xl bg-card border border-border space-y-4 hover:border-border transition-all">
                       <div className="flex justify-between items-start">
                         <div>
-                          <h3 className="text-sm font-extrabold text-white">{m.name}</h3>
-                          <span className="text-[10px] text-zinc-500 uppercase font-semibold">{m.title || 'Employee'}</span>
+                          <h3 className="text-sm font-extrabold text-foreground">{m.name}</h3>
+                          <span className="text-[10px] text-muted-foreground uppercase font-semibold">{m.title || 'Employee'}</span>
                         </div>
-                        <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
+                        <span className={`px-2 py-0.5 rounded text-[8px] font-semibold uppercase tracking-wider ${
                           m.active_pct >= 50 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'
                         }`}>{m.active_pct}% active</span>
                       </div>
-                      <div className="space-y-2 border-t border-b border-border/40 py-3 font-mono text-[10px] text-zinc-400">
-                        <div className="flex justify-between"><span>Active hours (7d):</span><span className="text-white font-semibold">{m.active_hours}h</span></div>
-                        <div className="flex justify-between"><span>Samples:</span><span className="text-white">{m.samples}</span></div>
+                      <div className="space-y-2 border-t border-b border-border/40 py-3 font-mono text-[10px] text-muted-foreground">
+                        <div className="flex justify-between"><span>Active hours (7d):</span><span className="text-foreground font-semibold">{m.active_hours}h</span></div>
+                        <div className="flex justify-between"><span>Samples:</span><span className="text-foreground">{m.samples}</span></div>
                         <div className="flex justify-between"><span>Anomalies:</span><span className={m.anomalies > 0 ? 'text-amber-400' : 'text-emerald-400'}>{m.anomalies}</span></div>
-                        <div className="flex justify-between"><span>Last seen:</span><span className="text-white font-sans">{m.last_seen ? new Date(m.last_seen).toLocaleString() : 'never'}</span></div>
+                        <div className="flex justify-between"><span>Last seen:</span><span className="text-foreground font-sans">{m.last_seen ? new Date(m.last_seen).toLocaleString() : 'never'}</span></div>
                       </div>
                       <div className="flex items-center justify-between text-[10px]">
-                        <span className="text-zinc-550 font-bold uppercase">Cost rate</span>
-                        <span className="font-black text-white">Rs. {Math.round(m.hourly_cost)}/hr</span>
+                        <span className="text-muted-foreground font-bold uppercase">Cost rate</span>
+                        <span className="font-semibold text-foreground">Rs. {Math.round(m.hourly_cost)}/hr</span>
                       </div>
                     </div>
                   ))}
@@ -2717,27 +2717,27 @@ export default function App() {
             {activeTlTab === 'members' && (
               <div className="space-y-6">
                 <div className="border-b border-border pb-4">
-                  <h2 className="text-xl font-black text-white uppercase tracking-wider">Detailed Team Telemetry Logs</h2>
-                  <p className="text-xs text-zinc-400 mt-1">Review verified active application logs, keystroke/pointer densities, and manual inputs.</p>
+                  <h2 className="text-xl font-semibold text-foreground uppercase tracking-wider">Detailed Team Telemetry Logs</h2>
+                  <p className="text-xs text-muted-foreground mt-1">Review verified active application logs, keystroke/pointer densities, and manual inputs.</p>
                 </div>
 
                 {/* Team idle/focus + most-used apps summary. */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                  <div className="p-6 rounded-3xl bg-card border border-border space-y-2">
-                    <span className="text-[10px] font-black text-zinc-500 uppercase tracking-wider block">Team Idle (last 7d)</span>
-                    <span className="text-3xl font-black text-amber-400">{serverAnalytics?.team?.idle?.idle_pct ?? '—'}%</span>
-                    <p className="text-[10px] text-zinc-500">{serverAnalytics?.team?.idle?.idle_hours ?? 0}h idle across {serverAnalytics?.team?.idle?.samples ?? 0} samples</p>
+                  <div className="p-6 rounded-xl bg-card border border-border space-y-2">
+                    <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block">Team Idle (last 7d)</span>
+                    <span className="text-3xl font-semibold text-amber-400">{serverAnalytics?.team?.idle?.idle_pct ?? '—'}%</span>
+                    <p className="text-[10px] text-muted-foreground">{serverAnalytics?.team?.idle?.idle_hours ?? 0}h idle across {serverAnalytics?.team?.idle?.samples ?? 0} samples</p>
                   </div>
-                  <div className="p-6 rounded-3xl bg-card border border-border space-y-3 lg:col-span-2">
-                    <span className="text-[10px] font-black text-zinc-500 uppercase tracking-wider block">Most-Used Applications</span>
+                  <div className="p-6 rounded-xl bg-card border border-border space-y-3 lg:col-span-2">
+                    <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block">Most-Used Applications</span>
                     {(serverAnalytics?.team?.top_apps?.length || 0) === 0 ? (
-                      <p className="text-xs text-zinc-500">No activity data yet.</p>
+                      <p className="text-xs text-muted-foreground">No activity data yet.</p>
                     ) : (
                       <div className="flex flex-wrap gap-2">
                         {serverAnalytics.team.top_apps.map((a, i) => (
-                          <span key={i} className="px-2.5 py-1 rounded-full bg-zinc-900 border border-border text-[10px] text-zinc-300">
-                            <span className="font-bold text-white">{a.category || 'uncategorised'}</span>
-                            <span className="text-zinc-500"> · {a.samples}</span>
+                          <span key={i} className="px-2.5 py-1 rounded-full bg-muted border border-border text-[10px] text-foreground/80">
+                            <span className="font-bold text-foreground">{a.category || 'uncategorised'}</span>
+                            <span className="text-muted-foreground"> · {a.samples}</span>
                           </span>
                         ))}
                       </div>
@@ -2746,30 +2746,30 @@ export default function App() {
                 </div>
 
                 {/* Per-employee → per-project logged hours drill-down. */}
-                <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
-                  <span className="text-xs font-black text-white uppercase tracking-wider block">Hours by Employee &amp; Project</span>
+                <div className="p-6 rounded-xl bg-card border border-border space-y-4">
+                  <span className="text-xs font-semibold text-foreground uppercase tracking-wider block">Hours by Employee &amp; Project</span>
                   {(serverAnalytics?.team?.project_hours?.length || 0) === 0 ? (
-                    <p className="text-xs text-zinc-500">No project hours logged yet.</p>
+                    <p className="text-xs text-muted-foreground">No project hours logged yet.</p>
                   ) : (
                     <div className="overflow-x-auto">
                       <table className="w-full text-left">
                         <thead>
-                          <tr className="text-[9px] uppercase text-zinc-500 border-b border-border">
-                            <th className="py-2 font-black">Employee</th>
-                            <th className="py-2 font-black">Project</th>
-                            <th className="py-2 font-black text-right">Hours</th>
-                            <th className="py-2 font-black text-right">Resource Cost</th>
+                          <tr className="text-[9px] uppercase text-muted-foreground border-b border-border">
+                            <th className="py-2 font-semibold">Employee</th>
+                            <th className="py-2 font-semibold">Project</th>
+                            <th className="py-2 font-semibold text-right">Hours</th>
+                            <th className="py-2 font-semibold text-right">Resource Cost</th>
                           </tr>
                         </thead>
                         <tbody>
                           {serverAnalytics.team.project_hours.map((ph, i, arr) => {
                             const firstForUser = i === 0 || arr[i - 1].user_id !== ph.user_id;
                             return (
-                              <tr key={i} className="text-xs text-zinc-300 border-b border-border/40">
-                                <td className="py-2.5 font-bold text-white">{firstForUser ? ph.user_name : ''}</td>
-                                <td className="py-2.5">{ph.project_name || <span className="text-zinc-600">Unassigned</span>}</td>
+                              <tr key={i} className="text-xs text-foreground/80 border-b border-border/40">
+                                <td className="py-2.5 font-bold text-foreground">{firstForUser ? ph.user_name : ''}</td>
+                                <td className="py-2.5">{ph.project_name || <span className="text-muted-foreground">Unassigned</span>}</td>
                                 <td className="py-2.5 text-right font-mono">{Number(ph.hours).toFixed(1)}h</td>
-                                <td className="py-2.5 text-right font-mono text-zinc-400">Rs. {Math.round(ph.cost).toLocaleString('en-IN')}</td>
+                                <td className="py-2.5 text-right font-mono text-muted-foreground">Rs. {Math.round(ph.cost).toLocaleString('en-IN')}</td>
                               </tr>
                             );
                           })}
@@ -2779,13 +2779,13 @@ export default function App() {
                   )}
                 </div>
 
-                <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
-                  <span className="text-xs font-black text-white uppercase tracking-wider block">Raw Telemetry Ledger (latest {serverTelemetryFeed.length})</span>
-                  {serverTelemetryFeed.length === 0 && <p className="text-xs text-zinc-500">No telemetry yet — employees need to activate the desktop agent.</p>}
+                <div className="p-6 rounded-xl bg-card border border-border space-y-4">
+                  <span className="text-xs font-semibold text-foreground uppercase tracking-wider block">Raw Telemetry Ledger (latest {serverTelemetryFeed.length})</span>
+                  {serverTelemetryFeed.length === 0 && <p className="text-xs text-muted-foreground">No telemetry yet — employees need to activate the desktop agent.</p>}
                   <div className="border border-border rounded-2xl overflow-hidden">
                     <table className="w-full text-left border-collapse">
                       <thead>
-                        <tr className="border-b border-border bg-zinc-900/30 text-[9px] uppercase font-black tracking-wider text-zinc-550">
+                        <tr className="border-b border-border bg-muted/30 text-[9px] uppercase font-semibold tracking-wider text-muted-foreground">
                           <th className="p-3">Time</th>
                           <th className="p-3">Member</th>
                           <th className="p-3">Active Window</th>
@@ -2794,18 +2794,18 @@ export default function App() {
                           <th className="p-3 text-right">State</th>
                         </tr>
                       </thead>
-                      <tbody className="text-xs text-zinc-300 divide-y divide-border">
+                      <tbody className="text-xs text-foreground/80 divide-y divide-border">
                         {serverTelemetryFeed.map((l, i) => (
-                          <tr key={i} className="hover:bg-zinc-900/10">
-                            <td className="p-3 font-mono text-[10px] text-zinc-500">{new Date(l.ts).toLocaleTimeString()}</td>
-                            <td className="p-3 font-extrabold text-white">{l.employee}</td>
-                            <td className="p-3 text-zinc-400 font-medium truncate max-w-[220px]">{l.window_title}</td>
+                          <tr key={i} className="hover:bg-muted/10">
+                            <td className="p-3 font-mono text-[10px] text-muted-foreground">{new Date(l.ts).toLocaleTimeString()}</td>
+                            <td className="p-3 font-extrabold text-foreground">{l.employee}</td>
+                            <td className="p-3 text-muted-foreground font-medium truncate max-w-[220px]">{l.window_title}</td>
                             <td className="p-3 font-mono text-[10px]">{l.app_category}</td>
                             <td className="p-3 font-bold text-indigo-400">{l.input_density}</td>
                             <td className="p-3 text-right">
-                              <span className={`inline-flex px-2 py-0.5 rounded text-[8px] border font-black uppercase tracking-wider ${
+                              <span className={`inline-flex px-2 py-0.5 rounded text-[8px] border font-semibold uppercase tracking-wider ${
                                 l.anomaly_flag ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                                : l.is_idle ? 'bg-zinc-800 text-zinc-400 border-border'
+                                : l.is_idle ? 'bg-muted text-muted-foreground border-border'
                                 : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'}`}>
                                 {l.anomaly_flag ? 'anomaly' : l.is_idle ? 'idle' : 'active'}
                               </span>
@@ -2824,18 +2824,18 @@ export default function App() {
             {activeTlTab === 'manage' && (
               <div className="space-y-6 animate-fade-in">
                 <div className="border-b border-border pb-4">
-                  <h2 className="text-xl font-black text-white uppercase tracking-wider">Manage Team & Projects</h2>
-                  <p className="text-xs text-zinc-400 mt-1">Provision new employee nodes, generate workspace access credentials, and register contracts.</p>
+                  <h2 className="text-xl font-semibold text-foreground uppercase tracking-wider">Manage Team & Projects</h2>
+                  <p className="text-xs text-muted-foreground mt-1">Provision new employee nodes, generate workspace access credentials, and register contracts.</p>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* Register Employee Form — only shown if this lead actually has
                       authority to add employees; otherwise they'd fill out the whole
                       form only to be rejected by the server at submit time. */}
-                  <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
-                    <span className="text-[10px] font-black uppercase text-zinc-450 block">Provision New Employee Account</span>
+                  <div className="p-6 rounded-xl bg-card border border-border space-y-4">
+                    <span className="text-[10px] font-semibold uppercase text-muted-foreground block">Provision New Employee Account</span>
                     {!api.getUser()?.can_manage_employees ? (
-                      <div className="p-4 rounded-2xl bg-zinc-900/50 border border-border/60 text-xs text-zinc-400 flex items-start gap-3">
+                      <div className="p-4 rounded-2xl bg-muted/50 border border-border/60 text-xs text-muted-foreground flex items-start gap-3">
                         <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                         <span>You don't have permission to add employees yet. Ask your admin to grant "Can Manage" authority for your account.</span>
                       </div>
@@ -2870,65 +2870,65 @@ export default function App() {
                       }
                     }} className="space-y-3">
                       <div className="space-y-1">
-                        <label className="text-[9px] uppercase font-black text-zinc-500">Employee Name</label>
+                        <label className="text-[9px] uppercase font-semibold text-muted-foreground">Employee Name</label>
                         <input
                           type="text"
                           required
                           value={newEmpName}
                           onChange={(e) => setNewEmpName(e.target.value)}
                           placeholder="e.g. Rajesh Kumar"
-                          className="w-full bg-background border border-border rounded-xl px-4 py-2 text-xs text-white outline-none"
+                          className="w-full bg-background border border-border rounded-xl px-4 py-2 text-xs text-foreground outline-none"
                         />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[9px] uppercase font-black text-zinc-550">Corporate Email</label>
+                        <label className="text-[9px] uppercase font-semibold text-muted-foreground">Corporate Email</label>
                         <input
                           type="email"
                           required
                           value={newEmpEmail}
                           onChange={(e) => setNewEmpEmail(e.target.value)}
                           placeholder="e.g. rajesh@civilmantra.com"
-                          className="w-full bg-background border border-border rounded-xl px-4 py-2 text-xs text-white outline-none"
+                          className="w-full bg-background border border-border rounded-xl px-4 py-2 text-xs text-foreground outline-none"
                         />
                       </div>
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-1">
-                          <label className="text-[9px] uppercase font-black text-zinc-550">Base Salary (Rs/mo)</label>
+                          <label className="text-[9px] uppercase font-semibold text-muted-foreground">Base Salary (Rs/mo)</label>
                           <input
                             type="number"
                             required
                             value={newEmpSalary}
                             onChange={(e) => setNewEmpSalary(e.target.value)}
-                            className="w-full bg-background border border-border rounded-xl px-4 py-2 text-xs text-white outline-none"
+                            className="w-full bg-background border border-border rounded-xl px-4 py-2 text-xs text-foreground outline-none"
                           />
                         </div>
                         <div className="space-y-1">
-                          <label className="text-[9px] uppercase font-black text-zinc-550">Benefits (Rs/mo)</label>
+                          <label className="text-[9px] uppercase font-semibold text-muted-foreground">Benefits (Rs/mo)</label>
                           <input
                             type="number"
                             required
                             value={newEmpBenefits}
                             onChange={(e) => setNewEmpBenefits(e.target.value)}
-                            className="w-full bg-background border border-border rounded-xl px-4 py-2 text-xs text-white outline-none"
+                            className="w-full bg-background border border-border rounded-xl px-4 py-2 text-xs text-foreground outline-none"
                           />
                         </div>
                       </div>
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-1">
-                          <label className="text-[9px] uppercase font-black text-zinc-550">Role Designation</label>
+                          <label className="text-[9px] uppercase font-semibold text-muted-foreground">Role Designation</label>
                           <input
                             type="text"
                             value={newEmpRole}
                             onChange={(e) => setNewEmpRole(e.target.value)}
-                            className="w-full bg-background border border-border rounded-xl px-4 py-2 text-xs text-white outline-none"
+                            className="w-full bg-background border border-border rounded-xl px-4 py-2 text-xs text-foreground outline-none"
                           />
                         </div>
                         <div className="space-y-1">
-                          <label className="text-[9px] uppercase font-black text-zinc-550">Active Project</label>
+                          <label className="text-[9px] uppercase font-semibold text-muted-foreground">Active Project</label>
                           <select
                             value={newEmpProject}
                             onChange={(e) => setNewEmpProject(e.target.value)}
-                            className="w-full bg-background border border-border rounded-xl px-4 py-2 text-xs text-white outline-none"
+                            className="w-full bg-background border border-border rounded-xl px-4 py-2 text-xs text-foreground outline-none"
                           >
                             <option value="">No project assigned</option>
                             {projects.map(p => (
@@ -2937,7 +2937,7 @@ export default function App() {
                           </select>
                         </div>
                       </div>
-                      <button type="submit" className="w-full py-3 bg-primary hover:bg-primary/90 text-primary-foreground font-black text-xs uppercase tracking-widest rounded-xl transition-all">
+                      <button type="submit" className="w-full py-3 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs uppercase tracking-widest rounded-xl transition-all">
                         Generate ID & Activate Key
                       </button>
                     </form>
@@ -2945,8 +2945,8 @@ export default function App() {
                   </div>
 
                   {/* Create Project Form */}
-                  <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
-                    <span className="text-[10px] font-black uppercase text-zinc-550 block">Register Project Contract</span>
+                  <div className="p-6 rounded-xl bg-card border border-border space-y-4">
+                    <span className="text-[10px] font-semibold uppercase text-muted-foreground block">Register Project Contract</span>
                     <form onSubmit={async (e) => {
                       e.preventDefault();
                       if (savingTLProject) return; // guard against double-submit creating duplicates
@@ -2972,37 +2972,37 @@ export default function App() {
                       }
                     }} className="space-y-3">
                       <div className="space-y-1">
-                        <label className="text-[9px] uppercase font-black text-zinc-500">Project Contract Name</label>
+                        <label className="text-[9px] uppercase font-semibold text-muted-foreground">Project Contract Name</label>
                         <input
                           type="text"
                           required
                           value={newProjName}
                           onChange={(e) => setNewProjName(e.target.value)}
                           placeholder="e.g. NHAI Delhi Bypass Road"
-                          className="w-full bg-background border border-border rounded-xl px-4 py-2 text-xs text-white outline-none"
+                          className="w-full bg-background border border-border rounded-xl px-4 py-2 text-xs text-foreground outline-none"
                         />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[9px] uppercase font-black text-zinc-550">Contract Value (Rs.)</label>
+                        <label className="text-[9px] uppercase font-semibold text-muted-foreground">Contract Value (Rs.)</label>
                         <input
                           type="number"
                           required
                           value={newProjBudget}
                           onChange={(e) => setNewProjBudget(e.target.value)}
-                          className="w-full bg-background border border-border rounded-xl px-4 py-2 text-xs text-white outline-none"
+                          className="w-full bg-background border border-border rounded-xl px-4 py-2 text-xs text-foreground outline-none"
                         />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[9px] uppercase font-black text-zinc-550">Project Profit Margin Target (%)</label>
+                        <label className="text-[9px] uppercase font-semibold text-muted-foreground">Project Profit Margin Target (%)</label>
                         <input
                           type="number"
                           required
                           value={newProjMargin}
                           onChange={(e) => setNewProjMargin(e.target.value)}
-                          className="w-full bg-background border border-border rounded-xl px-4 py-2 text-xs text-white outline-none"
+                          className="w-full bg-background border border-border rounded-xl px-4 py-2 text-xs text-foreground outline-none"
                         />
                       </div>
-                      <button type="submit" disabled={savingTLProject} className="w-full py-3 bg-zinc-900 border border-border text-white hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed font-black text-xs uppercase tracking-widest rounded-xl transition-all">
+                      <button type="submit" disabled={savingTLProject} className="w-full py-3 bg-muted border border-border text-foreground hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed font-semibold text-xs uppercase tracking-widest rounded-xl transition-all">
                         {savingTLProject ? 'Registering…' : 'Register Contract'}
                       </button>
                     </form>
@@ -3019,7 +3019,7 @@ export default function App() {
       {currentRole === 'employee' && (() => {
         const isElectron = window.navigator.userAgent.toLowerCase().includes('electron') || !!window.electronAPI;
         return (
-          <div className="min-h-screen flex flex-col bg-zinc-950">
+          <div className="min-h-screen flex flex-col bg-background">
             {!isElectron ? (
               /* WEB DOWNLOADER PORTAL FOR EMPLOYEE ONBOARDING */
               <div className="flex-grow flex flex-col">
@@ -3027,9 +3027,9 @@ export default function App() {
                 <header className="px-6 h-16 border-b border-border bg-card flex items-center justify-between">
                   <div className="flex items-center space-x-3">
                     <Laptop className="w-5 h-5 text-primary" />
-                    <span className="font-extrabold text-xs text-white uppercase tracking-wider">CivilMantra Web Portal</span>
+                    <span className="font-extrabold text-xs text-foreground uppercase tracking-wider">CivilMantra Web Portal</span>
                   </div>
-                  <button onClick={handleLogout} className="px-3 py-1 bg-zinc-900 hover:bg-zinc-850 border border-border text-zinc-400 hover:text-white rounded-lg text-[9px] font-black uppercase tracking-wider transition-all">
+                  <button onClick={handleLogout} className="px-3 py-1 bg-muted hover:bg-muted border border-border text-muted-foreground hover:text-foreground rounded-lg text-[9px] font-semibold uppercase tracking-wider transition-all">
                     Sign Out
                   </button>
                 </header>
@@ -3039,19 +3039,19 @@ export default function App() {
                     <div className="inline-flex p-3.5 bg-primary/10 border border-primary/20 rounded-2xl text-primary">
                       <Download className="w-6 h-6 animate-bounce" />
                     </div>
-                    <h1 className="text-2xl font-black text-white uppercase tracking-wider">Workstation Onboarding Portal</h1>
-                    <p className="text-xs text-zinc-400 max-w-md mx-auto leading-relaxed">
+                    <h1 className="text-2xl font-semibold text-foreground uppercase tracking-wider">Workstation Onboarding Portal</h1>
+                    <p className="text-xs text-muted-foreground max-w-md mx-auto leading-relaxed">
                       To start syncing logged timesheet hours and accessing project details, please download and run the background telemetry agent.
                     </p>
                   </div>
 
                   {/* Activation Key Banner */}
-                  <div className="p-6 rounded-3xl bg-indigo-500/10 border border-indigo-500/25 flex flex-col sm:flex-row justify-between items-center gap-4">
+                  <div className="p-6 rounded-xl bg-indigo-500/10 border border-indigo-500/25 flex flex-col sm:flex-row justify-between items-center gap-4">
                     <div className="space-y-1 text-center sm:text-left">
-                      <span className="text-[10px] font-black uppercase text-indigo-400 block tracking-wider">Step 1: Secure Activation Key</span>
-                      <p className="text-xs text-zinc-350">Use this unique key when launching the desktop app for the first time.</p>
+                      <span className="text-[10px] font-semibold uppercase text-indigo-400 block tracking-wider">Step 1: Secure Activation Key</span>
+                      <p className="text-xs text-muted-foreground">Use this unique key when launching the desktop app for the first time.</p>
                     </div>
-                    <div className="bg-zinc-950 border border-border/80 px-6 py-3 rounded-2xl font-mono text-xs text-zinc-400 tracking-wide">
+                    <div className="bg-background border border-border/80 px-6 py-3 rounded-2xl font-mono text-xs text-muted-foreground tracking-wide">
                       Use the 8-digit code your admin emailed you
                     </div>
                   </div>
@@ -3064,13 +3064,13 @@ export default function App() {
                       { os: 'Linux (AppImage)', ext: 'AppImage', size: '132 MB', icon: HardDrive, desc: 'Self-contained portable executable. chmod +x and run — no install needed.', file: 'https://github.com/harsh-pandhe/ChronoTrack/releases/download/v3.0.0/CivilMantraAgent-3.0.0.AppImage' },
                       { os: 'Linux (.deb)', ext: 'deb', size: '94 MB', icon: HardDrive, desc: 'Debian/Ubuntu package. Installs to your app menu like any native app.', file: 'https://github.com/harsh-pandhe/ChronoTrack/releases/download/v3.0.0/chronotrack_3.0.0_amd64.deb' }
                     ].map(dl => (
-                      <div key={dl.os} className="p-6 rounded-3xl bg-card border border-border hover:border-zinc-800 transition-all flex flex-col justify-between h-56">
+                      <div key={dl.os} className="p-6 rounded-xl bg-card border border-border hover:border-border transition-all flex flex-col justify-between h-56">
                         <div className="space-y-2">
                           <div className="flex items-center space-x-2 text-primary">
                             <dl.icon className="w-4 h-4" />
-                            <span className="text-xs font-black uppercase text-white tracking-wider">{dl.os}</span>
+                            <span className="text-xs font-semibold uppercase text-foreground tracking-wider">{dl.os}</span>
                           </div>
-                          <p className="text-[11px] text-zinc-450 leading-relaxed">{dl.desc}</p>
+                          <p className="text-[11px] text-muted-foreground leading-relaxed">{dl.desc}</p>
                         </div>
                         <button
                           type="button"
@@ -3083,7 +3083,7 @@ export default function App() {
                             window.open(dl.file, '_blank', 'noopener');
                             showToast(`Downloading CivilMantra ${dl.os}…`, 'success');
                           }}
-                          className="w-full py-2.5 bg-zinc-900 border border-border hover:bg-zinc-800 hover:text-white text-zinc-300 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center space-x-2"
+                          className="w-full py-2.5 bg-muted border border-border hover:bg-muted hover:text-foreground text-foreground/80 text-[10px] font-semibold uppercase tracking-wider rounded-xl transition-all flex items-center justify-center space-x-2"
                         >
                           <Download className="w-3.5 h-3.5" />
                           <span>Download .{dl.ext}</span>
@@ -3092,7 +3092,7 @@ export default function App() {
                     ))}
                   </div>
 
-                  <div className="p-4 bg-zinc-900/40 border border-border/60 rounded-2xl flex items-start space-x-3 text-[11px] text-zinc-400">
+                  <div className="p-4 bg-muted/40 border border-border/60 rounded-2xl flex items-start space-x-3 text-[11px] text-muted-foreground">
                     <Info className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
                     <p className="leading-relaxed">
                       <strong>Auto-Start Policy:</strong> Once installed, the client app configures a local startup lock task. The agent daemon boots automatically on system launch, verifying connectivity on local loopback port 5050.
@@ -3107,18 +3107,18 @@ export default function App() {
                   <div className="flex items-center space-x-3">
                     <Laptop className="w-5 h-5 text-primary" />
                     <div className="flex flex-col">
-                      <span className="font-extrabold text-xs text-white uppercase tracking-wider">CivilMantra Desktop Agent</span>
-                      <span className="text-[8px] text-zinc-550 font-bold uppercase tracking-widest">Version 1.0.0</span>
+                      <span className="font-extrabold text-xs text-foreground uppercase tracking-wider">CivilMantra Desktop Agent</span>
+                      <span className="text-[8px] text-muted-foreground font-bold uppercase tracking-widest">Version 1.0.0</span>
                     </div>
                   </div>
                   <div className="flex items-center space-x-3">
                     <span className={`w-2 h-2 rounded-full ${localDaemonState.online ? (localDaemonState.isSimulated ? 'bg-indigo-500 animate-pulse' : 'bg-emerald-500') : 'bg-red-500 animate-pulse'}`}></span>
-                    <span className="text-[10px] uppercase font-bold text-zinc-400">
+                    <span className="text-[10px] uppercase font-bold text-muted-foreground">
                       {localDaemonState.isSimulated ? 'Cloud Simulation Active' : localDaemonState.online ? 'Daemon Active (Port 5050)' : 'Daemon Offline'}
                     </span>
                     <button
                       onClick={handleExitAgent}
-                      className="px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-border text-zinc-400 hover:text-white rounded-lg text-[9px] font-black uppercase tracking-wider transition-all"
+                      className="px-3 py-1 bg-muted hover:bg-muted border border-border text-muted-foreground hover:text-foreground rounded-lg text-[9px] font-semibold uppercase tracking-wider transition-all"
                     >
                       Exit Agent
                     </button>
@@ -3128,19 +3128,19 @@ export default function App() {
           {!desktopActivated ? (
             /* ONBOARDING ACTIVATION CARD */
             <div className="flex-1 flex items-center justify-center p-6 bg-dot-pattern">
-              <div className="w-full max-w-md bg-card border border-border p-8 rounded-3xl shadow-2xl space-y-6">
+              <div className="w-full max-w-md bg-card border border-border p-8 rounded-xl shadow-2xl space-y-6">
                 <div className="text-center space-y-2">
                   <div className="inline-flex p-3 bg-primary/10 border border-primary/20 rounded-2xl text-primary">
                     <Laptop className="w-6 h-6 animate-bounce" />
                   </div>
-                  <h2 className="text-lg font-black text-white uppercase tracking-wider">Desktop Agent Onboarding</h2>
-                  <p className="text-xs text-zinc-450 leading-relaxed">
+                  <h2 className="text-lg font-semibold text-foreground uppercase tracking-wider">Desktop Agent Onboarding</h2>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
                     Verify consent permissions and connect your local workspace node with the corporate Vercel database cloud.
                   </p>
                 </div>
 
                 <div className="space-y-3">
-                  <div className="flex items-start space-x-3 p-3 bg-zinc-900/50 border border-border rounded-xl">
+                  <div className="flex items-start space-x-3 p-3 bg-muted/50 border border-border rounded-xl">
                     <input 
                       type="checkbox" 
                       id="perm_input"
@@ -3148,12 +3148,12 @@ export default function App() {
                       onChange={(e) => setGrantedPermissions({...grantedPermissions, input: e.target.checked})}
                       className="mt-1 accent-primary" 
                     />
-                    <label htmlFor="perm_input" className="text-[11px] text-zinc-300 font-medium">
+                    <label htmlFor="perm_input" className="text-[11px] text-foreground/80 font-medium">
                       <strong>Input Counters Consent:</strong> Record keystroke and mouse movement counts in 30s buckets. No logs of input contents.
                     </label>
                   </div>
 
-                  <div className="flex items-start space-x-3 p-3 bg-zinc-900/50 border border-border rounded-xl">
+                  <div className="flex items-start space-x-3 p-3 bg-muted/50 border border-border rounded-xl">
                     <input 
                       type="checkbox" 
                       id="perm_focus"
@@ -3161,7 +3161,7 @@ export default function App() {
                       onChange={(e) => setGrantedPermissions({...grantedPermissions, startup: e.target.checked})}
                       className="mt-1 accent-primary" 
                     />
-                    <label htmlFor="perm_focus" className="text-[11px] text-zinc-300 font-medium">
+                    <label htmlFor="perm_focus" className="text-[11px] text-foreground/80 font-medium">
                       <strong>Window Focus Tracking:</strong> Monitor active foreground window titles to verify productive tasks.
                     </label>
                   </div>
@@ -3169,31 +3169,31 @@ export default function App() {
 
                 <form onSubmit={handleActivateDesktop} className="space-y-3">
                   <div className="space-y-1">
-                    <label className="text-[9px] uppercase font-black text-zinc-500 tracking-wider">Corporate Email</label>
+                    <label className="text-[9px] uppercase font-semibold text-muted-foreground tracking-wider">Corporate Email</label>
                     <input
                       type="email"
                       required
                       value={activationEmailInput}
                       onChange={(e) => setActivationEmailInput(e.target.value)}
                       placeholder="you@civilmantra.com"
-                      className="w-full bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-white placeholder-zinc-700 outline-none"
+                      className="w-full bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-foreground placeholder:text-muted-foreground outline-none"
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[9px] uppercase font-black text-zinc-500 tracking-wider">8-Digit Activation Code</label>
+                    <label className="text-[9px] uppercase font-semibold text-muted-foreground tracking-wider">8-Digit Activation Code</label>
                     <input
                       type="text"
                       required
                       value={activationCodeInput}
                       onChange={(e) => setActivationCodeInput(e.target.value)}
                       placeholder="00000000"
-                      className="w-full bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-white placeholder-zinc-700 outline-none uppercase font-mono"
+                      className="w-full bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-foreground placeholder:text-muted-foreground outline-none uppercase font-mono"
                     />
                   </div>
                   <button 
                     type="submit" 
                     disabled={!grantedPermissions.input || !grantedPermissions.startup}
-                    className="w-full py-3 bg-primary hover:bg-primary/95 text-primary-foreground disabled:bg-zinc-800 disabled:text-zinc-500 font-black text-xs uppercase tracking-widest rounded-xl transition-all"
+                    className="w-full py-3 bg-primary hover:bg-primary/95 text-primary-foreground disabled:bg-muted disabled:text-muted-foreground font-semibold text-xs uppercase tracking-widest rounded-xl transition-all"
                   >
                     Activate Workspace Node
                   </button>
@@ -3207,42 +3207,42 @@ export default function App() {
               {/* Connected Banner */}
               <div className="flex justify-between items-center border-b border-border pb-4 flex-wrap gap-4">
                 <div>
-                  <h2 className="text-xl font-black text-white uppercase tracking-wider">Active Workspace Telemetry</h2>
-                  <p className="text-xs text-zinc-400 mt-1">This node is verified and syncing logs securely with the Cloud Database.</p>
+                  <h2 className="text-xl font-semibold text-foreground uppercase tracking-wider">Active Workspace Telemetry</h2>
+                  <p className="text-xs text-muted-foreground mt-1">This node is verified and syncing logs securely with the Cloud Database.</p>
                 </div>
-                <span className="text-[10px] bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-black uppercase tracking-wider px-3.5 py-1.5 rounded-full flex items-center space-x-1.5">
+                <span className="text-[10px] bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-semibold uppercase tracking-wider px-3.5 py-1.5 rounded-full flex items-center space-x-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                   <span>Syncing Live Logs</span>
                 </span>
               </div>
 
               {/* My Productivity — employee's own data (transparency self-view) */}
-              <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
-                <span className="text-xs font-black text-white uppercase tracking-wider flex items-center space-x-2">
+              <div className="p-6 rounded-xl bg-card border border-border space-y-4">
+                <span className="text-xs font-semibold text-foreground uppercase tracking-wider flex items-center space-x-2">
                   <TrendingUp className="w-4 h-4 text-primary" />
                   <span>My Productivity (last 7 days) — your data, transparent</span>
                 </span>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="p-4 rounded-2xl bg-background border border-border">
-                    <span className="text-[9px] uppercase font-bold text-zinc-500 block">Active %</span>
-                    <span className="text-xl font-black text-emerald-400">{selfAnalytics?.rollup?.active_pct ?? '—'}%</span>
+                    <span className="text-[9px] uppercase font-bold text-muted-foreground block">Active %</span>
+                    <span className="text-xl font-semibold text-emerald-400">{selfAnalytics?.rollup?.active_pct ?? '—'}%</span>
                   </div>
                   <div className="p-4 rounded-2xl bg-background border border-border">
-                    <span className="text-[9px] uppercase font-bold text-zinc-500 block">Active Hours</span>
-                    <span className="text-xl font-black text-white">{selfAnalytics?.rollup?.active_hours ?? '—'}h</span>
+                    <span className="text-[9px] uppercase font-bold text-muted-foreground block">Active Hours</span>
+                    <span className="text-xl font-semibold text-foreground">{selfAnalytics?.rollup?.active_hours ?? '—'}h</span>
                   </div>
                   <div className="p-4 rounded-2xl bg-background border border-border">
-                    <span className="text-[9px] uppercase font-bold text-zinc-500 block">Samples</span>
-                    <span className="text-xl font-black text-white">{selfAnalytics?.rollup?.samples ?? '—'}</span>
+                    <span className="text-[9px] uppercase font-bold text-muted-foreground block">Samples</span>
+                    <span className="text-xl font-semibold text-foreground">{selfAnalytics?.rollup?.samples ?? '—'}</span>
                   </div>
                   <div className="p-4 rounded-2xl bg-background border border-border">
-                    <span className="text-[9px] uppercase font-bold text-zinc-500 block">Flagged</span>
-                    <span className="text-xl font-black text-amber-400">{selfAnalytics?.rollup?.anomalies ?? '—'}</span>
+                    <span className="text-[9px] uppercase font-bold text-muted-foreground block">Flagged</span>
+                    <span className="text-xl font-semibold text-amber-400">{selfAnalytics?.rollup?.anomalies ?? '—'}</span>
                   </div>
                 </div>
                 <div className="h-44 w-full relative">
                   {!selfAnalytics?.trend?.length && (
-                    <div className="absolute inset-0 flex items-center justify-center text-xs text-zinc-600 pointer-events-none">
+                    <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground pointer-events-none">
                       No activity data yet
                     </div>
                   )}
@@ -3267,13 +3267,13 @@ export default function App() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 
                 {/* Left Live Console Tracking Details */}
-                <div className="md:col-span-2 p-6 rounded-3xl bg-card border border-border space-y-4">
-                  <span className="text-xs font-black text-white uppercase tracking-wider flex items-center space-x-2">
+                <div className="md:col-span-2 p-6 rounded-xl bg-card border border-border space-y-4">
+                  <span className="text-xs font-semibold text-foreground uppercase tracking-wider flex items-center space-x-2">
                     <Activity className="w-4 h-4 text-primary animate-pulse" />
                     <span>Real-Time Local Tracking Event Log</span>
                   </span>
 
-                  <div className="bg-zinc-950 border border-border p-5 rounded-2xl font-mono text-[10px] text-zinc-400 space-y-2.5 max-h-48 overflow-y-auto">
+                  <div className="bg-background border border-border p-5 rounded-2xl font-mono text-[10px] text-muted-foreground space-y-2.5 max-h-48 overflow-y-auto">
                     {telemetryTicker.map((t, idx) => (
                       <div key={idx} className="flex justify-between border-b border-border/30 pb-2 last:border-0 last:pb-0">
                         <span>[{t.time}] {t.event}</span>
@@ -3283,16 +3283,16 @@ export default function App() {
                   </div>
 
                   <div className="grid grid-cols-3 gap-4 pt-2">
-                    <div className="p-4 bg-zinc-900/50 border border-border/80 rounded-2xl text-center">
-                      <span className="text-[8px] uppercase font-bold text-zinc-550 block">Active App</span>
-                      <span className="text-xs font-extrabold text-white mt-1 block truncate">{localDaemonState.activeWindow}</span>
+                    <div className="p-4 bg-muted/50 border border-border/80 rounded-2xl text-center">
+                      <span className="text-[8px] uppercase font-bold text-muted-foreground block">Active App</span>
+                      <span className="text-xs font-extrabold text-foreground mt-1 block truncate">{localDaemonState.activeWindow}</span>
                     </div>
-                    <div className="p-4 bg-zinc-900/50 border border-border/80 rounded-2xl text-center">
-                      <span className="text-[8px] uppercase font-bold text-zinc-550 block">Keystroke Count</span>
+                    <div className="p-4 bg-muted/50 border border-border/80 rounded-2xl text-center">
+                      <span className="text-[8px] uppercase font-bold text-muted-foreground block">Keystroke Count</span>
                       <span className="text-xs font-mono font-bold text-indigo-400 mt-1 block">{localDaemonState.keystrokes}</span>
                     </div>
-                    <div className="p-4 bg-zinc-900/50 border border-border/80 rounded-2xl text-center">
-                      <span className="text-[8px] uppercase font-bold text-zinc-550 block">Mouse Count</span>
+                    <div className="p-4 bg-muted/50 border border-border/80 rounded-2xl text-center">
+                      <span className="text-[8px] uppercase font-bold text-muted-foreground block">Mouse Count</span>
                       <span className="text-xs font-mono font-bold text-indigo-400 mt-1 block">{localDaemonState.mouseMovements}</span>
                     </div>
                   </div>
@@ -3304,7 +3304,7 @@ export default function App() {
                   {showVerificationPrompt && (
                     <div className="flex items-center justify-between px-1 text-[10px] text-indigo-300/80">
                       <span className="flex items-center gap-1.5"><AlertTriangle className="w-3.5 h-3.5" /> Time to log your hours — allocate your tracked blocks below.</span>
-                      <button onClick={() => setShowVerificationPrompt(false)} className="text-zinc-500 hover:text-white uppercase font-black">Dismiss</button>
+                      <button onClick={() => setShowVerificationPrompt(false)} className="text-muted-foreground hover:text-foreground uppercase font-semibold">Dismiss</button>
                     </div>
                   )}
                   <TimelineAllocator
@@ -3315,15 +3315,15 @@ export default function App() {
                   />
 
                   {/* Right Cloud Database Sync Log status — real, from the daemon's /api/status, never simulated */}
-                  <div className="p-6 rounded-3xl bg-card border border-border space-y-4">
-                    <span className="text-xs font-black text-white uppercase tracking-wider flex items-center space-x-2">
+                  <div className="p-6 rounded-xl bg-card border border-border space-y-4">
+                    <span className="text-xs font-semibold text-foreground uppercase tracking-wider flex items-center space-x-2">
                       <Server className="w-4 h-4 text-indigo-400" />
                       <span>Cloud Sync Status</span>
                     </span>
 
                     <div className="space-y-3">
                       {!cloudSyncStatus.checked ? (
-                        <div className="p-3 bg-zinc-900/50 border border-border/40 rounded-xl text-[10px] text-zinc-400">
+                        <div className="p-3 bg-muted/50 border border-border/40 rounded-xl text-[10px] text-muted-foreground">
                           Checking connection to the cloud database…
                         </div>
                       ) : cloudSyncStatus.lastError ? (
@@ -3333,21 +3333,21 @@ export default function App() {
                           </div>
                           <p className="text-[10px] text-red-300/80">{cloudSyncStatus.lastError}</p>
                           {cloudSyncStatus.pendingSync != null && cloudSyncStatus.pendingSync > 0 && (
-                            <p className="text-[9px] text-zinc-500">{cloudSyncStatus.pendingSync} record(s) waiting to upload — kept safely on this device, not lost.</p>
+                            <p className="text-[9px] text-muted-foreground">{cloudSyncStatus.pendingSync} record(s) waiting to upload — kept safely on this device, not lost.</p>
                           )}
                         </div>
                       ) : cloudSyncStatus.lastSuccessAt ? (
                         <div className="p-3 bg-emerald-950/20 border border-emerald-900/40 rounded-xl space-y-1">
                           <div className="flex justify-between font-bold text-[10px]">
                             <span className="text-emerald-400">Synced</span>
-                            <span className="text-zinc-400">{new Date(cloudSyncStatus.lastSuccessAt * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                            <span className="text-muted-foreground">{new Date(cloudSyncStatus.lastSuccessAt * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
                           </div>
-                          <p className="text-[10px] text-zinc-400">
+                          <p className="text-[10px] text-muted-foreground">
                             {cloudSyncStatus.pendingSync ? `${cloudSyncStatus.pendingSync} record(s) queued for the next sync.` : 'All recorded activity is up to date in the cloud.'}
                           </p>
                         </div>
                       ) : (
-                        <div className="p-3 bg-zinc-900/50 border border-border/40 rounded-xl text-[10px] text-zinc-400">
+                        <div className="p-3 bg-muted/50 border border-border/40 rounded-xl text-[10px] text-muted-foreground">
                           No successful sync yet on this device.
                         </div>
                       )}

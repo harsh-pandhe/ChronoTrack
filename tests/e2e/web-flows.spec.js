@@ -26,12 +26,12 @@ async function login(page, role, creds) {
   await page.getByRole('button', { name: roleLabel, exact: true }).click();
   await page.locator('input[type=email]').fill(creds.email);
   await page.locator('input[type=password]').fill(creds.password);
-  await page.getByRole('button', { name: /verify credentials/i }).click();
+  await page.getByRole('button', { name: /sign in/i }).click();
 }
 
 test('admin logs in and sees real portfolio analytics', async ({ page }) => {
   await login(page, 'admin', ADMIN);
-  await expect(page.getByText('AI Predictive Workspace Analytics', { exact: false })).toBeVisible({ timeout: 8000 });
+  await expect(page.getByText('Workspace Analytics', { exact: false })).toBeVisible({ timeout: 8000 });
   // Overview cards should render real Cr/%/values (not the literal placeholder dash).
   await expect(page.getByText('Total Portfolio Revenue')).toBeVisible();
   await expect(page.getByText(/Rs\.\s*[\d.]+\s*Cr/)).toBeVisible();
@@ -74,5 +74,5 @@ test('team lead members tab shows per-employee/per-project drill-down', async ({
 test('invalid login is rejected', async ({ page }) => {
   await login(page, 'admin', { email: 'admin@cm.com', password: 'wrong-password' });
   // stays on login gateway, shows error, no dashboard
-  await expect(page.getByText('Console Access Gateway', { exact: false })).toBeVisible();
+  await expect(page.getByText('Sign in to ChronoTrack', { exact: false })).toBeVisible();
 });
