@@ -36,11 +36,16 @@ UX overhaul, scale-for-1600 hardening, stress tests).
   daemons/20s = 0 errors p99 6ms; 120-daemon hammer shed 79× 503 with 0 hard
   errors. CI gains a (non-blocking) lint job; +2 Playwright tests for the Phase 3
   views. Follow-up: wire daemon-e2e + Playwright into CI (need pinned deps).
-- **Phase 4 — UI/UX overhaul (shadcn/ui + decompose `App.jsx` + code-split).**
-  PENDING (the one remaining phase). Note: the admin dashboard still shows
-  hardcoded "AI predictive" demo widgets + 2022–2026 charts + fake KPI fallbacks
-  when no data is loaded — clean these up as part of the redesign. Also flip the
-  CI lint job to blocking once the App.jsx lint baseline reaches zero.
+- **Phase 4 — UI/UX overhaul (mostly done, `7ef4266`).** shadcn/ui infra + `@/`
+  alias + `cn`; light-first "Linear/Vercel" theme (retuned tokens + `.dark`,
+  ThemeProvider, default light, dark toggle); redesigned login (shadcn); and a
+  full sweep of App.jsx off hard-coded dark classes onto semantic tokens so every
+  role renders coherently in light + dark (verified landing/admin/lead in-browser,
+  zero white-on-white). Misleading "Simulated intelligence" label reworded.
+  **Follow-up (tech-debt, not blocking):** migrate tables/forms to the `ui/*`
+  primitives, decompose `App.jsx` into lazy routes + code-split (still one ~720KB
+  chunk), remove dead `DEMO_MODE`/`logAudit`/`logs` code, drive lint to 0 and flip
+  the CI lint job to blocking.
 
 ---
 
