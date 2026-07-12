@@ -5,27 +5,50 @@ import { rateLimitKey } from '../lib/ratelimit.js';
 import { query } from '../lib/db.js';
 import { sha256 } from '../lib/auth.js';
 
-const MAX_BATCH = 500; // backpressure cap
+const MAX_BATCH = 500; // per-request sample cap
+
+// Global in-flight backpressure. Under a reconnect storm (thousands of daemons
+// draining offline buffers at once) unbounded concurrency can exhaust the DB
+// connection pool and stall every request. Shed load early with a 503 +
+// Retry-After so daemons back off (they keep the data buffered locally), instead
+// of tipping the pool over. Tunable per instance.
+const MAX_INFLIGHT = Number(process.env.INGEST_MAX_INFLIGHT) || 40;
+let inFlight = 0;
 
 async function authDevice(req) {
   const auth = req.headers.authorization || '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
   if (!token) throw new HttpError(401, 'Missing device token');
   const { rows: [device] } = await query(
-    `SELECT id, company_id, user_id, revoked FROM devices WHERE device_token_hash = $1`,
+    `SELECT id, company_id, user_id, revoked, expires_at FROM devices WHERE device_token_hash = $1`,
     [sha256(token)]
   );
   if (!device) throw new HttpError(401, 'Unknown device');
   if (device.revoked) throw new HttpError(403, 'Device revoked');
+  if (device.expires_at && new Date(device.expires_at) < new Date())
+    throw new HttpError(403, 'Device token expired — re-activate the agent');
   return device;
 }
 
 export default handler(async (req, res) => {
   if (req.method !== 'POST') throw new HttpError(405, 'Method Not Allowed');
+  if (inFlight >= MAX_INFLIGHT) {
+    res.setHeader('Retry-After', '5');
+    throw new HttpError(503, 'Server busy — retry shortly (your data is kept locally).');
+  }
+  inFlight += 1;
+  try {
+    return await ingest(req, res);
+  } finally {
+    inFlight -= 1;
+  }
+});
+
+async function ingest(req, res) {
   const device = await authDevice(req);
   // Abuse/backpressure guard PER DEVICE (not IP — many agents share an office
   // NAT IP). 30 batches/min/device is generous (real daemon syncs every 30s).
-  rateLimitKey(`ingest:${device.id}`, 30, 60_000);
+  await rateLimitKey(`ingest:${device.id}`, 30, 60_000);
   const body = await readBody(req);
   const samples = Array.isArray(body.samples) ? body.samples : [];
   if (samples.length === 0) return send(res, 200, { accepted: 0 });
@@ -69,4 +92,4 @@ export default handler(async (req, res) => {
   for (const r of ruleRows) rules[r.category]?.push(r.keyword);
 
   return send(res, 200, { accepted: samples.length, rules });
-});
+}

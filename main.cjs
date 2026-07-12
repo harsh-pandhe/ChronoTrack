@@ -153,6 +153,49 @@ function startTelemetryDaemon() {
   }
 }
 
+// Watchdog. The daemon runs detached + autostarted, so on Linux (systemd
+// Restart=on-failure) and macOS (LaunchAgent KeepAlive) the OS resurrects it.
+// Windows' Run key only starts it at logon, NOT on crash — so a crashed daemon
+// stays dead until reboot. This watchdog pings the daemon's local HTTP server
+// and respawns it if it goes unresponsive, and tracks honest liveness the UI can
+// show instead of assuming collection is happening.
+const DAEMON_HEALTH_PORT = 5050;
+let watchdogTimer = null;
+let lastRestartAt = 0;
+const daemonHealth = { alive: false, lastOkAt: null, lastCheckAt: null, restarts: 0 };
+
+function pingDaemon() {
+  return new Promise((resolve) => {
+    const req = http.get(
+      { host: '127.0.0.1', port: DAEMON_HEALTH_PORT, path: '/api/status', timeout: 2000 },
+      (res) => { res.resume(); resolve(res.statusCode > 0 && res.statusCode < 500); }
+    );
+    req.on('error', () => resolve(false));
+    req.on('timeout', () => { req.destroy(); resolve(false); });
+  });
+}
+
+function startWatchdog() {
+  if (watchdogTimer) return;
+  let misses = 0;
+  watchdogTimer = setInterval(async () => {
+    const ok = await pingDaemon();
+    daemonHealth.lastCheckAt = Date.now();
+    if (ok) { misses = 0; daemonHealth.alive = true; daemonHealth.lastOkAt = Date.now(); return; }
+    daemonHealth.alive = false;
+    misses += 1;
+    // ~90s unresponsive and not restarted in the last 60s → respawn (safe: the
+    // daemon's single-instance lock rejects a duplicate if it's actually alive).
+    if (misses >= 3 && Date.now() - lastRestartAt > 60_000) {
+      console.warn('[ELECTRON] Daemon unresponsive — respawning.');
+      lastRestartAt = Date.now();
+      daemonHealth.restarts += 1;
+      misses = 0;
+      try { startTelemetryDaemon(); } catch (err) { console.error('[ELECTRON] Watchdog respawn failed:', err.message); }
+    }
+  }, 30_000);
+}
+
 function stopTelemetryDaemon() {
   if (daemonProcess) {
     console.log('[ELECTRON] Terminating Telemetry Daemon...');
@@ -206,6 +249,8 @@ let staticPort = 0;
 // "Exit Agent" in the renderer closes the app window only — the telemetry
 // daemon is an independently-autostarted background process and keeps running.
 ipcMain.on('app-quit', () => app.quit());
+// Renderer can read the watchdog's honest view of daemon liveness.
+ipcMain.handle('daemon-health', () => daemonHealth);
 
 app.whenReady().then(async () => {
   const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
@@ -213,6 +258,7 @@ app.whenReady().then(async () => {
     staticPort = await startStaticServer();
   }
   startTelemetryDaemon();
+  startWatchdog();
   createWindow();
 
   app.on('activate', () => {

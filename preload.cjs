@@ -33,5 +33,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getApiToken: () => getApiToken(),
   // Closes the app window. The telemetry daemon is a separate autostarted
   // background process (systemd/Run-key/LaunchAgent) and keeps running.
-  quitApp: () => ipcRenderer.send('app-quit')
+  quitApp: () => ipcRenderer.send('app-quit'),
+  // Watchdog's honest liveness view: { alive, lastOkAt, lastCheckAt, restarts }.
+  getDaemonHealth: () => ipcRenderer.invoke('daemon-health')
 });

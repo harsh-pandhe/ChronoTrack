@@ -10,6 +10,9 @@ import { audit } from '../lib/audit.js';
 
 const TTL_DAYS = 7;
 const CONSENT_VERSION = process.env.CONSENT_VERSION || '1.0';
+// Device bearer tokens expire and must be renewed by re-activating. Long enough
+// not to nag active users, short enough that a leaked token self-heals. Tunable.
+const DEVICE_TOKEN_TTL_DAYS = Number(process.env.DEVICE_TOKEN_TTL_DAYS) || 180;
 
 export default handler(async (req, res) => {
   if (req.method !== 'POST') throw new HttpError(405, 'Method Not Allowed');
@@ -72,10 +75,11 @@ export default handler(async (req, res) => {
         [user.company_id, user.id, CONSENT_VERSION, ip]
       );
       await client.query(`UPDATE users SET status = 'active', updated_at = now() WHERE id = $1`, [user.id]);
+      const expiresAt = new Date(Date.now() + DEVICE_TOKEN_TTL_DAYS * 86400_000);
       const { rows } = await client.query(
-        `INSERT INTO devices (company_id, user_id, device_token_hash, platform, hostname, last_seen)
-         VALUES ($1, $2, $3, $4, $5, now()) RETURNING id`,
-        [user.company_id, user.id, sha256(deviceToken), platform || null, hostname || null]
+        `INSERT INTO devices (company_id, user_id, device_token_hash, platform, hostname, last_seen, expires_at)
+         VALUES ($1, $2, $3, $4, $5, now(), $6) RETURNING id`,
+        [user.company_id, user.id, sha256(deviceToken), platform || null, hostname || null, expiresAt]
       );
       return rows[0];
     });

@@ -219,6 +219,22 @@ async function main() {
   ok(r.json.projects.some((p) => p.id === projectId),
     'timeline lists the employee\'s assigned projects');
 
+  // 8h. Device management: list own devices, expiry enforcement, per-device revoke.
+  r = await call('GET', '/api/consent?devices=1', { token: empToken });
+  ok(r.status === 200 && r.json.devices.length >= 1 && !!r.json.devices[0].expires_at,
+     'employee lists own devices (with expiry)');
+  const devId = r.json.devices[0].id;
+  await query(`UPDATE devices SET expires_at = now() - interval '1 day' WHERE id=$1`, [devId]);
+  r = await call('POST', '/api/ingest', { token: deviceToken, body: { samples } });
+  ok(r.status === 403 && /expired/i.test(r.json.error || ''), 'ingest rejected when device token expired');
+  await query(`UPDATE devices SET expires_at = now() + interval '30 days' WHERE id=$1`, [devId]);
+  r = await call('DELETE', `/api/consent?device_id=${devId}`, { token: empToken });
+  ok(r.status === 200, 'employee revokes a single device (not full consent)');
+  r = await call('POST', '/api/ingest', { token: deviceToken, body: { samples } });
+  ok(r.status === 403, 'ingest blocked after per-device revoke');
+  // Un-revoke so the later consent-withdrawal assertion tests its own path.
+  await query(`UPDATE devices SET revoked = false WHERE id=$1`, [devId]);
+
   // 9. ROI computed: cost = 2h * 500 = 1000; revenue 100000 → roi = 99
   r = await call('GET', '/api/projects', { token: leadToken });
   const proj = r.json.projects.find((p) => p.id === projectId);
