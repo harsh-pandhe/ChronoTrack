@@ -38,6 +38,11 @@ import {
   BarChart,
   Bar,
 } from 'recharts';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card } from '@/components/ui/card';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
 // Renders a recharts ResponsiveContainer only once its box has a real size —
 // avoids the "width(-1)/height(-1)" console warning on first paint / tab switch.
@@ -1678,41 +1683,44 @@ export default function App() {
 
       {/* SECURE CARD LOGIN PAGE */}
       {currentRole === 'login' && (
-        <div className="min-h-screen flex items-center justify-center bg-dot-pattern px-6">
-          <div className="w-full max-w-md bg-card border border-border p-8 rounded-3xl shadow-2xl space-y-6 hover:border-zinc-800 transition-all duration-300 relative">
-            <button 
-              onClick={() => setCurrentRole('landing')} 
-              className="absolute top-6 right-6 p-1.5 rounded-full text-zinc-500 hover:text-white hover:bg-zinc-900 transition-all"
+        <div className="min-h-screen flex items-center justify-center px-6 bg-muted/30">
+          <div className="absolute top-5 right-5">
+            <ThemeToggle />
+          </div>
+          <Card className="w-full max-w-md p-8 space-y-6 shadow-lg relative">
+            <button
+              onClick={() => setCurrentRole('landing')}
+              className="absolute top-5 right-5 p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+              aria-label="Back to home"
             >
               <X className="w-4 h-4" />
             </button>
 
-            <div className="text-center space-y-2">
-              <div className="inline-flex p-3 bg-primary/10 rounded-2xl border border-primary/20 text-primary">
-                <Shield className="w-6 h-6" />
+            <div className="space-y-2">
+              <div className="inline-flex p-2.5 bg-primary/10 rounded-xl text-primary">
+                <Shield className="w-5 h-5" />
               </div>
-              <h2 className="text-lg font-black text-white uppercase tracking-wider">Console Access Gateway</h2>
-              <p className="text-xs text-zinc-500 uppercase tracking-wide">Enter credentials to unlock secure workstation portals.</p>
+              <h2 className="text-xl font-semibold tracking-tight text-foreground">Sign in to ChronoTrack</h2>
+              <p className="text-sm text-muted-foreground">Access your workspace console.</p>
             </div>
 
-            <form onSubmit={handleLoginSubmit} className="space-y-4">
-              {/* Role Selection */}
+            <form onSubmit={handleLoginSubmit} className="space-y-5">
               <div className="space-y-1.5">
-                <label className="text-[10px] uppercase font-black tracking-wider text-zinc-400">Select Role Scope</label>
+                <Label className="text-muted-foreground">Role</Label>
                 <div className="grid grid-cols-3 gap-2">
                   {[
                     { id: 'admin', label: 'Admin', icon: Shield },
                     { id: 'tl', label: 'Team Lead', icon: Users },
-                    { id: 'employee', label: 'Employee', icon: User }
-                  ].map(r => (
+                    { id: 'employee', label: 'Employee', icon: User },
+                  ].map((r) => (
                     <button
                       key={r.id}
                       type="button"
                       onClick={() => setLoginRole(r.id)}
-                      className={`py-2.5 rounded-xl border text-[10px] font-black uppercase flex flex-col items-center justify-center space-y-1.5 transition-all ${
-                        loginRole === r.id 
-                          ? 'bg-primary/10 border-primary text-primary' 
-                          : 'bg-background border-border text-zinc-400 hover:text-white'
+                      className={`py-2.5 rounded-lg border text-xs font-medium flex flex-col items-center justify-center gap-1.5 transition-colors ${
+                        loginRole === r.id
+                          ? 'bg-primary/10 border-primary text-primary'
+                          : 'bg-background border-border text-muted-foreground hover:text-foreground hover:bg-accent'
                       }`}
                     >
                       <r.icon className="w-4 h-4" />
@@ -1722,61 +1730,57 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Email + Password input */}
               {loginRole !== 'employee' ? (
-                <div className="space-y-3">
+                <div className="space-y-4">
                   <div className="space-y-1.5">
-                    <label className="text-[10px] uppercase font-black tracking-wider text-zinc-400">Corporate Email</label>
-                    <input
+                    <Label htmlFor="login-email">Corporate email</Label>
+                    <Input
+                      id="login-email"
                       type="email"
                       value={loginEmail}
                       onChange={(e) => setLoginEmail(e.target.value)}
                       placeholder="you@company.com"
                       autoComplete="username"
-                      className="w-full bg-background border border-border focus:border-primary rounded-xl px-4 py-3 text-xs text-white placeholder-zinc-700 outline-none transition-colors"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-[10px] uppercase font-black tracking-wider text-zinc-400">Security Password</label>
-                    <input
+                    <Label htmlFor="login-password">Password</Label>
+                    <Input
+                      id="login-password"
                       type="password"
                       value={loginPassword}
                       onChange={(e) => setLoginPassword(e.target.value)}
                       placeholder="••••••••"
                       autoComplete="current-password"
-                      className="w-full bg-background border border-border focus:border-primary rounded-xl px-4 py-3 text-xs text-white placeholder-zinc-700 outline-none transition-colors"
                     />
                   </div>
                 </div>
               ) : (
-                <div className="bg-zinc-950 border border-border p-4 rounded-xl text-center space-y-2">
-                  <p className="text-xs text-zinc-400">Employees access logs via the local standalone Desktop Agent Client.</p>
-                  <button 
-                    type="button" 
+                <div className="bg-muted border border-border p-4 rounded-lg text-center space-y-2">
+                  <p className="text-sm text-muted-foreground">Employees sign in through the desktop agent.</p>
+                  <button
+                    type="button"
                     onClick={() => setCurrentRole('employee')}
-                    className="text-[10px] font-black uppercase text-primary hover:underline"
+                    className="text-xs font-medium text-primary hover:underline"
                   >
-                    Simulate Desktop View
+                    Open desktop view
                   </button>
                 </div>
               )}
 
               {loginError && (
-                <div className="text-[10px] text-red-400 font-bold bg-red-500/10 border border-red-500/20 p-3 rounded-xl text-center">
+                <div className="text-sm text-destructive font-medium bg-destructive/10 border border-destructive/20 p-3 rounded-lg text-center">
                   {loginError}
                 </div>
               )}
 
               {loginRole !== 'employee' && (
-                <button 
-                  type="submit" 
-                  className="w-full py-3.5 bg-primary hover:bg-primary/95 text-primary-foreground font-black text-xs uppercase tracking-widest rounded-xl transition-all"
-                >
-                  Verify Credentials
-                </button>
+                <Button type="submit" size="lg" className="w-full">
+                  Sign in
+                </Button>
               )}
             </form>
-          </div>
+          </Card>
         </div>
       )}
 
