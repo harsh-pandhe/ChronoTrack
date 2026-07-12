@@ -6,6 +6,22 @@ on:
   pull_request:
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    # Non-blocking for now: src/App.jsx carries a known pre-existing lint baseline
+    # (~54 errors) that the Phase 4 decomposition will clear. This surfaces NEW
+    # issues in PR logs without failing CI; flip continue-on-error off once the
+    # baseline is zero.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+
   backend-tests:
     runs-on: ubuntu-latest
     services:

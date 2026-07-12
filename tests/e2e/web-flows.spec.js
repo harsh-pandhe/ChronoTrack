@@ -57,6 +57,20 @@ test('team lead sees team board + manage projects', async ({ page }) => {
   await expect(page.getByText('Manage Team & Projects', { exact: false })).toBeVisible();
 });
 
+test('admin overview shows the per-lead portfolio cross-tab', async ({ page }) => {
+  await login(page, 'admin', ADMIN);
+  // Phase 3: "Portfolio by Team Lead" renders once any lead exists.
+  await expect(page.getByText('Portfolio by Team Lead', { exact: false })).toBeVisible({ timeout: 8000 });
+});
+
+test('team lead members tab shows per-employee/per-project drill-down', async ({ page }) => {
+  await login(page, 'lead', LEAD);
+  await page.getByText(/telemetry logs/i).first().click();
+  // Phase 3: idle summary + most-used apps + the hours drill-down table.
+  await expect(page.getByText('Hours by Employee & Project', { exact: false })).toBeVisible({ timeout: 8000 });
+  await expect(page.getByText('Team Idle', { exact: false })).toBeVisible();
+});
+
 test('invalid login is rejected', async ({ page }) => {
   await login(page, 'admin', { email: 'admin@cm.com', password: 'wrong-password' });
   // stays on login gateway, shows error, no dashboard
