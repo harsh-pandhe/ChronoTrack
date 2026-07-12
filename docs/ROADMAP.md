@@ -1,11 +1,43 @@
 # ChronoTrack — Final Roadmap & Pilot Readiness
 
-_Last updated: 2026-07-05 (later) — the cloud-sync network issue is fixed
-and confirmed: the daemon now completes real HTTPS requests to the server
-(certifi-backed SSL context). Every fix from this and the previous pass is
-now deployed and live-verified end to end._
+_Last updated: 2026-07-12 — completion push Phases 1–3 landed (data-integrity,
+visual timeline allocation, lead/admin reporting depth). See below._
 
 ---
+
+## 🚧 2026-07-12 — completion & hardening push (Phases 1–6 plan)
+
+Working through a 6-phase plan to close the gap between the live build and the
+full product vision (multi-project, visual time allocation, deep reporting,
+UX overhaul, scale-for-1600 hardening, stress tests).
+
+- **Phase 1 — data integrity + multi-project (done, `275599a`).** Time entries
+  are now validated server-side: must be against an assigned project, can't
+  overlap an existing entry, and can't exceed a daily ceiling grounded in real
+  tracked active time (`max(tracked+tolerance, 8h floor)`), with a
+  tracked-seconds snapshot per entry. New assignment endpoints on
+  `/api/projects/:id` (assign/unassign/assignments) support one employee across
+  many projects and many leads (cross-lead, audited). test-api 63/63.
+- **Phase 2 — visual timeline allocation (done, `fcaed2a`).** New
+  `analytics?scope=timeline` returns the day's contiguous tracked active blocks
+  + allocations + assigned projects; the desktop agent renders an SVG lane where
+  the employee tags blocks to projects instead of typing a duration. 66/66.
+- **Phase 3 — reporting depth (done, `26260b0`).** `scope=team` adds
+  per-employee→per-project hours, team idle summary, and most-used apps;
+  `scope=overview` adds a per-lead cross-tab (projects/employees/revenue/cost/
+  return). UI: admin "Portfolio by Team Lead" + lead drill-down. 69/69.
+- **Phase 4 — UI/UX overhaul (shadcn/ui + decompose `App.jsx` + code-split).**
+  Pending. Note: the admin dashboard still shows hardcoded "AI predictive"
+  demo widgets + 2022–2026 charts + fake KPI fallbacks when no data is loaded —
+  clean these up as part of the redesign.
+- **Phase 5 — security & scale hardening (shared-store rate limiting, JWT
+  rotation, device-token expiry, daemon watchdog, pool sizing/backpressure).**
+  Pending.
+- **Phase 6 — stress test @1,600 + Playwright coverage + CI expansion.** Pending.
+
+---
+
+## ✅ 2026-07-05 (later) — cloud-sync network issue fixed and confirmed
 
 ## ✅ 2026-07-05 (later) — cloud-sync network issue fixed and confirmed
 
