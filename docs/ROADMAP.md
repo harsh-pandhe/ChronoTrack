@@ -26,14 +26,21 @@ UX overhaul, scale-for-1600 hardening, stress tests).
   per-employee→per-project hours, team idle summary, and most-used apps;
   `scope=overview` adds a per-lead cross-tab (projects/employees/revenue/cost/
   return). UI: admin "Portfolio by Team Lead" + lead drill-down. 69/69.
+- **Phase 5 — security & scale hardening (done, `339a707`).** Optional shared
+  Upstash rate-limit store (holds across instances; in-memory fallback); JWT
+  rotation via `JWT_SECRET_PREVIOUS`; device-token expiry (migration 004) +
+  per-device revoke; ingest backpressure (503 under storm); env-tunable DB pool;
+  daemon watchdog in `main.cjs` (respawn on death — matters on Windows). 73/73.
+- **Phase 6 — stress + e2e (done, `424e6f4`).** load-test now reports latency
+  p50/p95/p99 and separates 429/503 (guards) from hard errors — locally: 60
+  daemons/20s = 0 errors p99 6ms; 120-daemon hammer shed 79× 503 with 0 hard
+  errors. CI gains a (non-blocking) lint job; +2 Playwright tests for the Phase 3
+  views. Follow-up: wire daemon-e2e + Playwright into CI (need pinned deps).
 - **Phase 4 — UI/UX overhaul (shadcn/ui + decompose `App.jsx` + code-split).**
-  Pending. Note: the admin dashboard still shows hardcoded "AI predictive"
-  demo widgets + 2022–2026 charts + fake KPI fallbacks when no data is loaded —
-  clean these up as part of the redesign.
-- **Phase 5 — security & scale hardening (shared-store rate limiting, JWT
-  rotation, device-token expiry, daemon watchdog, pool sizing/backpressure).**
-  Pending.
-- **Phase 6 — stress test @1,600 + Playwright coverage + CI expansion.** Pending.
+  PENDING (the one remaining phase). Note: the admin dashboard still shows
+  hardcoded "AI predictive" demo widgets + 2022–2026 charts + fake KPI fallbacks
+  when no data is loaded — clean these up as part of the redesign. Also flip the
+  CI lint job to blocking once the App.jsx lint baseline reaches zero.
 
 ---
 
