@@ -109,6 +109,16 @@ export const projects = {
   archive(id) {
     return request('DELETE', `/api/projects/${id}`);
   },
+  // Multi-project assignment management.
+  assignments(id) {
+    return request('GET', `/api/projects/${id}?action=assignments`).then((d) => d.assignments);
+  },
+  assign(id, userId) {
+    return request('POST', `/api/projects/${id}?action=assign`, { user_id: userId });
+  },
+  unassign(id, userId) {
+    return request('DELETE', `/api/projects/${id}?action=unassign&user_id=${userId}`);
+  },
 };
 
 // --- Activation (provisioning console) -----------------------------------

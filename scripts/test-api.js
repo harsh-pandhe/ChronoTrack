@@ -167,9 +167,48 @@ async function main() {
   const projectId = r.json.project.id;
 
   const now = Date.now();
+  // 8a. Integrity: cannot log against a project you are not assigned to.
+  r = await call('POST', '/api/time-entries', { token: empToken, body: {
+    project_id: projectId, start_ts: new Date(now - 2 * 3600000).toISOString(), end_ts: new Date(now).toISOString() } });
+  ok(r.status === 403, 'time entry rejected when employee not assigned to project');
+
+  // 8b. Assign the employee, then the same entry succeeds.
+  r = await call('POST', `/api/projects/${projectId}?action=assign`, { token: leadToken, body: { user_id: empId } });
+  ok(r.status === 201, 'lead assigns employee to their project');
   r = await call('POST', '/api/time-entries', { token: empToken, body: {
     project_id: projectId, start_ts: new Date(now - 2 * 3600000).toISOString(), end_ts: new Date(now).toISOString() } });
   ok(r.status === 201 && Number(r.json.entry.hours) === 2, 'employee logs 2h time entry');
+
+  // 8c. Overlap rejection — a window intersecting the one just logged.
+  r = await call('POST', '/api/time-entries', { token: empToken, body: {
+    project_id: projectId, start_ts: new Date(now - 3600000).toISOString(), end_ts: new Date(now + 3600000).toISOString() } });
+  ok(r.status === 409, 'overlapping time entry rejected');
+
+  // 8d. Daily ceiling — a non-overlapping same-day window whose hours blow past
+  // the allocatable ceiling (floor 8h; only ~30s tracked) is rejected.
+  r = await call('POST', '/api/time-entries', { token: empToken, body: {
+    project_id: projectId,
+    start_ts: new Date(now - 20 * 3600000).toISOString(),
+    end_ts: new Date(now - 3 * 3600000).toISOString() } });
+  ok(r.status === 422, 'over-ceiling time entry rejected (17h with no tracked activity)');
+
+  // 8e. Assignments listing reflects the assignment.
+  r = await call('GET', `/api/projects/${projectId}?action=assignments`, { token: leadToken });
+  ok(r.status === 200 && r.json.assignments.some((a) => a.id === empId), 'project assignments list includes employee');
+
+  // 8f. Cross-lead: the same employee (reports to lead1) can be assigned to a
+  // DIFFERENT lead's project — one employee, many projects, many leads.
+  r = await call('POST', '/api/users', { token: adminToken, body: {
+    name: 'Lead Two', email: `lead2-${Date.now()}@cm.com`, role: 'lead' } });
+  const lead2Id = r.json.user.id;
+  r = await call('POST', '/api/projects', { token: adminToken, body: {
+    name: `Tunnel ${Date.now()}`, team_lead_id: lead2Id, billed_revenue: 50000 } });
+  const project2Id = r.json.project.id;
+  r = await call('POST', `/api/projects/${project2Id}?action=assign`, { token: adminToken, body: { user_id: empId } });
+  ok(r.status === 201, "admin assigns employee to a different lead's project (cross-lead)");
+  // A lead may not touch another lead's project.
+  r = await call('POST', `/api/projects/${project2Id}?action=assign`, { token: leadToken, body: { user_id: empId } });
+  ok(r.status === 403, "lead cannot assign to another lead's project");
 
   // 9. ROI computed: cost = 2h * 500 = 1000; revenue 100000 → roi = 99
   r = await call('GET', '/api/projects', { token: leadToken });
