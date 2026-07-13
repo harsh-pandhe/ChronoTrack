@@ -42,6 +42,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ThemeToggle } from '@/components/ThemeToggle';
 
 // Renders a recharts ResponsiveContainer only once its box has a real size —
@@ -374,12 +375,12 @@ export default function App() {
 
   const disableUser = (id, name) => {
     askConfirm(
-      `Permanently delete ${name} and all their data? This cannot be undone.`,
+      `Disable ${name}? Their account is deactivated but historical data is preserved; you can re-enable it later.`,
       async () => {
-        try { await api.users.remove(id); await loadServerData(); showToast(`${name} deleted.`, 'info'); }
-        catch (err) { showToast(err.message || 'Delete failed.', 'error'); }
+        try { await api.users.disable(id); await loadServerData(); showToast(`${name} disabled.`, 'info'); }
+        catch (err) { showToast(err.message || 'Disable failed.', 'error'); }
       },
-      { title: 'Delete team lead', danger: true, confirmLabel: 'Delete permanently' }
+      { title: 'Disable team lead', danger: true, confirmLabel: 'Disable' }
     );
   };
 
@@ -547,7 +548,7 @@ export default function App() {
       const list = await api.rules.list();
       const wl = [], bl = [], ids = {};
       for (const r of list) {
-        ids[r.keyword] = r.id;
+        ids[`${r.category}:${r.keyword}`] = r.id;
         (r.category === 'whitelist' ? wl : bl).push(r.keyword);
       }
       setProductiveKeywords(wl);
@@ -572,8 +573,8 @@ export default function App() {
     }
   };
 
-  const removeKeyword = async (key) => {
-    const id = ruleIdByKeyword[key];
+  const removeKeyword = async (key, category) => {
+    const id = ruleIdByKeyword[`${category}:${key}`];
     if (!id) return;
     try {
       await api.rules.remove(id);
@@ -1032,18 +1033,18 @@ export default function App() {
   const handleDeleteEmployee = (id) => {
     const target = employees.find((e) => e.id === id);
     askConfirm(
-      `Permanently delete ${target?.name || 'this employee'} and all their data? This cannot be undone.`,
+      `Disable ${target?.name || 'this employee'}? Their account is deactivated but historical data is preserved; you can re-enable it later.`,
       async () => {
         try {
-          await api.users.remove(id);
+          await api.users.disable(id);
           await loadServerData();
-          logAudit('Admin', `Deleted employee ${target?.name}`);
-          showToast('Employee deleted.', 'info');
+          logAudit('Admin', `Disabled employee ${target?.name}`);
+          showToast('Employee disabled.', 'info');
         } catch (err) {
-          showToast(err.message || 'Delete failed.', 'error');
+          showToast(err.message || 'Disable failed.', 'error');
         }
       },
-      { title: 'Delete employee', danger: true, confirmLabel: 'Delete permanently' }
+      { title: 'Disable employee', danger: true, confirmLabel: 'Disable' }
     );
   };
 
@@ -1192,7 +1193,7 @@ export default function App() {
 
   const renderContributionTab = () => {
     const activeProj = projects.find(p => p.id === selectedAttributionProject) || projects[0];
-    const contractValue = activeProj ? activeProj.contractValue : 180000000;
+    const contractValue = activeProj ? activeProj.contractValue : 0;
 
     // Per-employee attribution from REAL time entries for the selected project.
     const projId = activeProj ? activeProj.id : null;
@@ -2053,32 +2054,31 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Add Team Lead Form */}
-                {showAddLead && (
-                  <form onSubmit={handleAddLead} className="p-6 rounded-xl bg-card border border-primary/20 space-y-4 animate-fade-in">
-                    <div className="flex justify-between items-center">
-                      <h3 className="text-xs font-semibold uppercase tracking-widest text-primary">Create Team Lead</h3>
-                      <button type="button" onClick={() => setShowAddLead(false)} className="text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <input value={leadForm.name} onChange={(e) => setLeadForm({ ...leadForm, name: e.target.value })} placeholder="Full name" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-foreground outline-none" />
-                      <input type="email" value={leadForm.email} onChange={(e) => setLeadForm({ ...leadForm, email: e.target.value })} placeholder="Corporate email" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-foreground outline-none" />
-                      <input value={leadForm.dept} onChange={(e) => setLeadForm({ ...leadForm, dept: e.target.value })} placeholder="Department" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-foreground outline-none" />
-                      <input type="password" value={leadForm.password} onChange={(e) => setLeadForm({ ...leadForm, password: e.target.value })} placeholder="Temp password (8+ chars)" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-foreground outline-none" />
-                    </div>
-                    <button type="submit" className="px-5 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs uppercase tracking-widest rounded-xl">Create Team Lead</button>
-                  </form>
-                )}
+                {/* Add Team Lead Dialog */}
+                <Dialog open={showAddLead} onOpenChange={setShowAddLead}>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle className="text-xs uppercase tracking-widest text-primary">Create Team Lead</DialogTitle>
+                    </DialogHeader>
+                    <form onSubmit={handleAddLead} className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <input value={leadForm.name} onChange={(e) => setLeadForm({ ...leadForm, name: e.target.value })} placeholder="Full name" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-foreground outline-none" />
+                        <input type="email" value={leadForm.email} onChange={(e) => setLeadForm({ ...leadForm, email: e.target.value })} placeholder="Corporate email" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-foreground outline-none" />
+                        <input value={leadForm.dept} onChange={(e) => setLeadForm({ ...leadForm, dept: e.target.value })} placeholder="Department" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-foreground outline-none" />
+                        <input type="password" value={leadForm.password} onChange={(e) => setLeadForm({ ...leadForm, password: e.target.value })} placeholder="Temp password (8+ chars)" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-foreground outline-none" />
+                      </div>
+                      <button type="submit" className="px-5 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs uppercase tracking-widest rounded-xl">Create Team Lead</button>
+                    </form>
+                  </DialogContent>
+                </Dialog>
 
-                {/* Add Employee Form */}
-                {showAddForm && (
-                  <form onSubmit={handleAddEmployee} className="p-6 rounded-xl bg-card border border-primary/20 space-y-4 animate-fade-in">
-                    <div className="flex justify-between items-center">
-                      <h3 className="text-xs font-semibold text-foreground uppercase tracking-widest text-primary">Provision New User (Employee or Team Lead)</h3>
-                      <button type="button" onClick={() => setShowAddForm(false)} className="text-muted-foreground hover:text-foreground transition-colors">
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
+                {/* Add Employee Dialog */}
+                <Dialog open={showAddForm} onOpenChange={setShowAddForm}>
+                  <DialogContent className="max-w-2xl">
+                    <DialogHeader>
+                      <DialogTitle className="text-xs uppercase tracking-widest text-primary">Provision New User (Employee or Team Lead)</DialogTitle>
+                    </DialogHeader>
+                    <form onSubmit={handleAddEmployee} className="space-y-4">
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                       <div className="space-y-1">
                         <label className="text-[9px] uppercase font-semibold text-muted-foreground tracking-wider">Account Type</label>
@@ -2187,8 +2187,9 @@ export default function App() {
                     <button type="submit" disabled={savingEmployee} className="px-5 py-2.5 bg-primary text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed font-semibold text-xs uppercase tracking-widest rounded-xl transition-all">
                       {savingEmployee ? 'Adding…' : 'Add to Registry'}
                     </button>
-                  </form>
-                )}
+                    </form>
+                  </DialogContent>
+                </Dialog>
 
                 {/* Edit Employee Form */}
                 {showEditForm && (
@@ -3059,10 +3060,10 @@ export default function App() {
                   {/* Downloader Section */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     {[
-                      { os: 'Windows Agent', ext: 'exe', size: '96 MB', icon: Laptop, desc: 'NSIS installer with the bundled telemetry daemon — no Python needed.', file: 'https://github.com/harsh-pandhe/ChronoTrack/releases/download/v3.0.0/CivilMantraAgent.Setup.3.0.0.exe' },
+                      { os: 'Windows Agent', ext: 'exe', size: '96 MB', icon: Laptop, desc: 'NSIS installer with the bundled telemetry daemon — no Python needed.', file: 'https://github.com/harsh-pandhe/ChronoTrack/releases/latest/download/CivilMantraAgent.Setup.3.0.0.exe' },
                       { os: 'macOS Agent', ext: 'Client.dmg', size: '52 MB', icon: Globe, desc: 'Includes Apple Silicon and Intel universal bundle configurations.', file: null },
-                      { os: 'Linux (AppImage)', ext: 'AppImage', size: '132 MB', icon: HardDrive, desc: 'Self-contained portable executable. chmod +x and run — no install needed.', file: 'https://github.com/harsh-pandhe/ChronoTrack/releases/download/v3.0.0/CivilMantraAgent-3.0.0.AppImage' },
-                      { os: 'Linux (.deb)', ext: 'deb', size: '94 MB', icon: HardDrive, desc: 'Debian/Ubuntu package. Installs to your app menu like any native app.', file: 'https://github.com/harsh-pandhe/ChronoTrack/releases/download/v3.0.0/chronotrack_3.0.0_amd64.deb' }
+                      { os: 'Linux (AppImage)', ext: 'AppImage', size: '132 MB', icon: HardDrive, desc: 'Self-contained portable executable. chmod +x and run — no install needed.', file: 'https://github.com/harsh-pandhe/ChronoTrack/releases/latest/download/CivilMantraAgent-3.0.0.AppImage' },
+                      { os: 'Linux (.deb)', ext: 'deb', size: '94 MB', icon: HardDrive, desc: 'Debian/Ubuntu package. Installs to your app menu like any native app.', file: 'https://github.com/harsh-pandhe/ChronoTrack/releases/latest/download/chronotrack_3.0.0_amd64.deb' }
                     ].map(dl => (
                       <div key={dl.os} className="p-6 rounded-xl bg-card border border-border hover:border-border transition-all flex flex-col justify-between h-56">
                         <div className="space-y-2">
