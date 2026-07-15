@@ -91,6 +91,9 @@
       ],
       "icon": "public/icon.ico"
     },
+    "nsis": {
+      "include": "deployment/installer.nsh"
+    },
     "mac": {
       "target": [
         "dmg"
