@@ -1,15 +1,15 @@
-# Civil Mantra (ChronoTrack Enterprise) — Production Build Plan
+# ChronoTrack Enterprise — Production Build Plan
 
 **Status:** Planning / pre-implementation
 **Owner:** Harsh Pandhe
 **Date:** 2026-06-26
-**Goal:** Take the current prototype (localStorage dashboard + local-only telemetry daemon + simulated data) to an industry-grade, secure, stable, multi-tenant SaaS that 1,600 real employees can run, so Civil Mantra can measure true project ROI and right-size its workforce on the way from ₹300 Cr to ₹1,000 Cr.
+**Goal:** Take the current prototype (localStorage dashboard + local-only telemetry daemon + simulated data) to an industry-grade, secure, stable, multi-tenant SaaS that 1,600 real employees can run, so ChronoTrack can measure true project ROI and right-size its workforce on the way from ₹300 Cr to ₹1,000 Cr.
 
 ---
 
 ## 1. Business context & what the system must prove
 
-Civil Mantra is a ~₹300 Cr engineering/design firm, 1,600 desk-bound employees, target ₹1,000 Cr. They want to **reduce workforce intelligently** — cut what is not productive, keep and grow what drives revenue.
+ChronoTrack is a ~₹300 Cr engineering/design firm, 1,600 desk-bound employees, target ₹1,000 Cr. They want to **reduce workforce intelligently** — cut what is not productive, keep and grow what drives revenue.
 
 The system must answer, with evidence:
 
@@ -47,7 +47,7 @@ Admin (board / HR)
 
 **Authority rule:** `can_manage_employees` is a per-team-lead flag set by admin. Admin can always create leads and employees. A lead can create/edit employees only inside their own team and only if granted. This is enforced server-side on every mutation, never trusted from the client.
 
-**Multi-tenancy:** every row carries `company_id`. All queries are scoped to the caller's company. (Civil Mantra is tenant #1; the architecture stays multi-tenant so the product can be resold.)
+**Multi-tenancy:** every row carries `company_id`. All queries are scoped to the caller's company. (ChronoTrack is tenant #1; the architecture stays multi-tenant so the product can be resold.)
 
 ---
 
@@ -132,7 +132,7 @@ All tables get `id UUID PK`, `created_at`, `updated_at`. All business tables get
 5. **Transport:** HTTPS only (Vercel default). HSTS. Daemon→cloud over TLS.
 6. **Tenant isolation:** every query filtered by `company_id` from the JWT; add Postgres row-level checks as defense-in-depth. Authorization (lead can't touch another team) enforced server-side on every mutation.
 7. **CORS:** lock to known origins (the Vercel domain + Electron app origin). Remove the current `*` on credentialed endpoints.
-8. **Privacy by design (India DPDP Act 2023 — NOT GDPR; Civil Mantra is Indian):** daemon strips keystroke content and URLs at source (sanitizer exists — keep + test). Window-title sanitization for sensitive apps (banking, health, personal email). Activity/window-title monitoring is **beyond "routine employment" → explicit consent required** (free, specific, informed, unambiguous; no pre-checked boxes). Consent recorded before first sample. **Consent-withdrawal flow is mandatory and must be as easy as granting**, with a defined "what happens to data on withdrawal." Data retention policy + employee data-export/delete request flow. **DPIA (Data Protection Impact Assessment) + legitimate-use assessment required before rollout.** Non-compliance penalties reach **₹250 Cr** — existential for a ₹300 Cr firm.
+8. **Privacy by design (India DPDP Act 2023 — NOT GDPR; ChronoTrack is Indian):** daemon strips keystroke content and URLs at source (sanitizer exists — keep + test). Window-title sanitization for sensitive apps (banking, health, personal email). Activity/window-title monitoring is **beyond "routine employment" → explicit consent required** (free, specific, informed, unambiguous; no pre-checked boxes). Consent recorded before first sample. **Consent-withdrawal flow is mandatory and must be as easy as granting**, with a defined "what happens to data on withdrawal." Data retention policy + employee data-export/delete request flow. **DPIA (Data Protection Impact Assessment) + legitimate-use assessment required before rollout.** Non-compliance penalties reach **₹250 Cr** — existential for a ₹300 Cr firm.
 9. **Human-in-the-loop decisions (DPDP / GDPR Art 22):** the system's purpose is workforce reduction — an automated decision adversely affecting people. The platform **recommends, humans decide.** No auto-flag-to-fire. Every adverse recommendation carries a right to human review and an explanation of the data behind it.
 10. **Secrets:** all via Vercel env vars + OS keyring on client. Nothing in git. Rotate-able.
 11. **Audit everything:** every admin/lead mutation and every login writes an immutable `audit_logs` row.
@@ -221,7 +221,7 @@ Full 1,600-scale load tested, compliance + retention + consent in place, observa
 ---
 
 ## 13. Open items needing your input before/while building
-- **First-admin bootstrap:** how is Civil Mantra's first admin account seeded? (one-time CLI seed script recommended)
+- **First-admin bootstrap:** how is ChronoTrack's first admin account seeded? (one-time CLI seed script recommended)
 - **`hourly_cost` source:** per-employee cost — entered by admin/HR, or band/grade based? Needed for ROI.
 - **`billed_revenue` source:** entered per project by lead/admin, or pulled from an existing finance/ERP system?
 - **Prompt cadence "every few hours":** exact interval (e.g. every 2 active hours) and whether it's blocking or dismissible.

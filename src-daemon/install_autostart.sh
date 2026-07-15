@@ -3,9 +3,9 @@
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 DAEMON_PATH="$SCRIPT_DIR/telemetry_daemon.py"
 AUTOSTART_DIR="$HOME/.config/autostart"
-AUTOSTART_FILE="$AUTOSTART_DIR/civil-mantra-telemetry.desktop"
+AUTOSTART_FILE="$AUTOSTART_DIR/chronotrack-telemetry.desktop"
 
-echo "=== Civil Mantra: Telemetry Daemon Installer ==="
+echo "=== ChronoTrack: Telemetry Daemon Installer ==="
 
 # Make daemon executable
 chmod +x "$DAEMON_PATH"
@@ -22,7 +22,7 @@ Exec=python3 $DAEMON_PATH
 Hidden=false
 NoDisplay=false
 X-GNOME-Autostart-enabled=true
-Name=Civil Mantra Telemetry Daemon
+Name=ChronoTrack Telemetry Daemon
 Comment=Tracks background inputs and active window telemetry.
 EOF
 

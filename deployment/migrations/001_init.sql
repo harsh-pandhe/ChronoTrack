@@ -1,5 +1,5 @@
 -- 001_init.sql
--- ChronoTrack / Civil Mantra — production multi-tenant schema (idempotent).
+-- ChronoTrack — production multi-tenant schema (idempotent).
 -- Replaces the prototype schema.sql. Apply with: node scripts/migrate.js
 -- DPDP-compliant: telemetry stores input DENSITIES + window TITLES only,
 -- never keystroke content, never screenshots, never URLs.

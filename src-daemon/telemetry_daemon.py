@@ -28,17 +28,73 @@ try:
 except ImportError:
     HAS_KEYRING = False
 
-# Cross-platform config and database paths
-def get_config_dir():
-    if IS_WINDOWS:
-        base = os.environ.get("APPDATA", os.path.expanduser("~"))
-    elif IS_MACOS:
-        base = os.path.expanduser("~/Library/Application Support")
-    else:
-        base = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
-    return os.path.join(base, "civil-mantra")
+# Rebrand migration (Civil Mantra -> ChronoTrack): keyring has no rename
+# primitive, so reads fall back to the old service name and transparently
+# re-store under the new one; writes always use the new name only.
+_KEYRING_SERVICE = "ChronoTrack"
+_OLD_KEYRING_SERVICE = "CivilMantra"
 
-CONFIG_DIR = get_config_dir()
+
+def _keyring_get(key):
+    if not HAS_KEYRING:
+        return None
+    try:
+        val = keyring.get_password(_KEYRING_SERVICE, key)
+    except Exception:
+        val = None
+    if val:
+        return val
+    try:
+        old_val = keyring.get_password(_OLD_KEYRING_SERVICE, key)
+    except Exception:
+        old_val = None
+    if old_val:
+        try:
+            keyring.set_password(_KEYRING_SERVICE, key, old_val)
+            keyring.delete_password(_OLD_KEYRING_SERVICE, key)
+        except Exception:
+            pass  # migrated value still returned even if the old entry can't be cleared
+        return old_val
+    return None
+
+
+def _keyring_set(key, value):
+    if not HAS_KEYRING:
+        return
+    try:
+        keyring.set_password(_KEYRING_SERVICE, key, value)
+    except Exception as e:
+        print(f"[Keyring] Failed writing '{key}': {e}")
+
+
+# Cross-platform config and database paths
+def _config_base_dir():
+    if IS_WINDOWS:
+        return os.environ.get("APPDATA", os.path.expanduser("~"))
+    elif IS_MACOS:
+        return os.path.expanduser("~/Library/Application Support")
+    else:
+        return os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
+
+_CONFIG_BASE = _config_base_dir()
+CONFIG_DIR = os.path.join(_CONFIG_BASE, "chronotrack")
+_OLD_CONFIG_DIR = os.path.join(_CONFIG_BASE, "civil-mantra")  # pre-rebrand folder name
+
+
+def _migrate_rebrand_dir():
+    # Rebrand migration (Civil Mantra -> ChronoTrack): move an existing install's
+    # whole config dir (telemetry.db, config.json, daemon.log, ...) to the new
+    # folder name once, in place, so existing users don't lose history. Runs
+    # before anything else touches CONFIG_DIR/DB_DIR.
+    if not os.path.exists(CONFIG_DIR) and os.path.exists(_OLD_CONFIG_DIR):
+        try:
+            os.rename(_OLD_CONFIG_DIR, CONFIG_DIR)
+        except Exception:
+            pass  # best-effort — worst case this install starts fresh under the new name
+
+
+_migrate_rebrand_dir()
+
 DB_DIR = os.path.join(CONFIG_DIR, "data")
 DB_PATH = os.path.join(DB_DIR, "telemetry.db")
 PID_PATH = os.path.join(DB_DIR, "daemon.pid")
@@ -85,14 +141,15 @@ def get_or_create_config():
     token = None
     enc_key = None
     
-    # Try Keyring first
+    # Try Keyring first (transparently migrates values stored under the old
+    # pre-rebrand service name, if any).
     if HAS_KEYRING:
         try:
-            token = keyring.get_password("CivilMantra", "api_token")
-            enc_key = keyring.get_password("CivilMantra", "db_encryption_key")
+            token = _keyring_get("api_token")
+            enc_key = _keyring_get("db_encryption_key")
         except Exception as e:
             print(f"[Keyring] Note: Keyring query skipped/unavailable ({e})")
-            
+
     # Fallback to local config file cache
     if not token or not enc_key:
         if os.path.exists(config_path):
@@ -125,8 +182,8 @@ def get_or_create_config():
     # Set to Keyring if supported and new
     if HAS_KEYRING and needs_save_keyring:
         try:
-            keyring.set_password("CivilMantra", "api_token", token)
-            keyring.set_password("CivilMantra", "db_encryption_key", enc_key)
+            _keyring_set("api_token", token)
+            _keyring_set("db_encryption_key", enc_key)
             print("[Keyring] Config credentials saved securely to OS Keychain/Keyring.")
         except Exception as e:
             print(f"[Keyring] Failed writing to keyring: {e}")
@@ -186,7 +243,7 @@ def decrypt_val(val, default=""):
 # instant (e.g. Electron's spawn() and the OS autostart Run-key both firing
 # at login) can both pass the "is it alive" check before either has written
 # its own PID, so both proceed — confirmed in the wild as two
-# CivilMantraDaemon.exe processes with start times one second apart.
+# ChronoTrackDaemon.exe processes with start times one second apart.
 #
 # Fix: hold the PID file open with an OS-level exclusive lock for the whole
 # process lifetime. The OS enforces this atomically, and releases it
@@ -202,14 +259,14 @@ def acquire_lock():
             try:
                 msvcrt.locking(_lock_file.fileno(), msvcrt.LK_NBLCK, 1)
             except OSError:
-                print("[FATAL] Another instance of Civil Mantra Telemetry Daemon is already running. Exiting.")
+                print("[FATAL] Another instance of ChronoTrack Telemetry Daemon is already running. Exiting.")
                 sys.exit(1)
         else:
             import fcntl
             try:
                 fcntl.flock(_lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             except OSError:
-                print("[FATAL] Another instance of Civil Mantra Telemetry Daemon is already running. Exiting.")
+                print("[FATAL] Another instance of ChronoTrack Telemetry Daemon is already running. Exiting.")
                 sys.exit(1)
         _lock_file.seek(0)
         _lock_file.truncate()
@@ -356,7 +413,7 @@ def load_cloud_config():
     token = None
     if HAS_KEYRING:
         try:
-            token = keyring.get_password("CivilMantra", "device_token")
+            token = _keyring_get("device_token")
         except Exception:
             token = None
     data = {}
@@ -376,7 +433,7 @@ def load_cloud_config():
 def save_cloud_config(cloud_url, device_token, revoked=False):
     if HAS_KEYRING and device_token:
         try:
-            keyring.set_password("CivilMantra", "device_token", device_token)
+            _keyring_set("device_token", device_token)
         except Exception:
             pass
     try:
@@ -1049,7 +1106,7 @@ def _graceful_exit(signum, frame):
 
 
 if __name__ == "__main__":
-    print(f"Initializing Civil Mantra: Local Telemetry Daemon (Platform: {sys.platform})...")
+    print(f"Initializing ChronoTrack: Local Telemetry Daemon (Platform: {sys.platform})...")
     acquire_lock()
     signal.signal(signal.SIGTERM, _graceful_exit)
     signal.signal(signal.SIGINT, _graceful_exit)

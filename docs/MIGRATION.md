@@ -57,34 +57,44 @@ these two files plus the commit history.
    Actions tab → "Release (build installers)" → Run workflow → pick this
    branch). Wait ~3 min, grab the `windows-installer` artifact.
 2. **Clean install** — before testing, fully uninstall any existing
-   CivilMantra Agent (Add/Remove Programs) and delete old installer `.exe`
+   ChronoTrack Agent (Add/Remove Programs) and delete old installer `.exe`
    files from Downloads. Last test likely ran a stale pre-fix installer
    (duplicate file was sitting there), which is the leading theory for why
    "Exit Agent" looked unfixed even though the source is confirmed correct.
 3. Re-run `docs/WINDOWS-TEST-CHECKLIST.md`, focusing on the items still
    unconfirmed: Exit Agent, fresh activation (not leftover state), daemon
    console window after reboot, the keyboard-hook crash (check
-   `%APPDATA%\civil-mantra\data\daemon.log` for the old ctypes traceback —
+   `%APPDATA%\chronotrack\data\daemon.log` for the old ctypes traceback —
    should no longer appear).
 4. Once Stage 1 in the roadmap's "Path to an industry-grade v1.0" section is
    closed out, move to the rebrand (see below).
 
-## 4. Rebrand — approved name: **Meridian**
+## 4. Rebrand — done, approved name: **ChronoTrack**
 
-Decided this session, not yet implemented. Touches every user-facing surface:
-window titles, `package.json` (`name`, `productName`, `appId`
-`com.civilmantra.agent`), installer filenames, the landing page copy, seed
-data email domains, autostart registry key name
-(`HKCU...Run\CivilMantraDaemon`), config folder paths
-(`~/.config/civil-mantra`, `%APPDATA%\civil-mantra`), and the logo/icon set
-(`public/logo.png`, `public/icon.ico`, `public/favicon.svg`). Logo direction
-not yet decided — propose options before implementing.
+An earlier planning note here proposed "Meridian" as the display name; that
+was never implemented and is superseded — the name actually shipped is
+**ChronoTrack**, matching `package.json`'s `name` field and the config-folder
+slug (`~/.config/chronotrack`, `%APPDATA%\chronotrack`) that was already in
+use, so display name and internal identifiers are now consistent.
 
-Config-folder rename is the one part that needs care: existing installs on
-real machines have data under the old path (`civil-mantra`). A rename either
-needs a migration step (copy old config dir to new path on first launch of
-the renamed app) or accepts that existing pilot installs lose local
-state/activation on upgrade — worth deciding before shipping the rename.
+Rebrand touched every user-facing surface: window titles, `package.json`
+(`productName`, `appId: com.chronotrack.agent`), installer filenames, the
+landing page copy, seed data email domains (`@chronotrack.app`), autostart
+identifiers (Windows `HKCU...Run\ChronoTrackDaemon`, Linux
+`chronotrack-daemon.service`, macOS `com.chronotrack.daemon`), and the OS
+keyring service name (`ChronoTrack`). Logo/icon set
+(`public/logo.png`, `public/icon.ico`, `public/favicon.svg`) was left
+unchanged — no new artwork was supplied; swap those files in whenever new
+branding assets exist.
+
+Config-folder + keyring rename was the part needing care: existing installs
+on real machines had data under the old identifiers (`civil-mantra` folder,
+`CivilMantra` keyring service). Both `main.cjs` and
+`src-daemon/telemetry_daemon.py` now carry a one-time migration: on first run
+under the new name, if the new location is empty but the old one has data,
+it's moved/re-read forward automatically (config dir via `os.rename`,
+keyring entries via read-old/write-new-then-delete-old), so upgrading
+existing installs doesn't lose local state or activation.
 
 ## 5. Credentials note
 

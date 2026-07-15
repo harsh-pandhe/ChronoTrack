@@ -11,7 +11,7 @@ Protection Impact Assessment (DPIA)** and confirm compliance with India's
 ---
 
 ## 1. Who and why
-- **Data fiduciary (controller):** Civil Mantra (the employer).
+- **Data fiduciary (controller):** ChronoTrack (the employer).
 - **Data principals:** employees who install the desktop agent.
 - **Purpose:** measure genuine work utilisation and per-project cost/ROI, to
   inform staffing and project decisions. (Business purpose: workforce

@@ -3,7 +3,7 @@
 //
 // Prereqs (see tests/e2e/README.md):
 //   1. Postgres up + migrated + seeded admin (admin@cm.com) and a lead
-//      (rajesh@cm.com / lead-strong-pass) under company "Civil Mantra".
+//      (rajesh@cm.com / lead-strong-pass) under company "ChronoTrack".
 //   2. Cloud API:  API_PORT=3031 node scripts/dev-api.js
 //   3. SPA built with VITE_API_BASE=http://localhost:3031 and served, e.g.
 //      (cd dist && python3 -m http.server 4300)

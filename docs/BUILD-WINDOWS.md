@@ -25,7 +25,7 @@ npm ci
 
 # 1. Bundle the telemetry daemon into a self-contained .exe (no Python on targets)
 python -m pip install --upgrade pip pyinstaller cryptography keyring pywin32
-pyinstaller --onefile --name CivilMantraDaemon --distpath dist-daemon `
+pyinstaller --onefile --name ChronoTrackDaemon --distpath dist-daemon `
   --hidden-import keyring.backends.Windows --hidden-import cryptography.fernet `
   src-daemon/telemetry_daemon.py
 
@@ -36,7 +36,7 @@ npm run build
 # 3. Build the installer
 npx electron-builder --win nsis --publish never
 ```
-Output: `dist-desktop\CivilMantraAgent Setup 3.0.0.exe`.
+Output: `dist-desktop\ChronoTrackAgent Setup 3.0.0.exe`.
 
 ### Notes
 - Unsigned → SmartScreen shows "Windows protected your PC / Unknown publisher".

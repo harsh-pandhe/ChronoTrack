@@ -10,7 +10,7 @@ Follow top to bottom. ~30 min. You need: GitHub (done), a Neon account, a Vercel
    ```bash
    export DATABASE_URL="postgresql://...neon.tech/neondb?sslmode=require"   # paste yours
    npm run migrate
-   COMPANY="Civil Mantra" ADMIN_EMAIL=admin@civilmantra.com \
+   COMPANY="ChronoTrack" ADMIN_EMAIL=admin@chronotrack.app \
      ADMIN_PASSWORD='pick-a-strong-one' ADMIN_NAME="Admin" npm run seed:admin
    ```
    (Do NOT set `PGSSL=disable` here — Neon needs TLS, which the app verifies.)
@@ -30,7 +30,7 @@ Follow top to bottom. ~30 min. You need: GitHub (done), a Neon account, a Vercel
    ```bash
    curl -s -X POST https://YOUR-URL/api/auth/login \
      -H 'Content-Type: application/json' \
-     -d '{"email":"admin@civilmantra.com","password":"the-one-you-set"}'
+     -d '{"email":"admin@chronotrack.app","password":"the-one-you-set"}'
    ```
    Expect `{"token": "...", "user": {...}}`.
 
@@ -46,7 +46,7 @@ You have no Windows machine needed — it builds on GitHub's Windows runner.
    ```bash
    git tag v3.0.0 && git push origin v3.0.0
    ```
-2. When it finishes: tag run → **Release** has `CivilMantraAgent Setup *.exe` (+ Linux
+2. When it finishes: tag run → **Release** has `ChronoTrackAgent Setup *.exe` (+ Linux
    AppImage/deb) attached. Manual run → download from the workflow's **Artifacts**.
 3. Give the `.exe` to pilot employees. They run it → activate with email + 8-digit code
    (admin/lead generates the code in the web portal → Provision Keys).

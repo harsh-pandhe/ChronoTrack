@@ -1,6 +1,6 @@
 # Corporate IT Deployment & Silent Installation Guide
 
-This guide details how to roll out the **ChronoTrack (Civil Mantra)** client app and background daemon silently across your client's employee workstations using Active Directory, GPO, or Mobile Device Management (MDM) systems.
+This guide details how to roll out the **ChronoTrack** client app and background daemon silently across your client's employee workstations using Active Directory, GPO, or Mobile Device Management (MDM) systems.
 
 ---
 
@@ -14,7 +14,7 @@ The packaged Electron installer supports standard NSIS command switches:
   ```
 * **Custom Installation Directory:**
   ```cmd
-  ChronoTrack-Setup.exe /S /D=C:\Program Files\CivilMantra
+  ChronoTrack-Setup.exe /S /D=C:\Program Files\ChronoTrack
   ```
 
 ### macOS (Apple Package)
@@ -31,9 +31,9 @@ To roll out the self-signed code signing certificate and the silent installer ac
 
 ### Step A: Distribute Self-Signed Certificate
 1. Open **Group Policy Management Console (GPMC)** on the Domain Controller.
-2. Edit the target Group Policy Object (GPO) or create a new one (e.g., `DeployCivilMantraCert`).
+2. Edit the target Group Policy Object (GPO) or create a new one (e.g., `DeployChronoTrackCert`).
 3. Navigate to: **Computer Configuration** ➔ **Policies** ➔ **Windows Settings** ➔ **Security Settings** ➔ **Public Key Policies**.
-4. Right-click **Trusted Root Certification Authorities** and select **Import**. Choose `CivilMantraInternalCodeSigning.pfx` (or `.cer`).
+4. Right-click **Trusted Root Certification Authorities** and select **Import**. Choose `ChronoTrackInternalCodeSigning.pfx` (or `.cer`).
 5. Right-click **Trusted Publishers** and select **Import**. Choose the same certificate file.
 6. Link the GPO to the target Organizational Unit (OU). This registers the certificate and avoids SmartScreen warnings.
 
@@ -56,25 +56,25 @@ The telemetry listener daemon (`src-daemon/telemetry_daemon.py`) runs in the bac
 ### Windows Service Setup
 To install the Python daemon as a persistent Windows Service using **NSSM (Non-Sucking Service Manager)**:
 ```cmd
-nssm.exe install CivilMantraDaemon "C:\Program Files\Python311\python.exe" "C:\Program Files\CivilMantra\src-daemon\telemetry_daemon.py"
-nssm.exe set CivilMantraDaemon AppDirectory "C:\Program Files\CivilMantra\src-daemon"
-nssm.exe set CivilMantraDaemon Start SERVICE_AUTO_START
-nssm.exe start CivilMantraDaemon
+nssm.exe install ChronoTrackDaemon "C:\Program Files\Python311\python.exe" "C:\Program Files\ChronoTrack\src-daemon\telemetry_daemon.py"
+nssm.exe set ChronoTrackDaemon AppDirectory "C:\Program Files\ChronoTrack\src-daemon"
+nssm.exe set ChronoTrackDaemon Start SERVICE_AUTO_START
+nssm.exe start ChronoTrackDaemon
 ```
 
 ### macOS LaunchAgent Setup
-To start the daemon automatically when the user logs in, place a plist configuration at `/Library/LaunchAgents/com.civilmantra.daemon.plist`:
+To start the daemon automatically when the user logs in, place a plist configuration at `/Library/LaunchAgents/com.chronotrack.daemon.plist`:
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.civilmantra.daemon</string>
+    <string>com.chronotrack.daemon</string>
     <key>ProgramArguments</key>
     <array>
         <string>/usr/bin/python3</string>
-        <string>/usr/local/bin/civil-mantra/telemetry_daemon.py</string>
+        <string>/usr/local/bin/chronotrack/telemetry_daemon.py</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -85,5 +85,5 @@ To start the daemon automatically when the user logs in, place a plist configura
 ```
 Activate it:
 ```bash
-sudo launchctl load -w /Library/LaunchAgents/com.civilmantra.daemon.plist
+sudo launchctl load -w /Library/LaunchAgents/com.chronotrack.daemon.plist
 ```

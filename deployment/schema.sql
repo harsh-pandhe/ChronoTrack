@@ -1,5 +1,5 @@
 -- schema.sql
--- PostgreSQL Multi-Tenant Database Schema for ChronoTrack (Civil Mantra)
+-- PostgreSQL Multi-Tenant Database Schema for ChronoTrack
 -- Connects client companies, users, telemetry logs, rules, and audit logs.
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";

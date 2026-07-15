@@ -5,8 +5,8 @@
   "type": "module",
   "main": "main.cjs",
   "author": {
-    "name": "Civil Mantra",
-    "email": "agent@civilmantra.com"
+    "name": "ChronoTrack",
+    "email": "agent@chronotrack.app"
   },
   "scripts": {
     "dev": "vite",
@@ -59,8 +59,8 @@
     "vite": "^8.0.12"
   },
   "build": {
-    "appId": "com.civilmantra.agent",
-    "productName": "CivilMantraAgent",
+    "appId": "com.chronotrack.agent",
+    "productName": "ChronoTrackAgent",
     "directories": {
       "output": "dist-desktop"
     },
@@ -74,7 +74,7 @@
         "from": "dist-daemon",
         "to": "daemon",
         "filter": [
-          "CivilMantraDaemon*"
+          "ChronoTrackDaemon*"
         ]
       }
     ],

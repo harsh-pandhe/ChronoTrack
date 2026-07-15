@@ -1,6 +1,6 @@
 # ChronoTrack Backend (Phase 1)
 
-Secure multi-tenant API for Civil Mantra. Vercel serverless functions (`api/`) +
+Secure multi-tenant API for ChronoTrack. Vercel serverless functions (`api/`) +
 Neon Postgres. JWT + bcrypt auth, per-device tokens for the telemetry daemon,
 DPDP-compliant consent. See [PLAN.md](PLAN.md) for the full roadmap.
 
@@ -34,7 +34,7 @@ export JWT_SECRET="$(openssl rand -hex 32)"
 npm run migrate
 
 # 3. Seed the first admin (one-time bootstrap, no default credentials)
-COMPANY="Civil Mantra" ADMIN_EMAIL=admin@cm.com ADMIN_PASSWORD=change-me-strong \
+COMPANY="ChronoTrack" ADMIN_EMAIL=admin@cm.com ADMIN_PASSWORD=change-me-strong \
   npm run seed:admin
 
 # 4. Integration test (resets schema, drives the full IRL loop — 23 checks)

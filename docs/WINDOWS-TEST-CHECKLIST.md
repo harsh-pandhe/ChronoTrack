@@ -18,7 +18,7 @@ Two options — use whichever you have access to:
 **A. GitHub Actions artifact (this exact build)**
 1. Go to: https://github.com/harsh-pandhe/ChronoTrack/actions/runs/28621882143
 2. Under **Artifacts**, download `windows-installer` (zip).
-3. Unzip it — inside is `CivilMantraAgent Setup 3.0.0.exe`.
+3. Unzip it — inside is `ChronoTrackAgent Setup 3.0.0.exe`.
 4. Note: GitHub Actions artifacts need you to be logged into GitHub to download.
 
 **B. Build it yourself on the Windows machine**
@@ -32,7 +32,7 @@ Follow `docs/BUILD-WINDOWS.md` section B. Only do this if (A) isn't available.
 
 ## 1. Install
 
-1. Run `CivilMantraAgent Setup 3.0.0.exe`.
+1. Run `ChronoTrackAgent Setup 3.0.0.exe`.
 2. Windows SmartScreen will very likely say **"Windows protected your PC" /
    "Unknown publisher"**. This is expected — the installer isn't code-signed
    yet (needs a paid Authenticode cert, tracked separately). Click **More
@@ -53,15 +53,15 @@ This is the main thing that was broken before: the background telemetry
 daemon used to pop up its own separate console window. It should now be
 completely invisible.
 
-1. Launch **CivilMantra Agent** from the Start Menu / Desktop shortcut.
+1. Launch **ChronoTrack Agent** from the Start Menu / Desktop shortcut.
 2. Watch closely for a few seconds as it starts.
 3. Open **Task Manager** (Ctrl+Shift+Esc) → **Details** tab → look for
-   `CivilMantraDaemon.exe`.
+   `ChronoTrackDaemon.exe`.
 
 | Step | Result | Notes |
 |---|---|---|
 | A black console/terminal window popped up when the app launched | PASS = it did NOT pop up | |
-| `CivilMantraDaemon.exe` is visible in Task Manager → Details tab | | |
+| `ChronoTrackDaemon.exe` is visible in Task Manager → Details tab | | |
 | The app's own window (the dashboard UI) looks normal, no extra windows | | |
 
 ---
@@ -109,7 +109,7 @@ actually closing the app.
 | Step | Result | Notes |
 |---|---|---|
 | The app window closes entirely (PASS) | | |
-| The app instead showed the "Civil Mantra" marketing/landing page (FAIL — this is the old bug) | | |
+| The app instead showed the "ChronoTrack" marketing/landing page (FAIL — this is the old bug) | | |
 
 ---
 
@@ -124,7 +124,7 @@ keep running in the background.
 
 | Step | Result | Notes |
 |---|---|---|
-| `CivilMantraDaemon.exe` is STILL running in Task Manager after Exit Agent | | |
+| `ChronoTrackDaemon.exe` is STILL running in Task Manager after Exit Agent | | |
 | Fresh telemetry rows keep appearing in the web dashboard after Exit Agent | | |
 
 ---
@@ -136,14 +136,14 @@ keep running in the background.
 
 | Step | Result | Notes |
 |---|---|---|
-| `CivilMantraDaemon.exe` is running again after reboot, without manually opening the app | | |
+| `ChronoTrackDaemon.exe` is running again after reboot, without manually opening the app | | |
 | New telemetry rows appear in the web dashboard after reboot (give it a minute) | | |
 
 ---
 
 ## 8. Re-opening the app doesn't re-prompt activation
 
-1. Open **CivilMantra Agent** again from the Start Menu.
+1. Open **ChronoTrack Agent** again from the Start Menu.
 
 | Step | Result | Notes |
 |---|---|---|

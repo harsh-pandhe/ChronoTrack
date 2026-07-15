@@ -16,7 +16,7 @@ else has been tested locally (see BACKEND.md, PLAN.md).
    (TLS is verified automatically — do not set `PGSSL=disable` in prod.)
 3. Seed the first admin once:
    ```bash
-   DATABASE_URL=... COMPANY="Civil Mantra" ADMIN_EMAIL=... ADMIN_PASSWORD=... \
+   DATABASE_URL=... COMPANY="ChronoTrack" ADMIN_EMAIL=... ADMIN_PASSWORD=... \
      npm run seed:admin
    ```
 
@@ -55,7 +55,7 @@ helpers exist in `deployment/`.
 - **Linux:** AppImage/deb don't require signing; optionally GPG-sign the repo.
 
 ### OTA updates **[needs creds]**
-`package.json > build.publish` points at GitHub `civilmantra/agent-client`.
+`package.json > build.publish` points at GitHub `chronotrack/agent-client`.
 Create that repo, set `GH_TOKEN`, and `electron-builder --publish always`
 on tagged releases. Verify `electron-updater` pulls + applies on relaunch.
 

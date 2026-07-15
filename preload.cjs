@@ -15,7 +15,7 @@ function getApiToken() {
     base = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
   }
   
-  const configDir = path.join(base, 'civil-mantra');
+  const configDir = path.join(base, 'chronotrack');
   const configPath = path.join(configDir, 'config.json');
   
   try {

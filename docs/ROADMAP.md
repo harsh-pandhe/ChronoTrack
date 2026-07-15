@@ -126,7 +126,7 @@ re-checking every one of the 13 fixes plus UI/chart/button polish as asked.
   left confusing.
 
 ### New finding + fix: daemon single-instance lock had a TOCTOU race
-Confirmed live: two `CivilMantraDaemon.exe` processes running with start
+Confirmed live: two `ChronoTrackDaemon.exe` processes running with start
 times ~1 second apart. The old lock (read PID file → check if alive → write
 own PID) has no atomicity, so two processes launched in the same instant can
 both pass the check before either writes. Fixed by holding the PID file open
@@ -277,10 +277,10 @@ Triggered a fresh Windows build via `gh workflow run release.yml --ref
 claude/competent-gould-9bb9e5` (run
 [28701030135](https://github.com/harsh-pandhe/ChronoTrack/actions/runs/28701030135),
 built from `22de293` which includes `102d2ff`). Downloaded the
-`windows-installer` artifact, fully uninstalled the stale `CivilMantraAgent
+`windows-installer` artifact, fully uninstalled the stale `ChronoTrackAgent
 3.0.0` from Add/Remove Programs (this needed a UAC prompt the tester couldn't
 see/click — user approved manually), deleted the stale duplicate installer
-sitting in Downloads (`CivilMantraAgent Setup 3.0.0 (1).exe` — this was the
+sitting in Downloads (`ChronoTrackAgent Setup 3.0.0 (1).exe` — this was the
 prime suspect for why Exit Agent looked broken in the 07-03 test), then
 installed and ran the new build.
 
@@ -288,9 +288,9 @@ installed and ran the new build.
 - **Exit Agent now works correctly.** Clicking it closes the app window
   entirely — no more falling back to the marketing landing page. This was
   the main unconfirmed item from the 07-03 pass.
-- Daemon (`CivilMantraDaemon.exe`) survives Exit Agent — still running in
+- Daemon (`ChronoTrackDaemon.exe`) survives Exit Agent — still running in
   Task Manager afterward, telemetry collection intended to keep going.
-- Clean install: no wizard hang, `CivilMantraDaemon.exe` never shows a
+- Clean install: no wizard hang, `ChronoTrackDaemon.exe` never shows a
   console window, confirmed via Task Manager → Details.
 - Re-opening the app after it was already activated does not re-prompt
   activation (device token persisted correctly across the reinstall).
@@ -306,10 +306,10 @@ installed and ran the new build.
   panel prove current connectivity").
 
 ### New bug found
-- **No single-instance lock.** Launching `CivilMantraAgent` while an
+- **No single-instance lock.** Launching `ChronoTrackAgent` while an
   instance is already running opens a brand-new window/process instead of
   focusing the existing one (confirmed twice — Task Manager showed two
-  separate `CivilMantraAgent` app groups after a second launch). Wastes
+  separate `ChronoTrackAgent` app groups after a second launch). Wastes
   resources and risks confusing/duplicate daemon state. Not previously
   documented — needs `app.requestSingleInstanceLock()` in `main.cjs`.
 
@@ -341,7 +341,7 @@ Results and what came out of them:
    daemon with `--noconsole` (no console subsystem at all, regardless of
    launcher) in both `build_daemon.sh` and `release.yml`, and redirect the
    daemon's own stdout/stderr to a rotating log file
-   (`%APPDATA%/civil-mantra/data/daemon.log`) so bare `print()` calls can't
+   (`%APPDATA%/chronotrack/data/daemon.log`) so bare `print()` calls can't
    crash on a null stream in windowed mode either. Fixed in `102d2ff`.
 2. **Real crash loop caught in the test screenshot**:
    `ctypes.ArgumentError: argument 4: OverflowError: int too long to
@@ -378,7 +378,7 @@ Results and what came out of them:
    already present before install — strong signal the OLD (pre-fix)
    installer got run instead of the freshly-downloaded one, or an old app
    instance was still resident. **Needs a clean re-test**: fully uninstall
-   any existing CivilMantra Agent (Add/Remove Programs), delete old
+   any existing ChronoTrack Agent (Add/Remove Programs), delete old
    installer files from Downloads, download only the newest artifact, then
    retest just this one item.
 5. **The in-app "POSTGRESQL CLOUD SYNC" panel showed "Success — Pushed N
@@ -513,7 +513,7 @@ Ran every test suite against a real ephemeral Postgres (not mocked), read every
 
 ---
 
-## ⏳ Before handing to Civil Mantra for real-system testing
+## ⏳ Before handing to ChronoTrack for real-system testing
 
 ### Must-do (blockers)
 1. ✅ **Windows installer builds** — GitHub Actions billing is no longer
@@ -689,11 +689,11 @@ consistent spacing/typography audited against a real design system rather
 than accumulated Tailwind classes. **[YOUR CALL]**: any visual direction/
 reference you want followed, or should this be proposed fresh?
 
-### Stage 6 — Rebrand (not "Civil Mantra")
-Every user-facing surface currently says "Civil Mantra" / "CivilMantra" —
-window titles, app name (`com.civilmantra.agent`), installer filenames, the
+### Stage 6 — Rebrand (not "Civil Mantra") — done, now "ChronoTrack"
+Every user-facing surface used to say "Civil Mantra" / "CivilMantra" —
+window titles, app name (`com.chronotrack.agent`), installer filenames, the
 landing page copy, email domains in seed data, `package.json` `productName`,
-autostart registry key names, config folder paths (`~/.config/civil-mantra`),
+autostart registry key names, config folder paths (`~/.config/chronotrack`),
 and the favicon/logo (`public/logo.png`, `public/icon.ico`). This is a
 mechanical-but-wide-reaching rename once a name is picked, plus a new
 logo/icon set. **[YOUR CALL — needed before this can start]**: what's the new

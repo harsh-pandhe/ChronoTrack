@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build a self-contained telemetry daemon binary so target machines need no
-# Python/pip. Output: dist-daemon/CivilMantraDaemon (single executable).
+# Python/pip. Output: dist-daemon/ChronoTrackDaemon (single executable).
 #
 # Requires a venv with: pyinstaller cryptography keyring certifi
 #   python3 -m venv .build-venv
@@ -11,7 +11,7 @@ cd "$(dirname "$0")/.."
 
 PYINSTALLER="${PYINSTALLER:-pyinstaller}"
 OUT="dist-daemon"
-NAME="CivilMantraDaemon"
+NAME="ChronoTrackDaemon"
 
 rm -rf build "$OUT"
 "$PYINSTALLER" \

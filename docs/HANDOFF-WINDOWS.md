@@ -36,7 +36,7 @@ zero white-on-white; live site HTTP 200 serving the new build.
 - Delete dead code: `DEMO_MODE` simulator, client-side `logAudit`, unused `logs`
   state → drives lint from 54 → 0, then flip the CI `lint` job to blocking
   (remove `continue-on-error` in `.github/workflows/ci.yml`).
-- macOS daemon real-input parity; rebrand from "Civil Mantra"; delete stale
+- macOS daemon real-input parity; rebrand from "Civil Mantra" (done — now ChronoTrack); delete stale
   `deployment/schema.sql`.
 
 ---
@@ -89,9 +89,9 @@ locally.
    reboot/autostart survival.
 
 ### Watching what the daemon does
-- Logs: `%APPDATA%\civil-mantra\data\daemon.log`
-- Local DB (buffered telemetry): `%APPDATA%\civil-mantra\data\telemetry.db`
-- Config/token: `%APPDATA%\civil-mantra\config.json`
+- Logs: `%APPDATA%\chronotrack\data\daemon.log`
+- Local DB (buffered telemetry): `%APPDATA%\chronotrack\data\telemetry.db`
+- Config/token: `%APPDATA%\chronotrack\config.json`
 - New this round: device tokens now **expire** (180d) and the Electron app runs a
   **watchdog** that respawns the daemon if it dies (matters on Windows — the Run-key
   doesn't restart on crash). If you kill the daemon, the app should bring it back
@@ -146,7 +146,7 @@ $env:JWT_SECRET="dev-secret-change-me"
 
 # 3. Schema + first admin
 npm run migrate
-$env:COMPANY="Civil Mantra"; $env:ADMIN_EMAIL="admin@cm.com"; $env:ADMIN_PASSWORD="admin-strong-pass"
+$env:COMPANY="ChronoTrack"; $env:ADMIN_EMAIL="admin@cm.com"; $env:ADMIN_PASSWORD="admin-strong-pass"
 npm run seed:admin
 
 # 4. Backend API (leave running) + web (new terminal)
@@ -180,8 +180,28 @@ npm run test:load     # stress: set $env:N, DURATION, INTERVAL (see scripts/load
 - **Unsigned installer** → SmartScreen warning (see §3.2). Code-signing is a future
   step (`WIN_CSC_LINK`/`WIN_CSC_KEY_PASSWORD` secrets wired in `release.yml`).
 - **Standing security TODO (owner action):** rotate the Neon DB password and set a
-  fresh `JWT_SECRET` in Vercel (rotation is now zero-downtime — set the old value as
-  `JWT_SECRET_PREVIOUS` during the switch), then redeploy.
+  fresh `JWT_SECRET` in Vercel. This needs the account owner's Vercel/Neon access —
+  an agent should never handle these values, only tell you the steps. Exact
+  zero-downtime sequence:
+  1. **Neon DB password**: Neon console → your project → Settings → Reset password
+     (or rotate the role's password). Copy the new connection string.
+  2. In Vercel → Project → Settings → Environment Variables, update `DATABASE_URL`
+     to the new connection string.
+  3. **JWT_SECRET rotation (zero-downtime)**: before changing `JWT_SECRET`, copy its
+     *current* value into a new env var `JWT_SECRET_PREVIOUS` — `lib/auth.js`
+     already checks this on every token verify, so existing sessions signed with
+     the old secret keep working until they expire (≤ `JWT_TTL`, default 8h)
+     instead of everyone being force-logged-out.
+  4. Set `JWT_SECRET` to a freshly generated random value (e.g.
+     `openssl rand -base64 48`).
+  5. Redeploy (Vercel → Deployments → Redeploy, or push any commit) so the new env
+     vars take effect.
+  6. After one full `JWT_TTL` window has passed (so no old tokens can still be
+     valid), remove `JWT_SECRET_PREVIOUS` entirely — leaving it set indefinitely
+     means a compromised old secret stays honored forever.
+  7. Also apply any migrations not yet run against prod at the same time (see §6
+     `node scripts/migrate.js` with prod `DATABASE_URL`) — as of this session that's
+     migrations `004_device_expiry.sql` and `005_project_name_unique.sql`.
 
 ---
 

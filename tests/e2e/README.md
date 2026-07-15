@@ -19,7 +19,7 @@ export DATABASE_URL="postgres://postgres:test@localhost:5544/chronotrack" PGSSL=
 
 # 2. Schema + seed admin + a lead
 npm run migrate
-COMPANY="Civil Mantra" ADMIN_EMAIL=admin@cm.com ADMIN_PASSWORD=admin-strong-pass npm run seed:admin
+COMPANY="ChronoTrack" ADMIN_EMAIL=admin@cm.com ADMIN_PASSWORD=admin-strong-pass npm run seed:admin
 #   then create lead rajesh@cm.com / lead-strong-pass via the API or admin UI
 
 # 3. Cloud API

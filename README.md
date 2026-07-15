@@ -1,4 +1,4 @@
-# ⏱️ ChronoTrack — Civil Mantra Transparent Telemetry & Workforce ROI
+# ⏱️ ChronoTrack — Transparent Telemetry & Workforce ROI
 
 ChronoTrack is a privacy-respecting workforce telemetry + project-ROI platform for
 desk-bound teams. A lightweight desktop agent records **input densities** (keystroke/
@@ -6,7 +6,7 @@ mouse *counts*, never content) and **active window titles** (sanitised), syncs t
 a secure multi-tenant cloud, and turns them into per-employee utilisation and
 per-project cost/ROI for team leads and admins.
 
-> Built for Civil Mantra (≈1,600 employees) to measure true utilisation and project
+> Built for ChronoTrack (≈1,600 employees) to measure true utilisation and project
 > profitability. DPDP-aware (India), consent-based, human-in-the-loop.
 
 **Status:** web platform live in production (Vercel + Neon); Linux agent proven;
@@ -63,7 +63,7 @@ export DATABASE_URL="postgres://postgres:test@localhost:5544/chronotrack" PGSSL=
 
 # 2. Schema + first admin
 npm run migrate
-COMPANY="Civil Mantra" ADMIN_EMAIL=admin@cm.com ADMIN_PASSWORD=change-me-strong npm run seed:admin
+COMPANY="ChronoTrack" ADMIN_EMAIL=admin@cm.com ADMIN_PASSWORD=change-me-strong npm run seed:admin
 
 # 3. Backend API + web
 API_PORT=3031 node scripts/dev-api.js &

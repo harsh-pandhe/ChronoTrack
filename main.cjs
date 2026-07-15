@@ -64,7 +64,7 @@ function registerAutostart(binPath) {
       const dir = path.join(require('os').homedir(), '.config', 'systemd', 'user');
       fs.mkdirSync(dir, { recursive: true });
       const unit = `[Unit]
-Description=Civil Mantra Telemetry Daemon
+Description=ChronoTrack Telemetry Daemon
 After=default.target
 
 [Service]
@@ -74,25 +74,41 @@ Restart=on-failure
 [Install]
 WantedBy=default.target
 `;
-      fs.writeFileSync(path.join(dir, 'civilmantra-daemon.service'), unit);
-      spawn('systemctl', ['--user', 'enable', '--now', 'civilmantra-daemon.service'], { stdio: 'ignore' });
+      fs.writeFileSync(path.join(dir, 'chronotrack-daemon.service'), unit);
+      spawn('systemctl', ['--user', 'enable', '--now', 'chronotrack-daemon.service'], { stdio: 'ignore' });
+      // Rebrand migration: retire the old unit name so there's no duplicate autostart.
+      const oldUnit = path.join(dir, 'civilmantra-daemon.service');
+      if (fs.existsSync(oldUnit)) {
+        spawn('systemctl', ['--user', 'disable', '--now', 'civilmantra-daemon.service'], { stdio: 'ignore' });
+        try { fs.unlinkSync(oldUnit); } catch { /* best-effort */ }
+      }
     } else if (process.platform === 'win32') {
       // Run key -> autostart at logon
       spawn('reg', ['add', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run',
-        '/v', 'CivilMantraDaemon', '/t', 'REG_SZ', '/d', binPath, '/f'], { stdio: 'ignore', windowsHide: true });
+        '/v', 'ChronoTrackDaemon', '/t', 'REG_SZ', '/d', binPath, '/f'], { stdio: 'ignore', windowsHide: true });
+      // Rebrand migration: remove the old Run-key entry so it doesn't point at a
+      // renamed/removed binary and double-spawn a daemon on next login.
+      spawn('reg', ['delete', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run',
+        '/v', 'CivilMantraDaemon', '/f'], { stdio: 'ignore', windowsHide: true });
     } else if (process.platform === 'darwin') {
       const dir = path.join(require('os').homedir(), 'Library', 'LaunchAgents');
       fs.mkdirSync(dir, { recursive: true });
       const plist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>Label</key><string>com.civilmantra.daemon</string>
+  <key>Label</key><string>com.chronotrack.daemon</string>
   <key>ProgramArguments</key><array><string>${binPath}</string></array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
 </dict></plist>
 `;
-      fs.writeFileSync(path.join(dir, 'com.civilmantra.daemon.plist'), plist);
+      fs.writeFileSync(path.join(dir, 'com.chronotrack.daemon.plist'), plist);
+      // Rebrand migration: unload + remove the old LaunchAgent.
+      const oldPlist = path.join(dir, 'com.civilmantra.daemon.plist');
+      if (fs.existsSync(oldPlist)) {
+        spawn('launchctl', ['unload', oldPlist], { stdio: 'ignore' });
+        try { fs.unlinkSync(oldPlist); } catch { /* best-effort */ }
+      }
     }
     console.log('[ELECTRON] Autostart registered for', process.platform);
   } catch (err) {
@@ -106,7 +122,7 @@ function startTelemetryDaemon() {
   // Packaged builds ship a self-contained PyInstaller binary (no Python needed
   // on the target machine). Dev runs the .py directly via the local interpreter.
   if (!isDev) {
-    const binName = process.platform === 'win32' ? 'CivilMantraDaemon.exe' : 'CivilMantraDaemon';
+    const binName = process.platform === 'win32' ? 'ChronoTrackDaemon.exe' : 'ChronoTrackDaemon';
     const binPath = path.join(process.resourcesPath, 'daemon', binName);
     // Register the daemon to autostart on login so collection runs independently
     // of the app window (the daemon's single-instance lock prevents duplicates).
@@ -220,7 +236,7 @@ function createWindow() {
     height: 800,
     resizable: true,
     maximizable: true,
-    title: "Civil Mantra Enterprise Console",
+    title: "ChronoTrack Enterprise Console",
     backgroundColor: "#030712",
     webPreferences: {
       nodeIntegration: false,

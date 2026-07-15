@@ -28,7 +28,7 @@ jobs:
       - name: Bundle telemetry daemon (PyInstaller)
         run: |
           python -m pip install --upgrade pip pyinstaller cryptography keyring pywin32 certifi
-          pyinstaller --onefile --noconsole --name CivilMantraDaemon --distpath dist-daemon `
+          pyinstaller --onefile --noconsole --name ChronoTrackDaemon --distpath dist-daemon `
             --hidden-import keyring.backends.Windows `
             --hidden-import cryptography.fernet `
             --collect-data certifi `

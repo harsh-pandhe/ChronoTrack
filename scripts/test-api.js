@@ -86,7 +86,7 @@ async function main() {
   await resetSchema();
 
   // Seed company + admin directly.
-  const { rows: [co] } = await query(`INSERT INTO companies (name) VALUES ('Civil Mantra') RETURNING id`);
+  const { rows: [co] } = await query(`INSERT INTO companies (name) VALUES ('ChronoTrack') RETURNING id`);
   const adminHash = await hashPassword('admin-strong-pass');
   await query(
     `INSERT INTO users (company_id, name, email, password_hash, role, status)

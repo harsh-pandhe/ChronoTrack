@@ -5,7 +5,7 @@ A tight 5–7 min walkthrough that shows the whole loop on the **live** system
 
 ## Setup before recording
 - Have the Windows/Linux agent built (see docs/BUILD-WINDOWS.md / README).
-- Admin login ready: `admin@civilmantra.com`.
+- Admin login ready: `admin@chronotrack.app`.
 - One screen for the web portal, one for the desktop agent.
 
 ## Scene 1 — Admin provisions (web) ~1 min
@@ -14,7 +14,7 @@ A tight 5–7 min walkthrough that shows the whole loop on the **live** system
    8-digit activation code (say it's emailed to the employee).
 
 ## Scene 2 — Employee onboards (desktop) ~1.5 min
-1. Open the installed **CivilMantra Agent**.
+1. Open the installed **ChronoTrack Agent**.
 2. Onboarding: tick the **consent** boxes (input counts + window titles, no
    content) — call out the privacy stance.
 3. Enter corporate email + the code → **Activate**.

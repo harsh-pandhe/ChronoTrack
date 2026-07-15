@@ -26,7 +26,7 @@ async function seed() {
   await query(`DROP SCHEMA public CASCADE; CREATE SCHEMA public;`);
   const sql = fs.readFileSync(new URL('../deployment/migrations/001_init.sql', import.meta.url), 'utf8');
   await query(sql);
-  const { rows: [co] } = await query(`INSERT INTO companies (name) VALUES ('Civil Mantra') RETURNING id`);
+  const { rows: [co] } = await query(`INSERT INTO companies (name) VALUES ('ChronoTrack') RETURNING id`);
   const { rows: [emp] } = await query(
     `INSERT INTO users (company_id, name, email, password_hash, role, status)
      VALUES ($1,'Emp','emp@cm.com',$2,'employee','active') RETURNING id`,
