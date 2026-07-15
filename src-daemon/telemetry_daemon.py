@@ -77,7 +77,14 @@ def _config_base_dir():
         return os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
 
 _CONFIG_BASE = _config_base_dir()
-CONFIG_DIR = os.path.join(_CONFIG_BASE, "chronotrack")
+# NOT "chronotrack" -- that's Electron's own userData folder name (from
+# package.json's "name" field, unrelated to this rebrand and unchanged by it).
+# Real-world testing on Windows caught this: the daemon silently shared a
+# directory with Electron's Chromium cache/Local State/etc, the "does the new
+# folder already exist" migration check saw Electron's files and thought the
+# daemon had already been migrated, and old telemetry got orphaned. Give the
+# daemon a name Electron can never collide with.
+CONFIG_DIR = os.path.join(_CONFIG_BASE, "chronotrack-daemon")
 _OLD_CONFIG_DIR = os.path.join(_CONFIG_BASE, "civil-mantra")  # pre-rebrand folder name
 
 
