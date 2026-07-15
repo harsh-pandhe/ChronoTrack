@@ -291,44 +291,6 @@ export default function App() {
   // Custom Analytics & Team Lead State Variables
   const [selectedAttributionProject, setSelectedAttributionProject] = useState('Project Alpha');
 
-  // Multi-project employee assignment (admin + team lead, shared via renderContributionTab).
-  const [projectAssignments, setProjectAssignments] = useState([]);
-  const [assignPickerId, setAssignPickerId] = useState('');
-  const [assignBusy, setAssignBusy] = useState(false);
-  useEffect(() => {
-    const activeId = projects.find(p => p.id === selectedAttributionProject)?.id || projects[0]?.id;
-    if (!activeId) { setProjectAssignments([]); return; }
-    api.projects.assignments(activeId).then(setProjectAssignments).catch(() => setProjectAssignments([]));
-  }, [selectedAttributionProject, projects]);
-  const reloadAssignments = async () => {
-    const activeId = projects.find(p => p.id === selectedAttributionProject)?.id || projects[0]?.id;
-    if (!activeId) return;
-    try { setProjectAssignments(await api.projects.assignments(activeId)); } catch { /* keep stale list on error */ }
-  };
-  const handleAssignEmployee = async (projectId) => {
-    if (!assignPickerId) return;
-    setAssignBusy(true);
-    try {
-      await api.projects.assign(projectId, assignPickerId);
-      setAssignPickerId('');
-      await reloadAssignments();
-      showToast('Employee assigned to project.', 'success');
-    } catch (err) {
-      showToast(err.message || 'Failed to assign employee.', 'error');
-    } finally {
-      setAssignBusy(false);
-    }
-  };
-  const handleUnassignEmployee = async (projectId, userId, userName) => {
-    try {
-      await api.projects.unassign(projectId, userId);
-      await reloadAssignments();
-      showToast(`${userName || 'Employee'} unassigned from project.`, 'info');
-    } catch (err) {
-      showToast(err.message || 'Failed to unassign employee.', 'error');
-    }
-  };
-
   // Team Lead Add Employee Form States
   const [newEmpName, setNewEmpName] = useState('');
   const [newEmpEmail, setNewEmpEmail] = useState('');
@@ -492,6 +454,45 @@ export default function App() {
   const [projects, setProjects] = useState([]);
   const [teamLeads, setTeamLeads] = useState([]);
   const [logs, setLogs] = useState({});
+
+  // Multi-project employee assignment (admin + team lead, shared via renderContributionTab).
+  const [projectAssignments, setProjectAssignments] = useState([]);
+  const [assignPickerId, setAssignPickerId] = useState('');
+  const [assignBusy, setAssignBusy] = useState(false);
+  useEffect(() => {
+    const activeId = projects.find(p => p.id === selectedAttributionProject)?.id || projects[0]?.id;
+    if (!activeId) { setProjectAssignments([]); return; }
+    api.projects.assignments(activeId).then(setProjectAssignments).catch(() => setProjectAssignments([]));
+  }, [selectedAttributionProject, projects]);
+  const reloadAssignments = async () => {
+    const activeId = projects.find(p => p.id === selectedAttributionProject)?.id || projects[0]?.id;
+    if (!activeId) return;
+    try { setProjectAssignments(await api.projects.assignments(activeId)); } catch { /* keep stale list on error */ }
+  };
+  const handleAssignEmployee = async (projectId) => {
+    if (!assignPickerId) return;
+    setAssignBusy(true);
+    try {
+      await api.projects.assign(projectId, assignPickerId);
+      setAssignPickerId('');
+      await reloadAssignments();
+      showToast('Employee assigned to project.', 'success');
+    } catch (err) {
+      showToast(err.message || 'Failed to assign employee.', 'error');
+    } finally {
+      setAssignBusy(false);
+    }
+  };
+  const handleUnassignEmployee = async (projectId, userId, userName) => {
+    try {
+      await api.projects.unassign(projectId, userId);
+      await reloadAssignments();
+      showToast(`${userName || 'Employee'} unassigned from project.`, 'info');
+    } catch (err) {
+      showToast(err.message || 'Failed to unassign employee.', 'error');
+    }
+  };
+
   // Custom confirm modal — replaces window.confirm() everywhere. Native browser
   // dialogs are unstyled, block the whole tab (including automated testing),
   // and give no way to signal "this one is more dangerous than that one."
