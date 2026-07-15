@@ -64,15 +64,24 @@ export default handler(async (req, res) => {
     );
     if (dupe) throw new HttpError(409, `A project named "${name}" already exists.`);
 
-    const { rows: [project] } = await query(
-      `INSERT INTO projects (company_id, name, code, team_lead_id, client, budget, billed_revenue, status, start_date, end_date)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,COALESCE($8,'active'),$9,$10)
-       RETURNING *`,
-      [
-        actor.company_id, name, b.code || null, leadId, b.client || null,
-        b.budget || 0, b.billed_revenue || 0, b.status || null, b.start_date || null, b.end_date || null,
-      ]
-    );
+    let project;
+    try {
+      ({ rows: [project] } = await query(
+        `INSERT INTO projects (company_id, name, code, team_lead_id, client, budget, billed_revenue, status, start_date, end_date)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,COALESCE($8,'active'),$9,$10)
+         RETURNING *`,
+        [
+          actor.company_id, name, b.code || null, leadId, b.client || null,
+          b.budget || 0, b.billed_revenue || 0, b.status || null, b.start_date || null, b.end_date || null,
+        ]
+      ));
+    } catch (err) {
+      // Belt-and-suspenders: the SELECT-then-INSERT check above has a race
+      // window under concurrent requests; the DB-level unique index (migration
+      // 005) closes it — surface that as the same clean 409, not a raw 500.
+      if (err.code === '23505') throw new HttpError(409, `A project named "${name}" already exists.`);
+      throw err;
+    }
     await audit(req, actor, 'create project', project.id);
     return send(res, 201, { project });
   }

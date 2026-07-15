@@ -1,8 +1,12 @@
-// /api/activation?action=generate|verify — merged to stay under Vercel's
-// serverless function cap.
-//  - action=generate (admin/lead): mint an 8-digit code for an employee.
-//  - action=verify (public): desktop activation — email+code+consent -> device
-//    token + user JWT.
+// /api/activation?action=generate|verify|pending — merged to stay under
+// Vercel's serverless function cap.
+//  - action=generate (admin/lead, POST): mint an 8-digit code for an employee.
+//  - action=verify (public, POST): desktop activation — email+code+consent ->
+//    device token + user JWT.
+//  - action=pending (admin/lead, GET): who has an outstanding, unexpired code
+//    right now — the code itself is hashed at rest and can't be recovered, so
+//    this only answers "is someone still mid-onboarding", for the Provision
+//    Keys table to survive a page reload.
 import { handler, requireAuth, readBody, send, HttpError } from '../lib/http.js';
 import { query, withTransaction } from '../lib/db.js';
 import { sha256, generateActivationCode, generateDeviceToken, signToken } from '../lib/auth.js';
@@ -15,8 +19,26 @@ const CONSENT_VERSION = process.env.CONSENT_VERSION || '1.0';
 const DEVICE_TOKEN_TTL_DAYS = Number(process.env.DEVICE_TOKEN_TTL_DAYS) || 180;
 
 export default handler(async (req, res) => {
-  if (req.method !== 'POST') throw new HttpError(405, 'Method Not Allowed');
   const action = new URL(req.url, 'http://localhost').searchParams.get('action');
+
+  // ---- pending (admin/lead) ----
+  if (action === 'pending' && req.method === 'GET') {
+    const actor = await requireAuth(req, ['admin', 'lead']);
+    const scopeSql = actor.role === 'lead' ? 'AND (u.team_lead_id = $2 OR u.id = $2)' : '';
+    const vals = actor.role === 'lead' ? [actor.company_id, actor.id] : [actor.company_id];
+    const { rows } = await query(
+      `SELECT DISTINCT ON (u.id) u.id AS user_id, u.name, u.email,
+              ac.created_at, ac.expires_at
+         FROM activation_codes ac
+         JOIN users u ON u.id = ac.user_id
+        WHERE ac.company_id = $1 AND ac.used_at IS NULL AND ac.expires_at > now() ${scopeSql}
+        ORDER BY u.id, ac.created_at DESC`,
+      vals
+    );
+    return send(res, 200, { pending: rows });
+  }
+
+  if (req.method !== 'POST') throw new HttpError(405, 'Method Not Allowed');
 
   // ---- generate (admin/lead) ----
   if (action === 'generate') {

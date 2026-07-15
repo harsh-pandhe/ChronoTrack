@@ -26,6 +26,9 @@ import {
   Clock,
   Edit2,
   AlertTriangle,
+  Menu,
+  ShieldOff,
+  History,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -37,6 +40,10 @@ import {
   CartesianGrid,
   BarChart,
   Bar,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
 } from 'recharts';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -70,6 +77,10 @@ function SizedChart({ children }) {
     </div>
   );
 }
+
+// Fixed categorical color order for pie/donut charts (never cycled/rank-based) —
+// matches the app's existing accent set used elsewhere for status/identity.
+const CATEGORY_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#3b82f6', '#a855f7', '#ef4444', '#14b8a6', '#84cc16'];
 
 // Visual timeline allocation: shows the day's real tracked active blocks and lets
 // the employee assign each block to one of their projects. Hours are grounded in
@@ -279,7 +290,45 @@ export default function App() {
   
   // Custom Analytics & Team Lead State Variables
   const [selectedAttributionProject, setSelectedAttributionProject] = useState('Project Alpha');
-  
+
+  // Multi-project employee assignment (admin + team lead, shared via renderContributionTab).
+  const [projectAssignments, setProjectAssignments] = useState([]);
+  const [assignPickerId, setAssignPickerId] = useState('');
+  const [assignBusy, setAssignBusy] = useState(false);
+  useEffect(() => {
+    const activeId = projects.find(p => p.id === selectedAttributionProject)?.id || projects[0]?.id;
+    if (!activeId) { setProjectAssignments([]); return; }
+    api.projects.assignments(activeId).then(setProjectAssignments).catch(() => setProjectAssignments([]));
+  }, [selectedAttributionProject, projects]);
+  const reloadAssignments = async () => {
+    const activeId = projects.find(p => p.id === selectedAttributionProject)?.id || projects[0]?.id;
+    if (!activeId) return;
+    try { setProjectAssignments(await api.projects.assignments(activeId)); } catch { /* keep stale list on error */ }
+  };
+  const handleAssignEmployee = async (projectId) => {
+    if (!assignPickerId) return;
+    setAssignBusy(true);
+    try {
+      await api.projects.assign(projectId, assignPickerId);
+      setAssignPickerId('');
+      await reloadAssignments();
+      showToast('Employee assigned to project.', 'success');
+    } catch (err) {
+      showToast(err.message || 'Failed to assign employee.', 'error');
+    } finally {
+      setAssignBusy(false);
+    }
+  };
+  const handleUnassignEmployee = async (projectId, userId, userName) => {
+    try {
+      await api.projects.unassign(projectId, userId);
+      await reloadAssignments();
+      showToast(`${userName || 'Employee'} unassigned from project.`, 'info');
+    } catch (err) {
+      showToast(err.message || 'Failed to unassign employee.', 'error');
+    }
+  };
+
   // Team Lead Add Employee Form States
   const [newEmpName, setNewEmpName] = useState('');
   const [newEmpEmail, setNewEmpEmail] = useState('');
@@ -417,6 +466,7 @@ export default function App() {
 
   // Create project (admin or lead).
   const [showAddProject, setShowAddProject] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [projForm, setProjForm] = useState({ name: '', client: '', billed_revenue: '' });
 
   const [savingProject, setSavingProject] = useState(false);
@@ -442,7 +492,6 @@ export default function App() {
   const [projects, setProjects] = useState([]);
   const [teamLeads, setTeamLeads] = useState([]);
   const [logs, setLogs] = useState({});
-  const [auditLogs, setAuditLogs] = useState([]);
   // Custom confirm modal — replaces window.confirm() everywhere. Native browser
   // dialogs are unstyled, block the whole tab (including automated testing),
   // and give no way to signal "this one is more dangerous than that one."
@@ -473,15 +522,6 @@ export default function App() {
     setTimeout(() => setToast(null), 4000);
   };
 
-  const logAudit = (user, action) => {
-    const now = new Date();
-    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    setAuditLogs(prev => [
-      { id: Date.now(), user, action, time: timeStr },
-      ...prev
-    ]);
-  };
-
   // Sync local data changes to localStorage
   useEffect(() => {
     localStorage.setItem('civil_employees', JSON.stringify(employees));
@@ -498,10 +538,6 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('civil_logs', JSON.stringify(logs));
   }, [logs]);
-
-  useEffect(() => {
-    localStorage.setItem('civil_audit', JSON.stringify(auditLogs));
-  }, [auditLogs]);
 
   // Session Token Validation on Mount
   useEffect(() => {
@@ -565,7 +601,6 @@ export default function App() {
     try {
       await api.rules.add(cleanKey, keywordTarget);
       await loadRules();
-      logAudit('Admin', `Added "${cleanKey}" to ${keywordTarget}.`);
       showToast(`Added "${cleanKey}" to ${keywordTarget}.`, 'success');
       setNewKeyword('');
     } catch (err) {
@@ -579,7 +614,6 @@ export default function App() {
     try {
       await api.rules.remove(id);
       await loadRules();
-      logAudit('Admin', `Removed rule "${key}".`);
       showToast(`Removed rule: ${key}`, 'info');
     } catch (err) {
       showToast(err.message || 'Failed to remove rule.', 'error');
@@ -686,7 +720,6 @@ export default function App() {
           setLocalDaemonState(prev => ({
             ...prev,
             online: false,
-            isSimulated: false,
             status: 'offline',
             activeWindow: 'Daemon offline',
           }));
@@ -705,92 +738,6 @@ export default function App() {
       clearInterval(interval);
     };
   }, []);
-
-  // Automatic Cloud Demonstration & Telemetry Simulator Loop.
-  // DISABLED by default — real telemetry now flows daemon -> /api/ingest -> DB.
-  // Set VITE_DEMO_MODE=true only for sales demos with no live agents.
-  const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true';
-  useEffect(() => {
-    if (!DEMO_MODE) return;
-    if (localDaemonState.online && !localDaemonState.isSimulated) return;
-
-    const timer = setInterval(() => {
-      const names = ['Sarah Jenkins', 'John Doe', 'Alex Rivera', 'Emily Chen', 'Rohan Sharma', 'Neha Gupta'];
-      const randomName = names[Math.floor(Math.random() * names.length)];
-      
-      const apps = ['Autodesk Revit', 'AutoCAD 2026', 'Excel (Structural Calculation)', 'Chrome (Slack)', 'VS Code', 'YouTube (Focus Playlist)'];
-      const randomApp = apps[Math.floor(Math.random() * apps.length)];
-      
-      const isProd = productiveKeywords.some(k => randomApp.toLowerCase().includes(k)) || !unproductiveKeywords.some(k => randomApp.toLowerCase().includes(k));
-      const activityScore = isProd ? Math.floor(Math.random() * 25 + 75) : Math.floor(Math.random() * 25 + 15);
-      
-      const now = new Date();
-      const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      const dateStr = now.toISOString().split('T')[0];
-
-      // Update daemon simulation state
-      setLocalDaemonState(prev => ({
-        online: true,
-        isSimulated: true,
-        activeWindow: randomApp,
-        keystrokes: Math.floor(Math.random() * 50 + 10),
-        mouseMovements: Math.floor(Math.random() * 120 + 20),
-        status: activityScore > 50 ? 'active' : 'idle',
-        history: prev.history
-      }));
-
-      // Push ticker update
-      setTelemetryTicker(prev => [
-        { time: timeStr, event: `Simulated [${randomName}] active in ${randomApp} (Focus: ${activityScore}%)` },
-        ...prev.slice(0, 4)
-      ]);
-
-      // Append/Update logs dynamically to localStorage
-      setLogs(prev => {
-        const empLogs = prev[randomName] || [];
-        const updatedLogs = [...empLogs];
-        
-        if (updatedLogs.length > 0 && Math.random() > 0.4) {
-          updatedLogs[0] = {
-            ...updatedLogs[0],
-            activeApp: randomApp,
-            productivity: activityScore,
-            activityScore: activityScore,
-            task: `Updated: Working on ${randomApp}`
-          };
-        } else {
-          const newLogId = Date.now();
-          const targetEmp = employees.find(e => e.name === randomName);
-          updatedLogs.unshift({
-            id: newLogId,
-            project: targetEmp ? targetEmp.activeProject : 'Project Alpha',
-            hours: Math.floor(Math.random() * 8 + 1),
-            mins: Math.floor(Math.random() * 60),
-            task: `Running tasks in ${randomApp}`,
-            start: '09:00 AM',
-            end: '05:00 PM',
-            date: dateStr,
-            activityScore: activityScore,
-            isManual: false,
-            status: 'Approved',
-            activeApp: randomApp,
-            productivity: activityScore
-          });
-        }
-        
-        return {
-          ...prev,
-          [randomName]: updatedLogs.slice(0, 4)
-        };
-      });
-
-      if (Math.random() > 0.75) {
-        logAudit('Telemetry Simulator', `Polled active app for ${randomName}: ${randomApp}`);
-      }
-    }, 4000);
-    
-    return () => clearInterval(timer);
-  }, [localDaemonState.online]);
 
   // Map backend role (admin|lead|employee) to UI route (admin|tl|employee).
   const roleToRoute = (role) => (role === 'lead' ? 'tl' : role);
@@ -828,7 +775,6 @@ export default function App() {
       setCurrentRole(route);
       setLoginPassword('');
       showToast(`Logged in as ${user.name || user.email}.`, 'success');
-      logAudit('Authentication', `Logged in as ${user.role}`);
       if (route !== 'employee') loadServerData();
     } catch (err) {
       setLoginError(err.message || 'Authentication failed');
@@ -916,6 +862,7 @@ export default function App() {
       try { setTimeEntriesData(await api.timeEntries.list()); } catch { /* ignore */ }
       try { setServerTelemetryFeed(await api.telemetryFeed.list(50)); } catch { /* ignore */ }
       try { if (role === 'admin') setServerAuditLogs(await api.auditLogs.list()); } catch { /* ignore */ }
+      try { if (role === 'admin' || role === 'lead') setPersistedPending(await api.activation.pending()); } catch { /* ignore */ }
       try {
         if (role === 'admin') {
           setServerAnalytics({ overview: await api.analytics.overview(7), team: await api.analytics.team(7) });
@@ -964,7 +911,7 @@ export default function App() {
     }
     const email =
       empForm.email ||
-      `${empForm.name.toLowerCase().replace(/[^a-z0-9]+/g, '.')}@civilmantra.com`;
+      `${empForm.name.toLowerCase().replace(/[^a-z0-9]+/g, '.')}@chronotrack.app`;
     setSavingEmployee(true);
     try {
       if (isLead) {
@@ -990,7 +937,6 @@ export default function App() {
         userType: 'employee', name: '', email: '', password: '', role: '', dept: 'Civil Engineering',
         teamLeadId: '', activeProject: '', baseSalary: 50000, benefits: 10000, status: 'Active',
       });
-      logAudit('Admin', `Created ${isLead ? 'team lead' : 'employee'} ${empForm.name}`);
       showToast(`Added ${empForm.name} (${isLead ? 'Team Lead' : 'Employee'}).`, 'success');
     } catch (err) {
       showToast(err.message || 'Failed to create user.', 'error');
@@ -1021,7 +967,6 @@ export default function App() {
       await loadServerData();
       setShowEditForm(false);
       setSelectedEmp(null);
-      logAudit('Admin', `Modified employee account ${selectedEmp.id}`);
       showToast('Employee account updated successfully.', 'success');
     } catch (err) {
       showToast(err.message || 'Update failed.', 'error');
@@ -1038,7 +983,6 @@ export default function App() {
         try {
           await api.users.disable(id);
           await loadServerData();
-          logAudit('Admin', `Disabled employee ${target?.name}`);
           showToast('Employee disabled.', 'info');
         } catch (err) {
           showToast(err.message || 'Disable failed.', 'error');
@@ -1067,6 +1011,10 @@ export default function App() {
   const [provisionEmail, setProvisionEmail] = useState('');
   const [provisionName, setProvisionName] = useState('');
   const [pendingActivations, setPendingActivations] = useState([]);
+  // Server-persisted view of who has an outstanding code (survives a reload —
+  // the plaintext code itself is only ever known during the session it was
+  // generated in, since it's stored hashed at rest).
+  const [persistedPending, setPersistedPending] = useState([]);
 
   const generateActivationCode = async (e) => {
     e.preventDefault();
@@ -1094,7 +1042,6 @@ export default function App() {
       await loadServerData();
       setProvisionEmail('');
       setProvisionName('');
-      logAudit('Admin', `Generated activation code for ${provisionName}`);
       showToast(`Activation code (shown once): ${code}`, 'success');
     } catch (err) {
       showToast(err.message || 'Failed to generate code.', 'error');
@@ -1112,7 +1059,13 @@ export default function App() {
       showToast('Please fill in all contact fields.', 'error');
       return;
     }
-    showToast('Thank you! Our enterprise team will contact you shortly.', 'success');
+    // No email-sending backend exists yet — hand off to the visitor's own mail
+    // client with everything prefilled, rather than faking an in-app "sent"
+    // confirmation that never actually reached anyone.
+    const subject = `Enterprise inquiry from ${contactName}`;
+    const body = `${contactMsg}\n\n— ${contactName} (${contactEmail})`;
+    window.location.href = `mailto:sales@chronotrack.app?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    showToast('Opening your email client to send this inquiry…', 'success');
     setContactName('');
     setContactEmail('');
     setContactMsg('');
@@ -1132,6 +1085,41 @@ export default function App() {
     const t = setInterval(load, 60000);
     return () => { alive = false; clearInterval(t); };
   }, [desktopActivated]);
+
+  // Employee's own historical logged time entries (My Logged Time panel).
+  const [myTimeEntries, setMyTimeEntries] = useState([]);
+  const reloadMyTimeEntries = async () => {
+    try { setMyTimeEntries(await api.timeEntries.list()); } catch { /* not an employee token / offline */ }
+  };
+  useEffect(() => {
+    if (!desktopActivated || !api.getToken()) return;
+    reloadMyTimeEntries();
+  }, [desktopActivated]);
+
+  // Employee's own DPDP consent status (Privacy & Consent panel).
+  const [myConsent, setMyConsent] = useState(null);
+  const reloadMyConsent = async () => {
+    try { setMyConsent(await api.consent.status()); } catch { /* not an employee token / offline */ }
+  };
+  useEffect(() => {
+    if (!desktopActivated || !api.getToken()) return;
+    reloadMyConsent();
+  }, [desktopActivated]);
+  const handleWithdrawConsent = () => {
+    askConfirm(
+      'Withdraw consent for activity monitoring? This stops the desktop agent from collecting new telemetry immediately — your historical data is unaffected.',
+      async () => {
+        try {
+          await api.consent.withdraw();
+          await reloadMyConsent();
+          showToast('Consent withdrawn. Monitoring stopped.', 'info');
+        } catch (err) {
+          showToast(err.message || 'Failed to withdraw consent.', 'error');
+        }
+      },
+      { title: 'Withdraw consent', danger: true, confirmLabel: 'Withdraw consent' }
+    );
+  };
 
   // Auto-prompt the "what project?" validation every N active hours.
   useEffect(() => {
@@ -1184,7 +1172,6 @@ export default function App() {
       }
       localStorage.setItem('civil_desktop_activated', 'true');
       setDesktopActivated(true);
-      logAudit('Employee Desktop', 'Desktop Agent activated; telemetry sync started.');
       showToast('Activated! Telemetry now syncing to the cloud.', 'success');
     } catch (err) {
       showToast(err.message || 'Activation failed. Check email + code.', 'error');
@@ -1293,6 +1280,57 @@ export default function App() {
             </span>
           </div>
         </div>
+
+        {activeProj && (
+          <div className="p-6 rounded-xl bg-card border border-border space-y-4">
+            <div className="flex justify-between items-center flex-wrap gap-3">
+              <span className="text-xs font-semibold text-foreground uppercase tracking-wider block">
+                Assigned Employees — {activeProj.name}
+              </span>
+              <div className="flex items-center gap-2">
+                <select
+                  value={assignPickerId}
+                  onChange={(e) => setAssignPickerId(e.target.value)}
+                  className="bg-background border border-border rounded-xl px-3 py-1.5 text-xs text-foreground outline-none min-w-[180px]"
+                >
+                  <option value="">Select employee…</option>
+                  {employees
+                    .filter(emp => !projectAssignments.some(a => a.id === emp.id))
+                    .map(emp => (
+                      <option key={emp.id} value={emp.id}>{emp.name} ({emp.role})</option>
+                    ))}
+                </select>
+                <button
+                  type="button"
+                  disabled={!assignPickerId || assignBusy}
+                  onClick={() => handleAssignEmployee(activeProj.id)}
+                  className="px-4 py-1.5 bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-primary-foreground font-semibold text-[10px] uppercase tracking-widest rounded-xl transition-all flex items-center space-x-1.5 whitespace-nowrap"
+                >
+                  <Plus className="w-3.5 h-3.5" /><span>Assign</span>
+                </button>
+              </div>
+            </div>
+            {projectAssignments.length === 0 ? (
+              <p className="text-[11px] text-muted-foreground">No employees assigned to this project yet — an employee can be assigned to multiple projects across different team leads.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {projectAssignments.map(a => (
+                  <div key={a.id} className="px-3 py-1.5 rounded-xl bg-muted border border-border text-xs text-foreground/80 flex items-center space-x-2">
+                    <span className="font-semibold">{a.name}</span>
+                    <span className="text-[10px] text-muted-foreground uppercase">{a.title || ''}</span>
+                    <button
+                      onClick={() => handleUnassignEmployee(activeProj.id, a.id, a.name)}
+                      title="Unassign from project"
+                      className="text-muted-foreground hover:text-red-400 transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="p-6 rounded-xl bg-card border border-border space-y-4">
           <span className="text-xs font-semibold text-foreground uppercase tracking-wider block">Individual Financial Attribution Ledger</span>
@@ -1494,28 +1532,59 @@ export default function App() {
             <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <Shield className="w-5 h-5 text-primary" />
-                <span className="font-extrabold text-sm tracking-widest bg-gradient-to-r from-white via-zinc-200 to-zinc-400 bg-clip-text text-transparent uppercase">CIVIL MANTRA</span>
+                <span className="font-extrabold text-sm tracking-widest bg-gradient-to-r from-foreground via-foreground to-foreground/70 bg-clip-text text-transparent uppercase">CHRONOTRACK</span>
               </div>
               <nav className="hidden md:flex items-center space-x-8 text-xs font-bold uppercase tracking-wider text-muted-foreground">
                 <a href="#features" className="hover:text-foreground transition-colors">Features</a>
                 <a href="#about" className="hover:text-foreground transition-colors">Security</a>
                 <a href="#contact" className="hover:text-foreground transition-colors">Contact</a>
               </nav>
-              <div className="flex items-center space-x-4">
-                <button 
-                  onClick={() => setCurrentRole('login')} 
+              <div className="hidden md:flex items-center space-x-4">
+                <button
+                  onClick={() => setCurrentRole('login')}
                   className="px-4 py-2 bg-secondary hover:bg-muted text-foreground font-bold text-xs uppercase rounded-full border border-border transition-all duration-200"
                 >
                   Console Access
                 </button>
-                <button 
+                <button
                   onClick={() => window.open('https://github.com/harsh-pandhe/ChronoTrack/releases/latest', '_blank', 'noopener')}
                   className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-xs uppercase rounded-full transition-all duration-200 active:scale-[0.98]"
                 >
                   Download Agent
                 </button>
               </div>
+              <button
+                type="button"
+                onClick={() => setMobileNavOpen((v) => !v)}
+                className="md:hidden p-2 rounded-lg border border-border bg-secondary text-foreground"
+                aria-label="Toggle menu"
+              >
+                {mobileNavOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+              </button>
             </div>
+            {mobileNavOpen && (
+              <div className="md:hidden border-t border-border bg-background px-6 py-4 space-y-4 animate-fade-in">
+                <nav className="flex flex-col space-y-3 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  <a href="#features" onClick={() => setMobileNavOpen(false)} className="hover:text-foreground transition-colors">Features</a>
+                  <a href="#about" onClick={() => setMobileNavOpen(false)} className="hover:text-foreground transition-colors">Security</a>
+                  <a href="#contact" onClick={() => setMobileNavOpen(false)} className="hover:text-foreground transition-colors">Contact</a>
+                </nav>
+                <div className="flex flex-col space-y-3 pt-2">
+                  <button
+                    onClick={() => { setMobileNavOpen(false); setCurrentRole('login'); }}
+                    className="w-full px-4 py-2.5 bg-secondary hover:bg-muted text-foreground font-bold text-xs uppercase rounded-full border border-border transition-all duration-200"
+                  >
+                    Console Access
+                  </button>
+                  <button
+                    onClick={() => { setMobileNavOpen(false); window.open('https://github.com/harsh-pandhe/ChronoTrack/releases/latest', '_blank', 'noopener'); }}
+                    className="w-full px-4 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-xs uppercase rounded-full transition-all duration-200 active:scale-[0.98]"
+                  >
+                    Download Agent
+                  </button>
+                </div>
+              </div>
+            )}
           </header>
 
           {/* Hero Section */}
@@ -1594,7 +1663,7 @@ export default function App() {
             <div className="space-y-6">
               <h2 className="text-2xl font-semibold text-foreground uppercase tracking-wider">High Trust Telemetry</h2>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                Organizations must operate at scale without compromising privacy. Civil Mantra replaces legacy screen recorders with metadata-driven pipelines. By tracking active applications and input density counters, it provides clear workforce analytics while preserving absolute employee safety.
+                Organizations must operate at scale without compromising privacy. ChronoTrack replaces legacy screen recorders with metadata-driven pipelines. By tracking active applications and input density counters, it provides clear workforce analytics while preserving absolute employee safety.
               </p>
               <div className="space-y-3">
                 {[
@@ -1677,7 +1746,7 @@ export default function App() {
 
           {/* Footer */}
           <footer className="mt-auto border-t border-border bg-background py-8 text-center text-[10px] text-muted-foreground uppercase tracking-widest">
-            Civil Mantra Telemetry Systems License MIT.
+            ChronoTrack Telemetry Systems License MIT.
           </footer>
         </div>
       )}
@@ -1942,8 +2011,8 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Recharts Area / Bar Graphs */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Recharts Area / Bar / Pie Graphs */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
                   <div className="p-6 rounded-xl bg-card border border-border space-y-4">
                     <span className="text-xs font-semibold text-foreground uppercase tracking-wider">Daily Active Hours (last {serverAnalytics?.overview?.days || 7}d)</span>
                     <div className="h-64 w-full relative">
@@ -1960,10 +2029,10 @@ export default function App() {
                               <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
                             </linearGradient>
                           </defs>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-                          <XAxis dataKey="day" stroke="#4b5563" fontSize={10} />
-                          <YAxis stroke="#4b5563" fontSize={10} />
-                          <Tooltip contentStyle={{ backgroundColor: '#09090b', borderColor: '#1f2937', borderRadius: '12px', fontSize: '10px' }} />
+                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                          <XAxis dataKey="day" stroke="hsl(var(--muted-foreground))" fontSize={10} />
+                          <YAxis stroke="hsl(var(--muted-foreground))" fontSize={10} />
+                          <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--popover))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--popover-foreground))', borderRadius: '12px', fontSize: '10px' }} />
                           <Area type="monotone" dataKey="active_hours" stroke="#6366f1" fillOpacity={1} fill="url(#colorRev)" strokeWidth={2} name="Active Hours" />
                         </AreaChart>
                       </SizedChart>
@@ -1980,12 +2049,43 @@ export default function App() {
                       )}
                       <SizedChart>
                         <BarChart data={serverAnalytics?.overview?.categories || []}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-                          <XAxis dataKey="category" stroke="#4b5563" fontSize={9} interval={0} angle={-20} textAnchor="end" height={50} />
-                          <YAxis stroke="#4b5563" fontSize={10} />
-                          <Tooltip contentStyle={{ backgroundColor: '#09090b', borderColor: '#1f2937', borderRadius: '12px', fontSize: '10px' }} />
+                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                          <XAxis dataKey="category" stroke="hsl(var(--muted-foreground))" fontSize={9} interval={0} angle={-20} textAnchor="end" height={50} />
+                          <YAxis stroke="hsl(var(--muted-foreground))" fontSize={10} />
+                          <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--popover))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--popover-foreground))', borderRadius: '12px', fontSize: '10px' }} />
                           <Bar dataKey="samples" fill="#10b981" radius={[4, 4, 0, 0]} name="Samples" />
                         </BarChart>
+                      </SizedChart>
+                    </div>
+                  </div>
+
+                  <div className="p-6 rounded-xl bg-card border border-border space-y-4">
+                    <span className="text-xs font-semibold text-foreground uppercase tracking-wider">Category Share</span>
+                    <div className="h-64 w-full relative">
+                      {!serverAnalytics?.overview?.categories?.length && (
+                        <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground pointer-events-none">
+                          No activity data yet
+                        </div>
+                      )}
+                      <SizedChart>
+                        <PieChart>
+                          <Pie
+                            data={serverAnalytics?.overview?.categories || []}
+                            dataKey="samples"
+                            nameKey="category"
+                            cx="50%"
+                            cy="50%"
+                            innerRadius="45%"
+                            outerRadius="75%"
+                            paddingAngle={2}
+                          >
+                            {(serverAnalytics?.overview?.categories || []).map((_, i) => (
+                              <Cell key={i} fill={CATEGORY_COLORS[i % CATEGORY_COLORS.length]} stroke="hsl(var(--card))" strokeWidth={2} />
+                            ))}
+                          </Pie>
+                          <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--popover))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--popover-foreground))', borderRadius: '12px', fontSize: '10px' }} />
+                          <Legend wrapperStyle={{ fontSize: '9px' }} formatter={(v) => <span style={{ color: 'hsl(var(--muted-foreground))' }}>{v}</span>} />
+                        </PieChart>
                       </SizedChart>
                     </div>
                   </div>
@@ -2109,7 +2209,7 @@ export default function App() {
                           value={empForm.email}
                           onChange={(e) => setEmpForm({...empForm, email: e.target.value})}
                           className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground outline-none"
-                          placeholder="name@civilmantra.com"
+                          placeholder="name@chronotrack.app"
                         />
                       </div>
                       {empForm.userType === 'lead' && (
@@ -2408,7 +2508,7 @@ export default function App() {
                           value={provisionEmail} 
                           onChange={(e) => setProvisionEmail(e.target.value)} 
                           className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground outline-none"
-                          placeholder="john@civilmantra.com"
+                          placeholder="john@chronotrack.app"
                         />
                       </div>
                       <button type="submit" className="w-full py-3 bg-primary hover:bg-primary/95 text-primary-foreground font-semibold text-xs uppercase tracking-widest rounded-xl transition-all">
@@ -2435,18 +2535,18 @@ export default function App() {
                           </tr>
                         </thead>
                         <tbody className="text-xs text-foreground/80 divide-y divide-border font-mono">
-                          {pendingActivations.length === 0 && (
-                            <tr><td colSpan={4} className="p-4 text-center text-muted-foreground font-sans">No keys generated this session yet.</td></tr>
+                          {pendingActivations.length === 0 && persistedPending.length === 0 && (
+                            <tr><td colSpan={4} className="p-4 text-center text-muted-foreground font-sans">No pending activation keys.</td></tr>
                           )}
                           {pendingActivations.map((p, idx) => (
-                            <tr key={idx} className="hover:bg-muted/10">
+                            <tr key={`session-${idx}`} className="hover:bg-muted/10">
                               <td className="p-3 font-sans font-extrabold text-foreground">{p.name}</td>
                               <td className="p-3 text-[10px] text-muted-foreground">{p.email}</td>
                               <td className="p-3 text-primary font-bold">{p.code}</td>
                               <td className="p-3">
                                 <span className={`inline-flex px-2 py-0.5 rounded text-[8px] font-semibold uppercase tracking-wider ${
-                                  p.status === 'Active' 
-                                    ? 'bg-emerald-500/10 text-emerald-400' 
+                                  p.status === 'Active'
+                                    ? 'bg-emerald-500/10 text-emerald-400'
                                     : 'bg-amber-500/10 text-amber-400'
                                 }`}>
                                   {p.status}
@@ -2454,6 +2554,23 @@ export default function App() {
                               </td>
                             </tr>
                           ))}
+                          {/* Persisted (across-reload) view — codes generated in an earlier
+                              session are hashed at rest and can't be redisplayed, only
+                              confirmed as still outstanding. */}
+                          {persistedPending
+                            .filter(p => !pendingActivations.some(s => s.email?.toLowerCase() === p.email?.toLowerCase()))
+                            .map(p => (
+                              <tr key={`persisted-${p.user_id}`} className="hover:bg-muted/10">
+                                <td className="p-3 font-sans font-extrabold text-foreground">{p.name}</td>
+                                <td className="p-3 text-[10px] text-muted-foreground">{p.email}</td>
+                                <td className="p-3 text-muted-foreground text-[10px] italic">generated earlier — not recoverable</td>
+                                <td className="p-3">
+                                  <span className="inline-flex px-2 py-0.5 rounded text-[8px] font-semibold uppercase tracking-wider bg-amber-500/10 text-amber-400">
+                                    Pending
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
                         </tbody>
                       </table>
                     </div>
@@ -2653,10 +2770,10 @@ export default function App() {
                               <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
                             </linearGradient>
                           </defs>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-                          <XAxis dataKey="day" stroke="#4b5563" fontSize={10} />
-                          <YAxis stroke="#4b5563" fontSize={10} />
-                          <Tooltip contentStyle={{ backgroundColor: '#09090b', borderColor: '#1f2937', borderRadius: '12px', fontSize: '10px' }} />
+                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                          <XAxis dataKey="day" stroke="hsl(var(--muted-foreground))" fontSize={10} />
+                          <YAxis stroke="hsl(var(--muted-foreground))" fontSize={10} />
+                          <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--popover))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--popover-foreground))', borderRadius: '12px', fontSize: '10px' }} />
                           <Area type="monotone" dataKey="active_hours" stroke="#3b82f6" fillOpacity={1} fill="url(#tlRev)" strokeWidth={2} name="Active Hours" />
                         </AreaChart>
                       </SizedChart>
@@ -2672,10 +2789,10 @@ export default function App() {
                       )}
                       <SizedChart>
                         <BarChart data={(serverAnalytics?.team?.members || []).map(m => ({ name: m.name.split(' ')[0], active_pct: m.active_pct }))}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-                          <XAxis dataKey="name" stroke="#4b5563" fontSize={9} interval={0} angle={-20} textAnchor="end" height={50} />
-                          <YAxis stroke="#4b5563" fontSize={10} domain={[0, 100]} />
-                          <Tooltip contentStyle={{ backgroundColor: '#09090b', borderColor: '#1f2937', borderRadius: '12px', fontSize: '10px' }} />
+                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                          <XAxis dataKey="name" stroke="hsl(var(--muted-foreground))" fontSize={9} interval={0} angle={-20} textAnchor="end" height={50} />
+                          <YAxis stroke="hsl(var(--muted-foreground))" fontSize={10} domain={[0, 100]} />
+                          <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--popover))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--popover-foreground))', borderRadius: '12px', fontSize: '10px' }} />
                           <Bar dataKey="active_pct" fill="#10b981" radius={[4, 4, 0, 0]} name="Active %" />
                         </BarChart>
                       </SizedChart>
@@ -2862,7 +2979,6 @@ export default function App() {
                         });
                         const { code } = await api.activation.generate(created.id);
                         await loadServerData();
-                        logAudit('Team Lead', `Created employee ${newEmpName}. Activation key issued.`);
                         showToast(`Registered! Activation key (shown once): ${code}`, 'success');
                         setNewEmpName('');
                         setNewEmpEmail('');
@@ -2888,7 +3004,7 @@ export default function App() {
                           required
                           value={newEmpEmail}
                           onChange={(e) => setNewEmpEmail(e.target.value)}
-                          placeholder="e.g. rajesh@civilmantra.com"
+                          placeholder="e.g. rajesh@chronotrack.app"
                           className="w-full bg-background border border-border rounded-xl px-4 py-2 text-xs text-foreground outline-none"
                         />
                       </div>
@@ -2963,7 +3079,6 @@ export default function App() {
                           billed_revenue: parseFloat(newProjBudget) || 0,
                         });
                         await loadServerData();
-                        logAudit('Team Lead', `Created project ${newProjName} (Budget: Rs. ${newProjBudget})`);
                         showToast('Project Contract Registered!', 'success');
                         setNewProjName('');
                       } catch (err) {
@@ -3028,7 +3143,7 @@ export default function App() {
                 <header className="px-6 h-16 border-b border-border bg-card flex items-center justify-between">
                   <div className="flex items-center space-x-3">
                     <Laptop className="w-5 h-5 text-primary" />
-                    <span className="font-extrabold text-xs text-foreground uppercase tracking-wider">CivilMantra Web Portal</span>
+                    <span className="font-extrabold text-xs text-foreground uppercase tracking-wider">ChronoTrack Web Portal</span>
                   </div>
                   <button onClick={handleLogout} className="px-3 py-1 bg-muted hover:bg-muted border border-border text-muted-foreground hover:text-foreground rounded-lg text-[9px] font-semibold uppercase tracking-wider transition-all">
                     Sign Out
@@ -3060,9 +3175,9 @@ export default function App() {
                   {/* Downloader Section */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     {[
-                      { os: 'Windows Agent', ext: 'exe', size: '96 MB', icon: Laptop, desc: 'NSIS installer with the bundled telemetry daemon — no Python needed.', file: 'https://github.com/harsh-pandhe/ChronoTrack/releases/latest/download/CivilMantraAgent.Setup.3.0.0.exe' },
+                      { os: 'Windows Agent', ext: 'exe', size: '96 MB', icon: Laptop, desc: 'NSIS installer with the bundled telemetry daemon — no Python needed.', file: 'https://github.com/harsh-pandhe/ChronoTrack/releases/latest/download/ChronoTrackAgent.Setup.3.0.0.exe' },
                       { os: 'macOS Agent', ext: 'Client.dmg', size: '52 MB', icon: Globe, desc: 'Includes Apple Silicon and Intel universal bundle configurations.', file: null },
-                      { os: 'Linux (AppImage)', ext: 'AppImage', size: '132 MB', icon: HardDrive, desc: 'Self-contained portable executable. chmod +x and run — no install needed.', file: 'https://github.com/harsh-pandhe/ChronoTrack/releases/latest/download/CivilMantraAgent-3.0.0.AppImage' },
+                      { os: 'Linux (AppImage)', ext: 'AppImage', size: '132 MB', icon: HardDrive, desc: 'Self-contained portable executable. chmod +x and run — no install needed.', file: 'https://github.com/harsh-pandhe/ChronoTrack/releases/latest/download/ChronoTrackAgent-3.0.0.AppImage' },
                       { os: 'Linux (.deb)', ext: 'deb', size: '94 MB', icon: HardDrive, desc: 'Debian/Ubuntu package. Installs to your app menu like any native app.', file: 'https://github.com/harsh-pandhe/ChronoTrack/releases/latest/download/chronotrack_3.0.0_amd64.deb' }
                     ].map(dl => (
                       <div key={dl.os} className="p-6 rounded-xl bg-card border border-border hover:border-border transition-all flex flex-col justify-between h-56">
@@ -3082,7 +3197,7 @@ export default function App() {
                             }
                             // Navigate to the GitHub Release asset (served as attachment).
                             window.open(dl.file, '_blank', 'noopener');
-                            showToast(`Downloading CivilMantra ${dl.os}…`, 'success');
+                            showToast(`Downloading ChronoTrack ${dl.os}…`, 'success');
                           }}
                           className="w-full py-2.5 bg-muted border border-border hover:bg-muted hover:text-foreground text-foreground/80 text-[10px] font-semibold uppercase tracking-wider rounded-xl transition-all flex items-center justify-center space-x-2"
                         >
@@ -3108,14 +3223,14 @@ export default function App() {
                   <div className="flex items-center space-x-3">
                     <Laptop className="w-5 h-5 text-primary" />
                     <div className="flex flex-col">
-                      <span className="font-extrabold text-xs text-foreground uppercase tracking-wider">CivilMantra Desktop Agent</span>
+                      <span className="font-extrabold text-xs text-foreground uppercase tracking-wider">ChronoTrack Desktop Agent</span>
                       <span className="text-[8px] text-muted-foreground font-bold uppercase tracking-widest">Version 1.0.0</span>
                     </div>
                   </div>
                   <div className="flex items-center space-x-3">
-                    <span className={`w-2 h-2 rounded-full ${localDaemonState.online ? (localDaemonState.isSimulated ? 'bg-indigo-500 animate-pulse' : 'bg-emerald-500') : 'bg-red-500 animate-pulse'}`}></span>
+                    <span className={`w-2 h-2 rounded-full ${localDaemonState.online ? 'bg-emerald-500' : 'bg-red-500 animate-pulse'}`}></span>
                     <span className="text-[10px] uppercase font-bold text-muted-foreground">
-                      {localDaemonState.isSimulated ? 'Cloud Simulation Active' : localDaemonState.online ? 'Daemon Active (Port 5050)' : 'Daemon Offline'}
+                      {localDaemonState.online ? 'Daemon Active (Port 5050)' : 'Daemon Offline'}
                     </span>
                     <button
                       onClick={handleExitAgent}
@@ -3176,7 +3291,7 @@ export default function App() {
                       required
                       value={activationEmailInput}
                       onChange={(e) => setActivationEmailInput(e.target.value)}
-                      placeholder="you@civilmantra.com"
+                      placeholder="you@chronotrack.app"
                       className="w-full bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-foreground placeholder:text-muted-foreground outline-none"
                     />
                   </div>
@@ -3255,10 +3370,10 @@ export default function App() {
                           <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
                         </linearGradient>
                       </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-                      <XAxis dataKey="day" stroke="#4b5563" fontSize={10} />
-                      <YAxis stroke="#4b5563" fontSize={10} />
-                      <Tooltip contentStyle={{ backgroundColor: '#09090b', borderColor: '#1f2937', borderRadius: '12px', fontSize: '10px' }} />
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                      <XAxis dataKey="day" stroke="hsl(var(--muted-foreground))" fontSize={10} />
+                      <YAxis stroke="hsl(var(--muted-foreground))" fontSize={10} />
+                      <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--popover))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--popover-foreground))', borderRadius: '12px', fontSize: '10px' }} />
                       <Area type="monotone" dataKey="active_hours" stroke="#10b981" fillOpacity={1} fill="url(#selfRev)" strokeWidth={2} name="Active Hours" />
                     </AreaChart>
                   </SizedChart>
@@ -3312,6 +3427,7 @@ export default function App() {
                     showToast={showToast}
                     onLogged={async () => {
                       try { setSelfAnalytics(await api.analytics.employee(null, 7)); } catch { /* non-fatal */ }
+                      reloadMyTimeEntries();
                     }}
                   />
 
@@ -3353,6 +3469,70 @@ export default function App() {
                         </div>
                       )}
                     </div>
+                  </div>
+
+                  {/* My Logged Time — historical entries, not just today's blocks. */}
+                  <div className="p-6 rounded-xl bg-card border border-border space-y-4">
+                    <span className="text-xs font-semibold text-foreground uppercase tracking-wider flex items-center space-x-2">
+                      <History className="w-4 h-4 text-indigo-400" />
+                      <span>My Logged Time</span>
+                    </span>
+                    {myTimeEntries.length === 0 ? (
+                      <p className="text-[10px] text-muted-foreground">No logged time entries yet.</p>
+                    ) : (
+                      <div className="border border-border rounded-2xl overflow-hidden max-h-64 overflow-y-auto">
+                        <table className="w-full text-left border-collapse">
+                          <thead className="sticky top-0 bg-card">
+                            <tr className="border-b border-border bg-muted/30 text-[9px] uppercase font-semibold tracking-wider text-muted-foreground">
+                              <th className="p-2.5">Date</th>
+                              <th className="p-2.5">Project</th>
+                              <th className="p-2.5">Hours</th>
+                              <th className="p-2.5">Note</th>
+                            </tr>
+                          </thead>
+                          <tbody className="text-[10px] text-foreground/80 divide-y divide-border">
+                            {myTimeEntries.slice(0, 50).map(e => (
+                              <tr key={e.id}>
+                                <td className="p-2.5 whitespace-nowrap">{new Date(e.start_ts).toLocaleDateString()}</td>
+                                <td className="p-2.5">{projects.find(p => p.id === e.project_id)?.name || 'Unassigned'}</td>
+                                <td className="p-2.5 font-semibold">{Number(e.hours).toFixed(1)}</td>
+                                <td className="p-2.5 text-muted-foreground truncate max-w-[140px]">{e.note || ''}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Privacy & Consent — review status, withdraw at any time (DPDP). */}
+                  <div className="p-6 rounded-xl bg-card border border-border space-y-4">
+                    <span className="text-xs font-semibold text-foreground uppercase tracking-wider flex items-center space-x-2">
+                      <ShieldOff className="w-4 h-4 text-indigo-400" />
+                      <span>Privacy & Consent</span>
+                    </span>
+                    {!myConsent ? (
+                      <p className="text-[10px] text-muted-foreground">No consent record found yet.</p>
+                    ) : myConsent.withdrawn_at ? (
+                      <div className="p-3 bg-red-950/30 border border-red-900/50 rounded-xl space-y-1">
+                        <span className="text-[10px] font-bold text-red-400">Consent withdrawn</span>
+                        <p className="text-[10px] text-red-300/80">Monitoring stopped on {new Date(myConsent.withdrawn_at).toLocaleString()}.</p>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="p-3 bg-emerald-950/20 border border-emerald-900/40 rounded-xl space-y-1">
+                          <span className="text-[10px] font-bold text-emerald-400">Consent granted (v{myConsent.consent_version})</span>
+                          <p className="text-[10px] text-muted-foreground">Since {new Date(myConsent.granted_at).toLocaleString()}. Only activity counts and window titles are recorded — never keystroke content or screen content.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleWithdrawConsent}
+                          className="w-full py-2 bg-muted border border-red-500/20 text-red-400 hover:bg-red-500/10 text-[10px] font-semibold uppercase tracking-wider rounded-xl transition-all"
+                        >
+                          Withdraw Consent
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
 

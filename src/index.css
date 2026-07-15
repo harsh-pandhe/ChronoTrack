@@ -57,54 +57,65 @@
 
   body {
     margin: 0;
-    font-family: 'Inter', 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
     overflow-x: hidden;
   }
+
+  /* Outfit was loaded but never actually used distinctly from Inter — give it
+     a real role as the heading face (a common, deliberate Inter/Outfit pairing)
+     instead of sitting as an unused font-family fallback. */
+  h1, h2, h3, h4 {
+    font-family: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
 }
 
-/* Custom Scrollbar */
+/* Custom Scrollbar — theme-token-driven so it inverts correctly in light/dark. */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #0b0f19;
+  background: hsl(var(--muted));
 }
 ::-webkit-scrollbar-thumb {
-  background: #1f2937;
+  background: hsl(var(--border));
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #374151;
+  background: hsl(var(--muted-foreground) / 0.5);
 }
 
-/* Radial Grid Overlay (Aceternity style) */
+/* Radial Grid Overlay (Aceternity style). Was hardcoded to white overlays —
+   invisible on the light-first background; now derives from --foreground so
+   it's faintly visible against either theme. */
 .bg-grid-pattern {
   background-size: 40px 40px;
-  background-image: 
-    linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-image:
+    linear-gradient(to right, hsl(var(--foreground) / 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, hsl(var(--foreground) / 0.04) 1px, transparent 1px);
 }
 
 .bg-dot-pattern {
   background-size: 20px 20px;
-  background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-image: radial-gradient(hsl(var(--foreground) / 0.08) 1px, transparent 1px);
 }
 
-/* Subtle border hover glow */
+/* Subtle border hover glow — tied to the theme's primary accent. */
 .hover-glow-card {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
 }
 .hover-glow-card:hover {
-  border-color: rgba(99, 102, 241, 0.4);
-  box-shadow: 0 0 25px rgba(99, 102, 241, 0.15);
+  border-color: hsl(var(--primary) / 0.4);
+  box-shadow: 0 0 25px hsl(var(--primary) / 0.15);
   transform: translateY(-2px);
 }
 
-/* Animated border trail effect */
+/* Animated border trail effect — anchored on the theme primary so it stays
+   coherent if the palette ever changes, with two fixed accent stops for
+   visual movement (a pure single-hue gradient reads flat). */
 @keyframes border-glow {
   0% { background-position: 0% 50%; }
   50% { background-position: 100% 50%; }
@@ -113,7 +124,7 @@
 
 .border-trail {
   position: relative;
-  background: linear-gradient(90deg, #6366f1, #a855f7, #3b82f6, #6366f1);
+  background: linear-gradient(90deg, hsl(var(--primary)), #a855f7, #3b82f6, hsl(var(--primary)));
   background-size: 300% 300%;
   animation: border-glow 8s ease infinite;
 }

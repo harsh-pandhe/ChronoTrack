@@ -131,6 +131,11 @@ export const activation = {
   verify(payload) {
     return request('POST', '/api/activation?action=verify', payload);
   },
+  // Who has an outstanding, unexpired code right now — survives a page reload
+  // (the code itself can't be recovered, only shown once at generate time).
+  pending() {
+    return request('GET', '/api/activation?action=pending').then((d) => d.pending);
+  },
 };
 
 // --- Time entries (ROI attribution) --------------------------------------
