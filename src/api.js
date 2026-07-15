@@ -136,6 +136,11 @@ export const activation = {
   pending() {
     return request('GET', '/api/activation?action=pending').then((d) => d.pending);
   },
+  // Invalidate an outstanding code before it's used (e.g. generated for the
+  // wrong employee, or onboarding was cancelled).
+  revoke(userId) {
+    return request('DELETE', `/api/activation?action=revoke&user_id=${userId}`);
+  },
 };
 
 // --- Time entries (ROI attribution) --------------------------------------

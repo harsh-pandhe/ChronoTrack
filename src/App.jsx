@@ -29,6 +29,9 @@ import {
   Menu,
   ShieldOff,
   History,
+  Mail,
+  Phone,
+  Briefcase,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -81,6 +84,18 @@ function SizedChart({ children }) {
 // Fixed categorical color order for pie/donut charts (never cycled/rank-based) —
 // matches the app's existing accent set used elsewhere for status/identity.
 const CATEGORY_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#3b82f6', '#a855f7', '#ef4444', '#14b8a6', '#84cc16'];
+
+// Plain checkbox-driven toggle switch — avoids pulling in @radix-ui/react-switch
+// as a new dependency (this environment can't regenerate package-lock.json).
+function ToggleSwitch({ checked, onChange, title }) {
+  return (
+    <label className="relative inline-flex items-center cursor-pointer" title={title}>
+      <input type="checkbox" className="peer sr-only" checked={checked} onChange={onChange} />
+      <div className="w-9 h-5 bg-muted border border-border rounded-full peer-checked:bg-emerald-500 peer-checked:border-emerald-500 transition-colors" />
+      <span className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform peer-checked:translate-x-4" />
+    </label>
+  );
+}
 
 // Visual timeline allocation: shows the day's real tracked active blocks and lets
 // the employee assign each block to one of their projects. Hours are grounded in
@@ -285,8 +300,12 @@ export default function App() {
     return saved || 'landing';
   });
 
-  const [activeAdminTab, setActiveAdminTab] = useState('overview'); // 'overview' | 'users' | 'contribution' | 'provision' | 'rules' | 'audit'
-  const [activeTlTab, setActiveTlTab] = useState('overview'); // 'overview' | 'contribution' | 'members' | 'manage'
+  // Persist the active tab across a reload — losing your place every refresh
+  // (always bouncing back to Dashboard) was a real, reported annoyance.
+  const [activeAdminTab, setActiveAdminTabState] = useState(() => localStorage.getItem('ct_admin_tab') || 'overview'); // 'overview' | 'users' | 'contribution' | 'provision' | 'rules' | 'audit'
+  const setActiveAdminTab = (tab) => { setActiveAdminTabState(tab); localStorage.setItem('ct_admin_tab', tab); };
+  const [activeTlTab, setActiveTlTabState] = useState(() => localStorage.getItem('ct_tl_tab') || 'overview'); // 'overview' | 'contribution' | 'members' | 'manage'
+  const setActiveTlTab = (tab) => { setActiveTlTabState(tab); localStorage.setItem('ct_tl_tab', tab); };
   
   // Custom Analytics & Team Lead State Variables
   const [selectedAttributionProject, setSelectedAttributionProject] = useState('Project Alpha');
@@ -322,6 +341,38 @@ export default function App() {
   const [serverTelemetryFeed, setServerTelemetryFeed] = useState([]);
   // Employee's OWN analytics (transparency self-view in the desktop agent).
   const [selfAnalytics, setSelfAnalytics] = useState(null);
+
+  // Project detail drill-down — who's assigned, per-day work breakdown, per-
+  // employee totals. Built from time_entries already loaded (admin: all, lead:
+  // own team) plus one fetch for the assignment roster.
+  const [viewingProject, setViewingProject] = useState(null);
+  const [viewingProjectAssignments, setViewingProjectAssignments] = useState([]);
+  const openProjectDetail = async (project) => {
+    setViewingProject(project);
+    setViewingProjectAssignments([]);
+    try {
+      setViewingProjectAssignments(await api.projects.assignments(project.id));
+    } catch { /* non-fatal — assignment roster just stays empty */ }
+  };
+
+  // User detail drill-down (admin: any user; lead: their own team; click a row
+  // in User Directory / Manage Team to open). Backend RBAC already scopes
+  // api.analytics.employee() correctly — self/own-team/admin-any.
+  const [viewingUser, setViewingUser] = useState(null);
+  const [viewingUserAnalytics, setViewingUserAnalytics] = useState(null);
+  const [viewingUserBusy, setViewingUserBusy] = useState(false);
+  const openUserDetail = async (user) => {
+    setViewingUser(user);
+    setViewingUserAnalytics(null);
+    setViewingUserBusy(true);
+    try {
+      setViewingUserAnalytics(await api.analytics.employee(user.id, 30));
+    } catch (err) {
+      showToast(err.message || 'Failed to load user analytics.', 'error');
+    } finally {
+      setViewingUserBusy(false);
+    }
+  };
   // Profile / change-password modal.
   const [showProfile, setShowProfile] = useState(false);
   const [profileName, setProfileName] = useState('');
@@ -352,7 +403,7 @@ export default function App() {
   // Directory search + add-team-lead form (admin).
   const [dirSearch, setDirSearch] = useState('');
   const [showAddLead, setShowAddLead] = useState(false);
-  const [leadForm, setLeadForm] = useState({ name: '', email: '', dept: '', password: '' });
+  const [leadForm, setLeadForm] = useState({ name: '', email: '', phone: '', dept: '', password: '' });
 
   const handleAddLead = async (e) => {
     if (e) e.preventDefault();
@@ -360,10 +411,10 @@ export default function App() {
       showToast('Name, email, and 8+ char password required.', 'error'); return;
     }
     try {
-      await api.users.create({ name: leadForm.name, email: leadForm.email, role: 'lead',
-        dept: leadForm.dept, password: leadForm.password });
+      await api.users.create({ name: leadForm.name, email: leadForm.email, phone: leadForm.phone || null,
+        role: 'lead', dept: leadForm.dept, password: leadForm.password });
       await loadServerData();
-      setShowAddLead(false); setLeadForm({ name: '', email: '', dept: '', password: '' });
+      setShowAddLead(false); setLeadForm({ name: '', email: '', phone: '', dept: '', password: '' });
       showToast(`Team lead ${leadForm.name} created.`, 'success');
     } catch (err) { showToast(err.message || 'Failed to create team lead.', 'error'); }
   };
@@ -384,14 +435,27 @@ export default function App() {
     });
   };
 
-  const disableUser = (id, name) => {
+  // Toggle switch: instant soft enable/disable — reversible, so no confirm
+  // dialog friction (unlike the permanent delete below).
+  const toggleLeadStatus = async (lead) => {
+    const activate = lead.status !== 'Active';
+    try {
+      await api.users.update(lead.id, { status: activate ? 'active' : 'disabled' });
+      await loadServerData();
+      showToast(`${lead.name} ${activate ? 'enabled' : 'disabled'}.`, 'info');
+    } catch (err) {
+      showToast(err.message || 'Failed to update status.', 'error');
+    }
+  };
+
+  const handleDeleteLead = (id, name) => {
     askConfirm(
-      `Disable ${name}? Their account is deactivated but historical data is preserved; you can re-enable it later.`,
+      `Permanently delete ${name} and all their data? This cannot be undone. Employees reporting to them will be unassigned, not deleted.`,
       async () => {
-        try { await api.users.disable(id); await loadServerData(); showToast(`${name} disabled.`, 'info'); }
-        catch (err) { showToast(err.message || 'Disable failed.', 'error'); }
+        try { await api.users.remove(id); await loadServerData(); showToast(`${name} deleted.`, 'info'); }
+        catch (err) { showToast(err.message || 'Delete failed.', 'error'); }
       },
-      { title: 'Disable team lead', danger: true, confirmLabel: 'Disable' }
+      { title: 'Delete team lead', danger: true, confirmLabel: 'Delete permanently', requireTypedWord: 'DELETE' }
     );
   };
 
@@ -834,6 +898,7 @@ export default function App() {
           telemetryScore: 0,
           email: u.email,
           canManage: u.can_manage_employees,
+          status: u.status === 'active' ? 'Active' : u.status === 'disabled' ? 'Archived' : 'Inactive',
         }));
 
       const emps = srvUsers
@@ -842,6 +907,7 @@ export default function App() {
           id: u.id,
           name: u.name,
           email: u.email,
+          phone: u.phone || '',
           role: u.title || 'Employee',
           dept: u.dept || '—',
           teamLeadId: u.team_lead_id,
@@ -891,6 +957,7 @@ export default function App() {
     userType: 'employee', // 'employee' | 'lead'
     name: '',
     email: '',
+    phone: '',
     password: '',
     role: '',
     dept: 'Civil Engineering',
@@ -917,13 +984,13 @@ export default function App() {
     try {
       if (isLead) {
         await api.users.create({
-          name: empForm.name, email, role: 'lead',
+          name: empForm.name, email, phone: empForm.phone || null, role: 'lead',
           password: empForm.password, dept: empForm.dept,
           can_manage_employees: true,
         });
       } else {
         await api.users.create({
-          name: empForm.name, email, role: 'employee',
+          name: empForm.name, email, phone: empForm.phone || null, role: 'employee',
           title: empForm.role, dept: empForm.dept,
           team_lead_id: empForm.teamLeadId || (teamLeads[0] && teamLeads[0].id) || null,
           active_project_id: empForm.activeProject || null,
@@ -957,6 +1024,7 @@ export default function App() {
     try {
       await api.users.update(selectedEmp.id, {
         name: empForm.name,
+        phone: empForm.phone || null,
         title: empForm.role,
         dept: empForm.dept,
         team_lead_id: empForm.teamLeadId || null,
@@ -976,20 +1044,33 @@ export default function App() {
     }
   };
 
+  // Toggle switch: instant soft enable/disable — reversible, so no confirm
+  // dialog friction (unlike the permanent delete below).
+  const toggleEmployeeStatus = async (user) => {
+    const activate = user.status !== 'Active';
+    try {
+      await api.users.update(user.id, { status: activate ? 'active' : 'disabled' });
+      await loadServerData();
+      showToast(`${user.name} ${activate ? 'enabled' : 'disabled'}.`, 'info');
+    } catch (err) {
+      showToast(err.message || 'Failed to update status.', 'error');
+    }
+  };
+
   const handleDeleteEmployee = (id) => {
     const target = employees.find((e) => e.id === id);
     askConfirm(
-      `Disable ${target?.name || 'this employee'}? Their account is deactivated but historical data is preserved; you can re-enable it later.`,
+      `Permanently delete ${target?.name || 'this employee'} and all their data (telemetry, time entries, devices)? This cannot be undone.`,
       async () => {
         try {
-          await api.users.disable(id);
+          await api.users.remove(id);
           await loadServerData();
-          showToast('Employee disabled.', 'info');
+          showToast('Employee deleted.', 'info');
         } catch (err) {
-          showToast(err.message || 'Disable failed.', 'error');
+          showToast(err.message || 'Delete failed.', 'error');
         }
       },
-      { title: 'Disable employee', danger: true, confirmLabel: 'Disable' }
+      { title: 'Delete employee', danger: true, confirmLabel: 'Delete permanently', requireTypedWord: 'DELETE' }
     );
   };
 
@@ -997,6 +1078,7 @@ export default function App() {
     setSelectedEmp(emp);
     setEmpForm({
       name: emp.name,
+      phone: emp.phone || '',
       role: emp.role,
       dept: emp.dept,
       teamLeadId: emp.teamLeadId,
@@ -1009,8 +1091,11 @@ export default function App() {
   };
 
   // Manager Provisioning Activation Codes
-  const [provisionEmail, setProvisionEmail] = useState('');
-  const [provisionName, setProvisionName] = useState('');
+  // Provisioning picks an EXISTING employee (created via User Directory)
+  // rather than typing a name+email here — that free-text path was the
+  // source of the 409 "email already exists" conflicts when the typed email
+  // collided with a real account.
+  const [provisionUserId, setProvisionUserId] = useState('');
   const [pendingActivations, setPendingActivations] = useState([]);
   // Server-persisted view of who has an outstanding code (survives a reload —
   // the plaintext code itself is only ever known during the session it was
@@ -1019,33 +1104,33 @@ export default function App() {
 
   const generateActivationCode = async (e) => {
     e.preventDefault();
-    if (!provisionEmail || !provisionName) {
-      showToast('Please fill name and corporate email.', 'error');
+    if (!provisionUserId) {
+      showToast('Select an employee first.', 'error');
       return;
     }
+    const emp = employees.find((u) => u.id === provisionUserId);
+    if (!emp) { showToast('Employee not found — refresh and try again.', 'error'); return; }
     try {
-      // Ensure the employee account exists, then mint a real 8-digit code for it.
-      let emp = employees.find((u) => u.email && u.email.toLowerCase() === provisionEmail.toLowerCase());
-      if (!emp) {
-        const created = await api.users.create({
-          name: provisionName,
-          email: provisionEmail,
-          role: 'employee',
-          team_lead_id: teamLeads[0] ? teamLeads[0].id : null,
-        });
-        emp = { id: created.id };
-      }
       const { code, expires_at } = await api.activation.generate(emp.id);
       setPendingActivations([
-        { name: provisionName, email: provisionEmail, code, status: 'Pending', expires_at },
+        { user_id: emp.id, name: emp.name, email: emp.email, code, status: 'Pending', expires_at },
         ...pendingActivations,
       ]);
       await loadServerData();
-      setProvisionEmail('');
-      setProvisionName('');
+      setProvisionUserId('');
       showToast(`Activation code (shown once): ${code}`, 'success');
     } catch (err) {
       showToast(err.message || 'Failed to generate code.', 'error');
+    }
+  };
+  const handleRevokePendingCode = async (userId, name) => {
+    try {
+      await api.activation.revoke(userId);
+      setPersistedPending((prev) => prev.filter((p) => p.user_id !== userId));
+      setPendingActivations((prev) => prev.filter((p) => p.user_id !== userId));
+      showToast(`Revoked pending code for ${name || 'employee'}.`, 'info');
+    } catch (err) {
+      showToast(err.message || 'Failed to revoke code.', 'error');
     }
   };
 
@@ -1231,6 +1316,15 @@ export default function App() {
             </button>
             {activeProj && (
               <button
+                onClick={() => openProjectDetail(activeProj)}
+                title="View project details"
+                className="p-2 rounded-xl border border-border bg-muted hover:text-foreground transition-colors"
+              >
+                <Info className="w-4 h-4" />
+              </button>
+            )}
+            {activeProj && (
+              <button
                 onClick={() => {
                   askConfirm(
                     `Archive project "${activeProj.name}"? It will no longer accept new logged hours.`,
@@ -1393,7 +1487,7 @@ export default function App() {
       
       {/* TOAST SYSTEM */}
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 animate-slide-in-bottom">
+        <div className="fixed bottom-6 right-6 z-[100] animate-slide-in-bottom">
           <div className={`px-5 py-3 rounded-xl border flex items-center space-x-3 shadow-2xl backdrop-blur-md ${
             toast.type === 'success' 
               ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
@@ -1406,6 +1500,249 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* USER DETAIL DIALOG — click any user (admin: any user; lead: their own
+          team; employee: self) to see their full work history, timeline,
+          apps recorded, idle time, and assigned projects. */}
+      <Dialog open={!!viewingUser} onOpenChange={(open) => { if (!open) { setViewingUser(null); setViewingUserAnalytics(null); } }}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          {viewingUser && (() => {
+            const a = viewingUserAnalytics;
+            const myEntries = timeEntriesData.filter(e => e.user_id === viewingUser.id);
+            const assignedProjectIds = new Set(myEntries.map(e => e.project_id).filter(Boolean));
+            if (viewingUser.activeProject) assignedProjectIds.add(viewingUser.activeProject);
+            const assignedProjects = projects.filter(p => assignedProjectIds.has(p.id));
+            const idlePct = a ? Math.max(0, 100 - a.rollup.active_pct) : 0;
+            return (
+              <>
+                <DialogHeader>
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0 font-bold text-lg">
+                      {viewingUser.name?.[0]?.toUpperCase() || '?'}
+                    </div>
+                    <div>
+                      <DialogTitle className="text-sm text-foreground">{viewingUser.name}</DialogTitle>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">
+                        {viewingUser.role || 'Team Lead'} {viewingUser.dept ? `· ${viewingUser.dept}` : ''} · {viewingUser.email}
+                        {viewingUser.phone ? ` · ${viewingUser.phone}` : ''}
+                      </p>
+                    </div>
+                  </div>
+                </DialogHeader>
+
+                {viewingUserBusy && <p className="text-xs text-muted-foreground py-8 text-center">Loading…</p>}
+
+                {a && (
+                  <div className="space-y-6 pt-2">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <div className="p-3 rounded-xl bg-muted/50 border border-border">
+                        <span className="text-[9px] uppercase font-semibold text-muted-foreground block">Active Hours (30d)</span>
+                        <span className="text-lg font-semibold text-primary">{a.rollup.active_hours}</span>
+                      </div>
+                      <div className="p-3 rounded-xl bg-muted/50 border border-border">
+                        <span className="text-[9px] uppercase font-semibold text-muted-foreground block">Idle %</span>
+                        <span className="text-lg font-semibold text-foreground">{idlePct}%</span>
+                      </div>
+                      <div className="p-3 rounded-xl bg-muted/50 border border-border">
+                        <span className="text-[9px] uppercase font-semibold text-muted-foreground block">Anomalies</span>
+                        <span className="text-lg font-semibold text-amber-400">{a.rollup.anomalies}</span>
+                      </div>
+                      <div className="p-3 rounded-xl bg-muted/50 border border-border">
+                        <span className="text-[9px] uppercase font-semibold text-muted-foreground block">Last Seen</span>
+                        <span className="text-[11px] font-semibold text-foreground">{a.rollup.last_seen ? new Date(a.rollup.last_seen).toLocaleString() : 'Never'}</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-2">Daily Active Hours (30d)</span>
+                      <div className="h-40 w-full relative">
+                        {!a.trend?.length && <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">No activity data yet</div>}
+                        <SizedChart>
+                          <AreaChart data={a.trend || []}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                            <XAxis dataKey="day" stroke="hsl(var(--muted-foreground))" fontSize={9} />
+                            <YAxis stroke="hsl(var(--muted-foreground))" fontSize={9} />
+                            <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--popover))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--popover-foreground))', borderRadius: '12px', fontSize: '10px' }} />
+                            <Area type="monotone" dataKey="active_hours" stroke="#6366f1" fill="#6366f1" fillOpacity={0.15} strokeWidth={2} name="Active Hours" />
+                          </AreaChart>
+                        </SizedChart>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-2">Apps Recorded</span>
+                        {!a.top_apps?.length ? (
+                          <p className="text-[10px] text-muted-foreground">No app data yet.</p>
+                        ) : (
+                          <div className="flex flex-wrap gap-1.5">
+                            {a.top_apps.map(app => (
+                              <span key={app.category} className="px-2 py-1 rounded-lg bg-muted border border-border text-[10px] text-foreground/80">
+                                {app.category} <span className="text-muted-foreground">({app.samples})</span>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-2">Assigned Projects</span>
+                        {assignedProjects.length === 0 ? (
+                          <p className="text-[10px] text-muted-foreground">No projects assigned.</p>
+                        ) : (
+                          <div className="flex flex-wrap gap-1.5">
+                            {assignedProjects.map(p => (
+                              <span key={p.id} className="px-2 py-1 rounded-lg bg-primary/10 border border-primary/20 text-[10px] text-primary">{p.name}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-2">Work Log</span>
+                      {myEntries.length === 0 ? (
+                        <p className="text-[10px] text-muted-foreground">No logged time entries yet.</p>
+                      ) : (
+                        <div className="border border-border rounded-xl overflow-hidden max-h-48 overflow-y-auto">
+                          <table className="w-full text-left border-collapse">
+                            <thead className="sticky top-0 bg-card">
+                              <tr className="border-b border-border bg-muted/30 text-[9px] uppercase font-semibold tracking-wider text-muted-foreground">
+                                <th className="p-2">Date</th>
+                                <th className="p-2">Project</th>
+                                <th className="p-2">Hours</th>
+                                <th className="p-2">Note</th>
+                              </tr>
+                            </thead>
+                            <tbody className="text-[10px] text-foreground/80 divide-y divide-border">
+                              {myEntries.slice(0, 100).map(e => (
+                                <tr key={e.id}>
+                                  <td className="p-2 whitespace-nowrap">{new Date(e.start_ts).toLocaleDateString()}</td>
+                                  <td className="p-2">{projects.find(p => p.id === e.project_id)?.name || 'Unassigned'}</td>
+                                  <td className="p-2 font-semibold">{Number(e.hours).toFixed(1)}</td>
+                                  <td className="p-2 text-muted-foreground truncate max-w-[160px]">{e.note || ''}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* PROJECT DETAIL DIALOG — assigned employees, per-day work breakdown,
+          per-employee totals. */}
+      <Dialog open={!!viewingProject} onOpenChange={(open) => { if (!open) { setViewingProject(null); setViewingProjectAssignments([]); } }}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          {viewingProject && (() => {
+            const entries = timeEntriesData.filter(e => e.project_id === viewingProject.id);
+            const byEmployee = new Map();
+            const byDay = new Map();
+            for (const e of entries) {
+              const hrs = Number(e.hours) || 0;
+              const emp = byEmployee.get(e.user_id) || { hrs: 0, entries: 0 };
+              emp.hrs += hrs; emp.entries += 1;
+              byEmployee.set(e.user_id, emp);
+              const day = new Date(e.start_ts).toLocaleDateString();
+              byDay.set(day, (byDay.get(day) || 0) + hrs);
+            }
+            const dayTrend = Array.from(byDay.entries())
+              .map(([day, hours]) => ({ day, hours: Math.round(hours * 10) / 10 }))
+              .slice(-30);
+            const totalHours = entries.reduce((s, e) => s + (Number(e.hours) || 0), 0);
+            return (
+              <>
+                <DialogHeader>
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
+                      <LayoutDashboard className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <DialogTitle className="text-sm text-foreground">{viewingProject.name}</DialogTitle>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">
+                        {viewingProject.client ? `${viewingProject.client} · ` : ''}Rs. {((viewingProject.contractValue || 0) / 10000000).toFixed(2)} Cr contract
+                      </p>
+                    </div>
+                  </div>
+                </DialogHeader>
+
+                <div className="space-y-6 pt-2">
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="p-3 rounded-xl bg-muted/50 border border-border">
+                      <span className="text-[9px] uppercase font-semibold text-muted-foreground block">Total Logged Hours</span>
+                      <span className="text-lg font-semibold text-primary">{totalHours.toFixed(1)}</span>
+                    </div>
+                    <div className="p-3 rounded-xl bg-muted/50 border border-border">
+                      <span className="text-[9px] uppercase font-semibold text-muted-foreground block">Assigned Employees</span>
+                      <span className="text-lg font-semibold text-foreground">{viewingProjectAssignments.length}</span>
+                    </div>
+                    <div className="p-3 rounded-xl bg-muted/50 border border-border">
+                      <span className="text-[9px] uppercase font-semibold text-muted-foreground block">Contributors Logged</span>
+                      <span className="text-lg font-semibold text-foreground">{byEmployee.size}</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-2">Hours by Day</span>
+                    <div className="h-40 w-full relative">
+                      {!dayTrend.length && <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">No logged hours yet</div>}
+                      <SizedChart>
+                        <BarChart data={dayTrend}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                          <XAxis dataKey="day" stroke="hsl(var(--muted-foreground))" fontSize={9} interval={0} angle={-20} textAnchor="end" height={40} />
+                          <YAxis stroke="hsl(var(--muted-foreground))" fontSize={9} />
+                          <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--popover))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--popover-foreground))', borderRadius: '12px', fontSize: '10px' }} />
+                          <Bar dataKey="hours" fill="#10b981" radius={[4, 4, 0, 0]} name="Hours" />
+                        </BarChart>
+                      </SizedChart>
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-2">Assigned Employees</span>
+                    {viewingProjectAssignments.length === 0 ? (
+                      <p className="text-[10px] text-muted-foreground">No employees assigned to this project.</p>
+                    ) : (
+                      <div className="border border-border rounded-xl overflow-hidden">
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="border-b border-border bg-muted/30 text-[9px] uppercase font-semibold tracking-wider text-muted-foreground">
+                              <th className="p-2">Employee</th>
+                              <th className="p-2">Logged Hours</th>
+                              <th className="p-2">Entries</th>
+                            </tr>
+                          </thead>
+                          <tbody className="text-[10px] text-foreground/80 divide-y divide-border">
+                            {viewingProjectAssignments.map(a => {
+                              const stats = byEmployee.get(a.id) || { hrs: 0, entries: 0 };
+                              return (
+                                <tr key={a.id}>
+                                  <td className="p-2">
+                                    <button onClick={() => { setViewingProject(null); openUserDetail({ id: a.id, name: a.name, role: a.title, email: a.email, dept: a.dept }); }} className="font-semibold text-foreground hover:text-primary hover:underline transition-colors">
+                                      {a.name}
+                                    </button>
+                                  </td>
+                                  <td className="p-2 font-semibold">{stats.hrs.toFixed(1)}</td>
+                                  <td className="p-2">{stats.entries}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
 
       {/* CONFIRM MODAL — replaces window.confirm() */}
       {confirmModal && (
@@ -1608,8 +1945,8 @@ export default function App() {
               >
                 Access Work Console
               </button>
-              <button 
-                onClick={() => showToast('Standalone installation wizard initiated.', 'info')} 
+              <button
+                onClick={() => setCurrentRole('employee')}
                 className="w-full sm:w-auto px-8 py-3.5 bg-secondary hover:bg-muted text-foreground font-bold text-xs uppercase tracking-widest rounded-full border border-border transition-all"
               >
                 Download Desktop App
@@ -2157,18 +2494,42 @@ export default function App() {
 
                 {/* Add Team Lead Dialog */}
                 <Dialog open={showAddLead} onOpenChange={setShowAddLead}>
-                  <DialogContent>
+                  <DialogContent className="max-w-lg">
                     <DialogHeader>
-                      <DialogTitle className="text-xs uppercase tracking-widest text-primary">Create Team Lead</DialogTitle>
-                    </DialogHeader>
-                    <form onSubmit={handleAddLead} className="space-y-4">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <input value={leadForm.name} onChange={(e) => setLeadForm({ ...leadForm, name: e.target.value })} placeholder="Full name" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-foreground outline-none" />
-                        <input type="email" value={leadForm.email} onChange={(e) => setLeadForm({ ...leadForm, email: e.target.value })} placeholder="Corporate email" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-foreground outline-none" />
-                        <input value={leadForm.dept} onChange={(e) => setLeadForm({ ...leadForm, dept: e.target.value })} placeholder="Department" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-foreground outline-none" />
-                        <input type="password" value={leadForm.password} onChange={(e) => setLeadForm({ ...leadForm, password: e.target.value })} placeholder="Temp password (8+ chars)" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-foreground outline-none" />
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
+                          <Users className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <DialogTitle className="text-sm uppercase tracking-widest text-foreground">Create Team Lead</DialogTitle>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">Add a new lead who can manage their own team and projects.</p>
+                        </div>
                       </div>
-                      <button type="submit" className="px-5 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs uppercase tracking-widest rounded-xl">Create Team Lead</button>
+                    </DialogHeader>
+                    <form onSubmit={handleAddLead} className="space-y-4 pt-2">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="relative">
+                          <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                          <input value={leadForm.name} onChange={(e) => setLeadForm({ ...leadForm, name: e.target.value })} placeholder="Full name" className="w-full bg-background border border-border focus:border-primary rounded-xl pl-10 pr-4 py-3 text-xs text-foreground outline-none" />
+                        </div>
+                        <div className="relative">
+                          <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                          <input type="email" value={leadForm.email} onChange={(e) => setLeadForm({ ...leadForm, email: e.target.value })} placeholder="Corporate email" className="w-full bg-background border border-border focus:border-primary rounded-xl pl-10 pr-4 py-3 text-xs text-foreground outline-none" />
+                        </div>
+                        <div className="relative">
+                          <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                          <input type="tel" value={leadForm.phone} onChange={(e) => setLeadForm({ ...leadForm, phone: e.target.value })} placeholder="Phone number (optional)" className="w-full bg-background border border-border focus:border-primary rounded-xl pl-10 pr-4 py-3 text-xs text-foreground outline-none" />
+                        </div>
+                        <div className="relative">
+                          <LayoutDashboard className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                          <input value={leadForm.dept} onChange={(e) => setLeadForm({ ...leadForm, dept: e.target.value })} placeholder="Department" className="w-full bg-background border border-border focus:border-primary rounded-xl pl-10 pr-4 py-3 text-xs text-foreground outline-none" />
+                        </div>
+                        <div className="relative">
+                          <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                          <input type="password" value={leadForm.password} onChange={(e) => setLeadForm({ ...leadForm, password: e.target.value })} placeholder="Temp password (8+ chars)" className="w-full bg-background border border-border focus:border-primary rounded-xl pl-10 pr-4 py-3 text-xs text-foreground outline-none" />
+                        </div>
+                      </div>
+                      <button type="submit" className="w-full px-5 py-3 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs uppercase tracking-widest rounded-xl transition-all">Create Team Lead</button>
                     </form>
                   </DialogContent>
                 </Dialog>
@@ -2177,9 +2538,17 @@ export default function App() {
                 <Dialog open={showAddForm} onOpenChange={setShowAddForm}>
                   <DialogContent className="max-w-2xl">
                     <DialogHeader>
-                      <DialogTitle className="text-xs uppercase tracking-widest text-primary">Provision New User (Employee or Team Lead)</DialogTitle>
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
+                          <Plus className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <DialogTitle className="text-sm uppercase tracking-widest text-foreground">Provision New User</DialogTitle>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">Register an employee or team lead and assign their reporting line.</p>
+                        </div>
+                      </div>
                     </DialogHeader>
-                    <form onSubmit={handleAddEmployee} className="space-y-4">
+                    <form onSubmit={handleAddEmployee} className="space-y-4 pt-2">
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                       <div className="space-y-1">
                         <label className="text-[9px] uppercase font-semibold text-muted-foreground tracking-wider">Account Type</label>
@@ -2211,6 +2580,16 @@ export default function App() {
                           onChange={(e) => setEmpForm({...empForm, email: e.target.value})}
                           className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground outline-none"
                           placeholder="name@chronotrack.app"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] uppercase font-semibold text-muted-foreground tracking-wider">Phone (optional)</label>
+                        <input
+                          type="tel"
+                          value={empForm.phone}
+                          onChange={(e) => setEmpForm({...empForm, phone: e.target.value})}
+                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground outline-none"
+                          placeholder="+91 98765 43210"
                         />
                       </div>
                       {empForm.userType === 'lead' && (
@@ -2292,24 +2671,40 @@ export default function App() {
                   </DialogContent>
                 </Dialog>
 
-                {/* Edit Employee Form */}
-                {showEditForm && (
-                  <form onSubmit={handleEditEmployee} className="p-6 rounded-xl bg-card border border-indigo-500/20 space-y-4 animate-fade-in">
-                    <div className="flex justify-between items-center">
-                      <h3 className="text-xs font-semibold text-foreground uppercase tracking-widest text-indigo-400">Edit Employee Profile: {selectedEmp?.id}</h3>
-                      <button type="button" onClick={() => setShowEditForm(false)} className="text-muted-foreground hover:text-foreground transition-colors">
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
+                {/* Edit Employee Dialog */}
+                <Dialog open={showEditForm} onOpenChange={setShowEditForm}>
+                  <DialogContent className="max-w-2xl">
+                    <DialogHeader>
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0">
+                          <Edit2 className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <DialogTitle className="text-sm uppercase tracking-widest text-foreground">Edit Employee Profile</DialogTitle>
+                          <p className="text-[10px] text-muted-foreground mt-0.5 font-mono">{selectedEmp?.id}</p>
+                        </div>
+                      </div>
+                    </DialogHeader>
+                    <form onSubmit={handleEditEmployee} className="space-y-4 pt-2">
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                       <div className="space-y-1">
                         <label className="text-[9px] uppercase font-semibold text-muted-foreground tracking-wider">Full Name</label>
-                        <input 
-                          type="text" 
+                        <input
+                          type="text"
                           required
-                          value={empForm.name} 
-                          onChange={(e) => setEmpForm({...empForm, name: e.target.value})} 
+                          value={empForm.name}
+                          onChange={(e) => setEmpForm({...empForm, name: e.target.value})}
                           className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground outline-none"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] uppercase font-semibold text-muted-foreground tracking-wider">Phone</label>
+                        <input
+                          type="tel"
+                          value={empForm.phone}
+                          onChange={(e) => setEmpForm({...empForm, phone: e.target.value})}
+                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground outline-none"
+                          placeholder="+91 98765 43210"
                         />
                       </div>
                       <div className="space-y-1">
@@ -2374,11 +2769,12 @@ export default function App() {
                         </select>
                       </div>
                     </div>
-                    <button type="submit" className="px-5 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs uppercase tracking-widest rounded-xl transition-all">
+                    <button type="submit" className="w-full px-5 py-3 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs uppercase tracking-widest rounded-xl transition-all">
                       Update Profile
                     </button>
-                  </form>
-                )}
+                    </form>
+                  </DialogContent>
+                </Dialog>
 
                 {/* Directory search */}
                 <div className="relative">
@@ -2412,7 +2808,9 @@ export default function App() {
                         {teamLeads.filter(l => { const q = dirSearch.trim().toLowerCase(); return !q || `${l.name} ${l.email || ''} ${l.dept || ''}`.toLowerCase().includes(q); }).map(lead => (
                           <tr key={lead.id} className="hover:bg-muted/30 transition-colors bg-primary/[0.03]">
                             <td className="p-4 font-mono font-bold text-muted-foreground">{lead.id.slice(0, 8)}</td>
-                            <td className="p-4 font-extrabold text-foreground">{lead.name}</td>
+                            <td className="p-4 font-extrabold text-foreground">
+                              <button onClick={() => openUserDetail(lead)} className="hover:text-primary hover:underline transition-colors text-left">{lead.name}</button>
+                            </td>
                             <td className="p-4"><span className="px-2 py-0.5 rounded text-[8px] font-semibold uppercase bg-primary/10 text-primary">Team Lead</span></td>
                             <td className="p-4 text-muted-foreground">—</td>
                             <td className="p-4 text-muted-foreground">{lead.dept || '—'}</td>
@@ -2422,9 +2820,14 @@ export default function App() {
                                 {lead.canManage ? 'Can manage ✓' : 'No authority'}
                               </button>
                             </td>
-                            <td className="p-4 text-right space-x-2">
-                              <button onClick={() => editLeadName(lead)} className="p-1.5 rounded-lg border border-border bg-muted hover:text-foreground transition-colors"><Edit2 className="w-3.5 h-3.5" /></button>
-                              <button onClick={() => disableUser(lead.id, lead.name)} className="p-1.5 rounded-lg border border-red-500/20 bg-red-500/5 text-red-400 hover:bg-red-500/15 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                            <td className="p-4 text-right space-x-2 whitespace-nowrap">
+                              <ToggleSwitch
+                                checked={lead.status === 'Active'}
+                                onChange={() => toggleLeadStatus(lead)}
+                                title={lead.status === 'Active' ? 'Disable' : 'Enable'}
+                              />
+                              <button onClick={() => editLeadName(lead)} title="Edit" className="p-1.5 rounded-lg border border-border bg-muted hover:text-foreground transition-colors"><Edit2 className="w-3.5 h-3.5" /></button>
+                              <button onClick={() => handleDeleteLead(lead.id, lead.name)} title="Delete permanently" className="p-1.5 rounded-lg border border-red-500/20 bg-red-500/5 text-red-400 hover:bg-red-500/15 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
                             </td>
                           </tr>
                         ))}
@@ -2434,7 +2837,9 @@ export default function App() {
                           return (
                             <tr key={emp.id} className="hover:bg-muted/30 transition-colors">
                               <td className="p-4 font-mono font-bold text-muted-foreground">{emp.id.slice(0, 8)}</td>
-                              <td className="p-4 font-extrabold text-foreground">{emp.name}</td>
+                              <td className="p-4 font-extrabold text-foreground">
+                                <button onClick={() => openUserDetail(emp)} className="hover:text-primary hover:underline transition-colors text-left">{emp.name}</button>
+                              </td>
                               <td className="p-4 text-muted-foreground">{emp.role}</td>
                               <td className="p-4">{tl ? tl.name : '—'}</td>
                               <td className="p-4 font-semibold">{proj ? proj.name : '—'}</td>
@@ -2448,6 +2853,11 @@ export default function App() {
                                 </span>
                               </td>
                               <td className="p-4 text-right space-x-2 whitespace-nowrap">
+                                <ToggleSwitch
+                                  checked={emp.status === 'Active'}
+                                  onChange={() => toggleEmployeeStatus(emp)}
+                                  title={emp.status === 'Active' ? 'Disable' : 'Enable'}
+                                />
                                 <button onClick={() => exportUserData(emp)} title="Export data (DPDP)"
                                   className="p-1.5 rounded-lg border border-border bg-muted hover:text-foreground transition-colors">
                                   <Download className="w-3.5 h-3.5" />
@@ -2460,7 +2870,7 @@ export default function App() {
                                   className="p-1.5 rounded-lg border border-amber-500/20 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 transition-colors">
                                   <AlertTriangle className="w-3.5 h-3.5" />
                                 </button>
-                                <button onClick={() => handleDeleteEmployee(emp.id)} title="Disable"
+                                <button onClick={() => handleDeleteEmployee(emp.id)} title="Delete permanently"
                                   className="p-1.5 rounded-lg border border-red-500/20 bg-red-500/5 text-red-400 hover:bg-red-500/15 transition-colors">
                                   <Trash2 className="w-3.5 h-3.5" />
                                 </button>
@@ -2491,28 +2901,28 @@ export default function App() {
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block">Generate Activation Key</span>
                     <form onSubmit={generateActivationCode} className="space-y-4">
                       <div className="space-y-1.5">
-                        <label className="text-[9px] uppercase font-semibold text-muted-foreground">Employee Name</label>
-                        <input 
-                          type="text" 
+                        <label className="text-[9px] uppercase font-semibold text-muted-foreground">Employee</label>
+                        <input
+                          list="provision-employee-list"
                           required
-                          value={provisionName} 
-                          onChange={(e) => setProvisionName(e.target.value)} 
+                          value={employees.find(e => e.id === provisionUserId)?.name || ''}
+                          onChange={(e) => {
+                            const match = employees.find(emp => emp.name === e.target.value);
+                            setProvisionUserId(match ? match.id : '');
+                          }}
                           className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground outline-none"
-                          placeholder="John Doe"
+                          placeholder="Start typing a name…"
                         />
+                        <datalist id="provision-employee-list">
+                          {employees.map(emp => (
+                            <option key={emp.id} value={emp.name}>{emp.email}</option>
+                          ))}
+                        </datalist>
+                        {employees.length === 0 && (
+                          <p className="text-[9px] text-muted-foreground">No employees yet — create one in User Directory first.</p>
+                        )}
                       </div>
-                      <div className="space-y-1.5">
-                        <label className="text-[9px] uppercase font-semibold text-muted-foreground">Corporate Email</label>
-                        <input 
-                          type="email" 
-                          required
-                          value={provisionEmail} 
-                          onChange={(e) => setProvisionEmail(e.target.value)} 
-                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground outline-none"
-                          placeholder="john@chronotrack.app"
-                        />
-                      </div>
-                      <button type="submit" className="w-full py-3 bg-primary hover:bg-primary/95 text-primary-foreground font-semibold text-xs uppercase tracking-widest rounded-xl transition-all">
+                      <button type="submit" disabled={!provisionUserId} className="w-full py-3 bg-primary hover:bg-primary/95 disabled:opacity-50 disabled:cursor-not-allowed text-primary-foreground font-semibold text-xs uppercase tracking-widest rounded-xl transition-all">
                         Generate Key
                       </button>
                     </form>
@@ -2533,11 +2943,12 @@ export default function App() {
                             <th className="p-3">Email</th>
                             <th className="p-3">Activation Key</th>
                             <th className="p-3">Status</th>
+                            <th className="p-3 text-right">Actions</th>
                           </tr>
                         </thead>
                         <tbody className="text-xs text-foreground/80 divide-y divide-border font-mono">
                           {pendingActivations.length === 0 && persistedPending.length === 0 && (
-                            <tr><td colSpan={4} className="p-4 text-center text-muted-foreground font-sans">No pending activation keys.</td></tr>
+                            <tr><td colSpan={5} className="p-4 text-center text-muted-foreground font-sans">No pending activation keys.</td></tr>
                           )}
                           {pendingActivations.map((p, idx) => (
                             <tr key={`session-${idx}`} className="hover:bg-muted/10">
@@ -2552,6 +2963,12 @@ export default function App() {
                                 }`}>
                                   {p.status}
                                 </span>
+                              </td>
+                              <td className="p-3 text-right">
+                                <button onClick={() => handleRevokePendingCode(p.user_id, p.name)} title="Revoke code"
+                                  className="p-1.5 rounded-lg border border-red-500/20 bg-red-500/5 text-red-400 hover:bg-red-500/15 transition-colors">
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
                               </td>
                             </tr>
                           ))}
@@ -2569,6 +2986,12 @@ export default function App() {
                                   <span className="inline-flex px-2 py-0.5 rounded text-[8px] font-semibold uppercase tracking-wider bg-amber-500/10 text-amber-400">
                                     Pending
                                   </span>
+                                </td>
+                                <td className="p-3 text-right">
+                                  <button onClick={() => handleRevokePendingCode(p.user_id, p.name)} title="Revoke code"
+                                    className="p-1.5 rounded-lg border border-red-500/20 bg-red-500/5 text-red-400 hover:bg-red-500/15 transition-colors">
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
                                 </td>
                               </tr>
                             ))}
@@ -2807,7 +3230,7 @@ export default function App() {
                 )}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {(serverAnalytics?.team?.members || []).map(m => (
-                    <div key={m.id} className="p-6 rounded-xl bg-card border border-border space-y-4 hover:border-border transition-all">
+                    <div key={m.id} onClick={() => openUserDetail({ id: m.id, name: m.name, role: m.title, email: m.email, phone: m.phone })} className="p-6 rounded-xl bg-card border border-border space-y-4 hover:border-primary/40 transition-all cursor-pointer">
                       <div className="flex justify-between items-start">
                         <div>
                           <h3 className="text-sm font-extrabold text-foreground">{m.name}</h3>
@@ -3147,7 +3570,7 @@ export default function App() {
                     <span className="font-extrabold text-xs text-foreground uppercase tracking-wider">ChronoTrack Web Portal</span>
                   </div>
                   <button onClick={handleLogout} className="px-3 py-1 bg-muted hover:bg-muted border border-border text-muted-foreground hover:text-foreground rounded-lg text-[9px] font-semibold uppercase tracking-wider transition-all">
-                    Sign Out
+                    {api.getToken() ? 'Sign Out' : 'Back to Home'}
                   </button>
                 </header>
 

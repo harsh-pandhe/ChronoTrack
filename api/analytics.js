@@ -94,7 +94,7 @@ async function projectRoi(companyId) {
        FROM projects p
        LEFT JOIN time_entries te ON te.project_id = p.id
        LEFT JOIN users u ON u.id = te.user_id
-      WHERE p.company_id=$1
+      WHERE p.company_id=$1 AND p.status <> 'archived'
       GROUP BY p.id, p.name, p.billed_revenue
       ORDER BY p.created_at DESC`,
     [companyId]

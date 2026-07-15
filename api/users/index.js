@@ -10,7 +10,7 @@ export default handler(async (req, res) => {
   if (req.method === 'GET') {
     // Admin sees the whole company; a lead sees only their own team (+ themselves).
     let rows;
-    const cols = `id, name, email, role, team_lead_id, can_manage_employees,
+    const cols = `id, name, email, phone, role, team_lead_id, can_manage_employees,
                   hourly_cost, status, emp_code, dept, title, base_salary,
                   benefits, active_project_id, avg_hours, created_at`;
     if (actor.role === 'admin') {
@@ -34,7 +34,7 @@ export default handler(async (req, res) => {
   if (req.method === 'POST') {
     const body = await readBody(req);
     const {
-      name, email, role, password, team_lead_id,
+      name, email, role, password, team_lead_id, phone = null,
       emp_code = null, dept = null, title = null,
       base_salary = 0, benefits = 0, active_project_id = null, avg_hours = 160,
     } = body;
@@ -73,14 +73,14 @@ export default handler(async (req, res) => {
     try {
       ({ rows: [created] } = await query(
         `INSERT INTO users
-           (company_id, name, email, password_hash, role, team_lead_id, hourly_cost,
+           (company_id, name, email, phone, password_hash, role, team_lead_id, hourly_cost,
             status, emp_code, dept, title, base_salary, benefits, active_project_id, avg_hours,
             can_manage_employees)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
-         RETURNING id, name, email, role, team_lead_id, hourly_cost, status, emp_code,
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+         RETURNING id, name, email, phone, role, team_lead_id, hourly_cost, status, emp_code,
                    dept, title, base_salary, benefits, active_project_id, avg_hours,
                    can_manage_employees, created_at`,
-        [actor.company_id, name, email, password_hash, role, leadId, hourly_cost, status,
+        [actor.company_id, name, email, phone, password_hash, role, leadId, hourly_cost, status,
          emp_code, dept, title, base_salary, benefits, active_project_id, hours, canManage]
       ));
     } catch (err) {

@@ -38,6 +38,28 @@ export default handler(async (req, res) => {
     return send(res, 200, { pending: rows });
   }
 
+  // ---- revoke (admin/lead) ----
+  if (action === 'revoke' && req.method === 'DELETE') {
+    const actor = await requireAuth(req, ['admin', 'lead']);
+    const userId = new URL(req.url, 'http://localhost').searchParams.get('user_id');
+    if (!userId) throw new HttpError(400, 'Missing user_id');
+    if (actor.role === 'lead') {
+      const { rows: [target] } = await query(
+        `SELECT team_lead_id FROM users WHERE id = $1 AND company_id = $2`,
+        [userId, actor.company_id]
+      );
+      if (!target || (target.team_lead_id !== actor.id && userId !== actor.id))
+        throw new HttpError(403, 'Not authorized for this employee');
+    }
+    await query(
+      `UPDATE activation_codes SET used_at = now()
+        WHERE user_id = $1 AND company_id = $2 AND used_at IS NULL`,
+      [userId, actor.company_id]
+    );
+    await audit(req, actor, 'revoke pending activation code', userId);
+    return send(res, 200, { ok: true });
+  }
+
   if (req.method !== 'POST') throw new HttpError(405, 'Method Not Allowed');
 
   // ---- generate (admin/lead) ----

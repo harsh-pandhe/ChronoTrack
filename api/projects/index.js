@@ -24,19 +24,25 @@ export default handler(async (req, res) => {
   const actor = await requireAuth(req);
 
   if (req.method === 'GET') {
+    // Archived projects are excluded by default -- "Archive" needs to actually
+    // make a project disappear from active use (dropdowns, revenue totals),
+    // not just flip a status flag nobody's list ever filters on. ?status=all
+    // opts back in (e.g. an admin archive-management view, if one gets built).
+    const showAll = new URL(req.url, 'http://localhost').searchParams.get('status') === 'all';
+    const statusFilter = showAll ? '' : `AND p.status <> 'archived'`;
     let rows;
     if (actor.role === 'admin') {
-      ({ rows } = await query(`${SELECT_WITH_ROI} ORDER BY p.created_at DESC`, [actor.company_id]));
+      ({ rows } = await query(`${SELECT_WITH_ROI} ${statusFilter} ORDER BY p.created_at DESC`, [actor.company_id]));
     } else if (actor.role === 'lead') {
       ({ rows } = await query(
-        `${SELECT_WITH_ROI} AND p.team_lead_id = $2 ORDER BY p.created_at DESC`,
+        `${SELECT_WITH_ROI} AND p.team_lead_id = $2 ${statusFilter} ORDER BY p.created_at DESC`,
         [actor.company_id, actor.id]
       ));
     } else {
       // Employee: only projects they are assigned to.
       ({ rows } = await query(
         `${SELECT_WITH_ROI}
-           AND p.id IN (SELECT project_id FROM project_assignments WHERE user_id = $2)
+           AND p.id IN (SELECT project_id FROM project_assignments WHERE user_id = $2) ${statusFilter}
          ORDER BY p.created_at DESC`,
         [actor.company_id, actor.id]
       ));

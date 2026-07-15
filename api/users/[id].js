@@ -6,11 +6,16 @@ import { audit } from '../../lib/audit.js';
 // Fields a caller may change.
 const FIELDS = {
   name: 'name',
+  phone: 'phone',
   hourly_cost: 'hourly_cost',
   status: 'status',
   can_manage_employees: 'can_manage_employees',
   team_lead_id: 'team_lead_id',
   active_project_id: 'active_project_id',
+  dept: 'dept',
+  title: 'title',
+  base_salary: 'base_salary',
+  benefits: 'benefits',
 };
 
 async function loadTarget(companyId, id) {
