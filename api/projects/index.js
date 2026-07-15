@@ -63,9 +63,11 @@ export default handler(async (req, res) => {
     const leadId = actor.role === 'lead' ? actor.id : b.team_lead_id || null;
 
     // Guard against accidental duplicates (e.g. a double-click on Create) —
-    // same name already exists for this company.
+    // same name already exists for this company. Archived projects don't
+    // count: their name is free to reuse (matches the DB-level unique index
+    // in migration 005, which is scoped the same way).
     const { rows: [dupe] } = await query(
-      `SELECT id FROM projects WHERE company_id = $1 AND lower(name) = lower($2) LIMIT 1`,
+      `SELECT id FROM projects WHERE company_id = $1 AND lower(name) = lower($2) AND status <> 'archived' LIMIT 1`,
       [actor.company_id, name]
     );
     if (dupe) throw new HttpError(409, `A project named "${name}" already exists.`);
