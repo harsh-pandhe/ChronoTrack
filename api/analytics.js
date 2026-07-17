@@ -16,6 +16,7 @@ async function userRollup(companyId, userId, sinceSql) {
     `SELECT count(*)::int AS samples,
             COALESCE(sum(CASE WHEN NOT is_idle THEN 1 ELSE 0 END),0)::int AS active_samples,
             COALESCE(round(avg(input_density)),0)::int AS avg_density,
+            COALESCE(round(avg(CASE WHEN NOT is_idle THEN focus_score END)),0)::int AS avg_focus,
             COALESCE(sum(CASE WHEN anomaly_flag THEN 1 ELSE 0 END),0)::int AS anomalies,
             max(ts) AS last_seen
        FROM telemetry_logs
@@ -30,6 +31,7 @@ async function userRollup(companyId, userId, sinceSql) {
     active_pct: activePct,
     active_hours: activeHours(r.samples, r.active_samples),
     avg_density: r.avg_density,
+    avg_focus: r.avg_focus,
     anomalies: r.anomalies,
     last_seen: r.last_seen,
   };
@@ -83,6 +85,58 @@ async function topApps(companyId, userId, sinceSql) {
     [companyId, userId]
   );
   return rows;
+}
+
+// Productive / unproductive / neutral split from ai_label — the daemon already
+// classifies every non-idle sample against the company's own Productivity Rules
+// and stores the verdict, but nothing ever displayed it, so the whole rules
+// screen had no visible effect. `extra` is scope SQL (e.g. "AND user_id=$2").
+// Idle samples are excluded (they're neither productive nor unproductive).
+async function productivitySplit(companyId, sinceSql, extra = '', params = []) {
+  const { rows } = await query(
+    `SELECT COALESCE(NULLIF(ai_label,''),'neutral') AS label, count(*)::int AS samples
+       FROM telemetry_logs
+      WHERE company_id=$1 AND ts > ${sinceSql} AND NOT is_idle ${extra}
+      GROUP BY 1`,
+    [companyId, ...params]
+  );
+  const out = { productive: 0, unproductive: 0, neutral: 0 };
+  for (const r of rows) {
+    const key = r.label === 'productive' || r.label === 'unproductive' ? r.label : 'neutral';
+    out[key] += r.samples;
+  }
+  const total = out.productive + out.unproductive + out.neutral;
+  const hrs = (n) => Math.round((n * SAMPLE_SECONDS) / 360) / 10;
+  return {
+    ...out,
+    total,
+    productive_pct: total ? Math.round((100 * out.productive) / total) : 0,
+    unproductive_pct: total ? Math.round((100 * out.unproductive) / total) : 0,
+    neutral_pct: total ? Math.round((100 * out.neutral) / total) : 0,
+    productive_hours: hrs(out.productive),
+    unproductive_hours: hrs(out.unproductive),
+    neutral_hours: hrs(out.neutral),
+  };
+}
+
+// Hour-of-day × weekday activity heatmap (active minutes per cell). Surfaces
+// real working patterns — the daemon has logged the timestamps all along, but
+// hourlyTrend only ever exposed a flat last-24h line. dow: 0=Sun..6=Sat.
+async function activityHeatmap(companyId, sinceSql, extra = '', params = []) {
+  const { rows } = await query(
+    `SELECT EXTRACT(dow FROM ts)::int AS dow,
+            EXTRACT(hour FROM ts)::int AS hour,
+            COALESCE(sum(CASE WHEN NOT is_idle THEN 1 ELSE 0 END),0)::int AS active_samples
+       FROM telemetry_logs
+      WHERE company_id=$1 AND ts > ${sinceSql} ${extra}
+      GROUP BY 1, 2`,
+    [companyId, ...params]
+  );
+  return rows.map((r) => ({
+    dow: r.dow,
+    hour: r.hour,
+    active_minutes: Math.round((r.active_samples * SAMPLE_SECONDS) / 60),
+  }));
 }
 
 // Project cost/hours/ROI from real time_entries × hourly_cost.
@@ -207,13 +261,15 @@ export default handler(async (req, res) => {
       if (actor.role === 'lead' && rows[0].team_lead_id !== actor.id)
         throw new HttpError(403, 'Not your team member');
     }
-    const [rollup, apps, trend, hourly] = await Promise.all([
+    const [rollup, apps, trend, hourly, productivity, heatmap] = await Promise.all([
       userRollup(actor.company_id, targetId, sinceSql),
       topApps(actor.company_id, targetId, sinceSql),
       dailyTrend(actor.company_id, sinceSql, 'AND user_id=$2', [targetId]),
       hourlyTrend(actor.company_id, 'AND user_id=$2', [targetId]),
+      productivitySplit(actor.company_id, sinceSql, 'AND user_id=$2', [targetId]),
+      activityHeatmap(actor.company_id, sinceSql, 'AND user_id=$2', [targetId]),
     ]);
-    return send(res, 200, { scope, user_id: targetId, days, rollup, top_apps: apps, trend, hourly });
+    return send(res, 200, { scope, user_id: targetId, days, rollup, top_apps: apps, trend, hourly, productivity, heatmap });
   }
 
   if (scope === 'team') {
@@ -279,9 +335,14 @@ export default handler(async (req, res) => {
       idle_pct: ir.samples > 0 ? Math.round((100 * ir.idle_samples) / ir.samples) : 0,
       idle_hours: Math.round((ir.idle_samples * SAMPLE_SECONDS) / 360) / 10,
     };
+    const [productivity, heatmap] = await Promise.all([
+      productivitySplit(actor.company_id, sinceSql, teamExtra, teamParams),
+      activityHeatmap(actor.company_id, sinceSql, teamExtra, teamParams),
+    ]);
     return send(res, 200, {
       scope, days, members: list, trend,
       project_hours: projectHours.rows, top_apps: topApps.rows, idle,
+      productivity, heatmap,
     });
   }
 
@@ -339,6 +400,7 @@ export default handler(async (req, res) => {
       ...r,
       roi: r.cost > 0 ? Math.round(((r.revenue - r.cost) / r.cost) * 10) / 10 : null,
     }));
+    const productivity = await productivitySplit(actor.company_id, sinceSql);
     return send(res, 200, {
       scope, days,
       headcount: hc[0],
@@ -348,6 +410,7 @@ export default handler(async (req, res) => {
       telemetry: { samples: t.samples, active_pct: activePct, active_hours: activeHours(t.samples, t.active_samples) },
       trend,
       categories: catRows.rows,
+      productivity,
     });
   }
 

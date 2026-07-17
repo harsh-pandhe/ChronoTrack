@@ -132,6 +132,103 @@ function ToggleSwitch({ checked, onChange, title }) {
   );
 }
 
+// A plain-language "what this means" line so a dashboard number becomes a
+// decision, not just a stat. tone drives the accent (good / watch / bad / info).
+function DecisionNote({ tone = 'info', children }) {
+  const tones = {
+    good: 'bg-emerald-500/5 border-emerald-500/20 text-emerald-600 dark:text-emerald-400',
+    watch: 'bg-amber-500/5 border-amber-500/20 text-amber-600 dark:text-amber-400',
+    bad: 'bg-red-500/5 border-red-500/20 text-red-600 dark:text-red-400',
+    info: 'bg-primary/5 border-primary/15 text-muted-foreground',
+  };
+  const Icon = tone === 'good' ? CheckCircle2 : tone === 'bad' ? AlertTriangle : tone === 'watch' ? AlertTriangle : Info;
+  return (
+    <div className={`flex items-start gap-2.5 rounded-xl border px-3.5 py-2.5 text-xs leading-relaxed ${tones[tone] || tones.info}`}>
+      <Icon className="w-4 h-4 shrink-0 mt-0.5" />
+      <span>{children}</span>
+    </div>
+  );
+}
+
+// Productive / neutral / unproductive split. The daemon classifies every
+// non-idle sample against the company's own Productivity Rules (ai_label) and
+// stored it all along — this is the first thing that actually renders it, so
+// the rules screen finally has a visible consequence. Uses the theme's
+// positive/neutral/negative chart tokens (adapt to light/dark).
+function ProductivitySplit({ data }) {
+  if (!data || !data.total) {
+    return <div className="flex items-center justify-center h-full text-xs text-muted-foreground">No classified activity yet</div>;
+  }
+  const segs = [
+    { key: 'productive', label: 'Productive', pct: data.productive_pct, hours: data.productive_hours, color: 'hsl(var(--chart-positive))' },
+    { key: 'neutral', label: 'Neutral', pct: data.neutral_pct, hours: data.neutral_hours, color: 'hsl(var(--chart-neutral))' },
+    { key: 'unproductive', label: 'Unproductive', pct: data.unproductive_pct, hours: data.unproductive_hours, color: 'hsl(var(--chart-negative))' },
+  ];
+  return (
+    <div className="space-y-3">
+      <div className="flex h-3 w-full overflow-hidden rounded-full border border-border">
+        {segs.map((s) => s.pct > 0 && (
+          <div key={s.key} style={{ width: `${s.pct}%`, backgroundColor: s.color }} title={`${s.label}: ${s.pct}%`} />
+        ))}
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        {segs.map((s) => (
+          <div key={s.key} className="space-y-0.5">
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: s.color }} />
+              <span className="text-[9px] uppercase font-semibold tracking-wider text-muted-foreground">{s.label}</span>
+            </div>
+            <div className="text-sm font-semibold text-foreground">{s.pct}%</div>
+            <div className="text-[10px] text-muted-foreground">{s.hours}h</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Hour-of-day × weekday activity heatmap. Reveals real working patterns from
+// timestamps the daemon has always logged. Cell intensity = active minutes,
+// scaled to the busiest cell, tinted with the theme primary.
+function ActivityHeatmap({ data }) {
+  const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  if (!data || !data.length) {
+    return <div className="flex items-center justify-center h-24 text-xs text-muted-foreground">No activity recorded yet</div>;
+  }
+  const grid = {};
+  let max = 0;
+  for (const c of data) {
+    grid[`${c.dow}-${c.hour}`] = c.active_minutes;
+    if (c.active_minutes > max) max = c.active_minutes;
+  }
+  return (
+    <div className="overflow-x-auto">
+      <div className="min-w-[560px]">
+        <div className="flex">
+          <div className="w-9 shrink-0" />
+          {Array.from({ length: 24 }, (_, h) => (
+            <div key={h} className="flex-1 text-center text-[7px] text-muted-foreground">{h % 3 === 0 ? h : ''}</div>
+          ))}
+        </div>
+        {DOW.map((label, dow) => (
+          <div key={dow} className="flex items-center">
+            <div className="w-9 shrink-0 text-[8px] uppercase font-semibold text-muted-foreground">{label}</div>
+            {Array.from({ length: 24 }, (_, h) => {
+              const v = grid[`${dow}-${h}`] || 0;
+              const intensity = max ? v / max : 0;
+              return (
+                <div key={h} className="flex-1 aspect-square m-[1px] rounded-[2px] border border-border/40"
+                  style={{ backgroundColor: intensity ? `hsl(var(--primary) / ${0.12 + intensity * 0.78})` : 'transparent' }}
+                  title={v ? `${label} ${h}:00 — ${v} active min` : ''} />
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // Visual timeline allocation: shows the day's real tracked active blocks and lets
 // the employee assign each block to one of their projects. Hours are grounded in
 // tracked activity (the server enforces the same), so ROI reflects real work.
@@ -1646,12 +1743,25 @@ export default function App() {
 
         {a && (
           <div className="space-y-8">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
               <StatTile label="Active Hours (30d)" value={a.rollup.active_hours} accent="text-primary" />
               <StatTile label="Idle %" value={`${idlePct}%`} />
+              <StatTile label="Avg Focus" value={a.rollup.avg_focus ?? '—'} accent={a.rollup.avg_focus >= 60 ? 'text-emerald-500' : a.rollup.avg_focus > 0 && a.rollup.avg_focus < 40 ? 'text-amber-500' : undefined} />
+              <StatTile label="Input Density" value={a.rollup.avg_density ?? '—'} />
               <StatTile label="Anomalies" value={a.rollup.anomalies} accent={a.rollup.anomalies > 0 ? 'text-amber-500' : undefined} />
-              <StatTile label="Last Seen" value={a.rollup.last_seen ? new Date(a.rollup.last_seen).toLocaleString() : 'Never'} small />
+              <StatTile label="Last Seen" value={a.rollup.last_seen ? new Date(a.rollup.last_seen).toLocaleDateString() : 'Never'} small />
             </div>
+
+            {a.productivity?.total > 0 && (() => {
+              const p = a.productivity;
+              const tone = p.productive_pct >= 60 ? 'good' : p.unproductive_pct >= 30 ? 'bad' : 'watch';
+              return (
+                <DecisionNote tone={tone}>
+                  {p.productive_hours}h productive · {p.neutral_hours}h neutral · {p.unproductive_hours}h unproductive over 30 days
+                  {a.rollup.avg_focus > 0 ? `, at an average focus score of ${a.rollup.avg_focus}/100.` : '.'}
+                </DecisionNote>
+              );
+            })()}
 
             <section className="p-6 rounded-xl bg-card border border-border">
               <SectionTitle>Daily Active Hours (30d)</SectionTitle>
@@ -1668,6 +1778,17 @@ export default function App() {
                 </SizedChart>
               </div>
             </section>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <section className="p-6 rounded-xl bg-card border border-border">
+                <SectionTitle>Productive vs Unproductive</SectionTitle>
+                <div className="mt-3"><ProductivitySplit data={a.productivity} /></div>
+              </section>
+              <section className="p-6 rounded-xl bg-card border border-border">
+                <SectionTitle>Working-Hours Pattern</SectionTitle>
+                <div className="mt-3"><ActivityHeatmap data={a.heatmap} /></div>
+              </section>
+            </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <section className="p-6 rounded-xl bg-card border border-border">
@@ -2543,6 +2664,33 @@ export default function App() {
                         </PieChart>
                       </SizedChart>
                     </div>
+                  </div>
+                </div>
+
+                {/* Productivity split + working-pattern heatmap — surfaces
+                    ai_label (classified by the company's own Productivity Rules)
+                    and the hour×weekday pattern, both collected all along but
+                    never shown until now. */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="p-6 rounded-xl bg-card border border-border space-y-4">
+                    <span className="text-xs font-semibold text-foreground uppercase tracking-wider">Productive vs Unproductive</span>
+                    <ProductivitySplit data={serverAnalytics?.overview?.productivity} />
+                    {serverAnalytics?.overview?.productivity?.total > 0 && (() => {
+                      const p = serverAnalytics.overview.productivity;
+                      const tone = p.productive_pct >= 60 ? 'good' : p.unproductive_pct >= 30 ? 'bad' : 'watch';
+                      return (
+                        <DecisionNote tone={tone}>
+                          {p.productive_pct}% of tracked activity is productive and {p.unproductive_pct}% unproductive by your current rules.
+                          {p.unproductive_pct >= 30 ? ' Worth reviewing which apps are landing in the unproductive bucket.'
+                            : p.productive_pct >= 60 ? ' Healthy split — the workforce is largely on-task.'
+                            : ' A large neutral share — tighten the Productivity Rules to classify more of it.'}
+                        </DecisionNote>
+                      );
+                    })()}
+                  </div>
+                  <div className="p-6 rounded-xl bg-card border border-border space-y-4">
+                    <span className="text-xs font-semibold text-foreground uppercase tracking-wider">Working-Hours Pattern</span>
+                    <ActivityHeatmap data={serverAnalytics?.overview?.heatmap} />
                   </div>
                 </div>
 
