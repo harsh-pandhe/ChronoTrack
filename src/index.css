@@ -80,17 +80,22 @@
 
   body {
     margin: 0;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
     overflow-x: hidden;
+    /* Tabular figures everywhere: KPI tiles, tables, currency and hour counts
+       stop shifting width as digits change (proportional figures make numbers
+       "jitter" on live-updating dashboards). Only affects digit glyphs, so
+       prose is unaffected. */
+    font-variant-numeric: tabular-nums;
   }
 
-  /* Outfit was loaded but never actually used distinctly from Inter — give it
-     a real role as the heading face (a common, deliberate Inter/Outfit pairing)
-     instead of sitting as an unused font-family fallback. */
+  /* Space Grotesk gives headings a distinct, modern display voice against the
+     Plus Jakarta Sans body — a deliberate pairing, not a fallback. */
   h1, h2, h3, h4 {
-    font-family: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: 'Space Grotesk', 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    letter-spacing: -0.01em;
   }
 }
 
