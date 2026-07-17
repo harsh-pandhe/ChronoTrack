@@ -38,6 +38,10 @@ jobs:
       DATABASE_URL: postgres://postgres:test@localhost:5544/chronotrack
       PGSSL: disable
       JWT_SECRET: ci-test-secret
+      # The integration suite drives >10 logins from one loopback IP within a
+      # minute; disable the (prod-only) rate limiter so the run isn't flaky on a
+      # fast runner. Prod never sets this.
+      DISABLE_RATE_LIMIT: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
