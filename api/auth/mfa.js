@@ -11,7 +11,7 @@ import { query } from '../../lib/db.js';
 import { rateLimitKey } from '../../lib/ratelimit.js';
 import { audit } from '../../lib/audit.js';
 import {
-  newTotpSecret, totpUri, encryptSecret, consumeTotp,
+  newTotpSecret, totpUri, encryptSecret, consumeTotp, checkTotp,
   generateRecoveryCodes, consumeRecoveryCode,
   storeChallenge, consumeChallenge, isCounterRegression,
   assertNotLocked, MFA,
@@ -180,7 +180,7 @@ export default handler(async (req, res) => {
     const { code } = await readBody(req);
     const { rows } = await query(`SELECT confirmed_at FROM mfa_totp WHERE user_id=$1`, [actor.id]);
     if (!rows[0]) throw new HttpError(400, 'Start TOTP setup first');
-    const ok = await consumeTotp(actor.id, code);
+    const ok = await checkTotp(actor.id, code); // confirm possession without consuming the step
     if (!ok) throw new HttpError(401, 'Code did not match — check your authenticator clock');
     await query(`UPDATE mfa_totp SET confirmed_at=now() WHERE user_id=$1`, [actor.id]);
     const recovery = await enableAndMaybeRecovery(actor.id, actor.company_id);

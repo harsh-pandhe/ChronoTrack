@@ -7,6 +7,8 @@ import { hashPassword } from '../lib/auth.js';
 
 import login from '../api/auth/login.js';
 import me from '../api/auth/me.js';
+import mfa from '../api/auth/mfa.js';
+import * as OTPAuth from 'otpauth';
 import usersIndex from '../api/users/index.js';
 import userById from '../api/users/[id].js';
 import projectsIndex from '../api/projects/index.js';
@@ -22,6 +24,7 @@ import reports from '../api/reports.js';
 const routes = [
   [/^\/api\/auth\/login$/, login],
   [/^\/api\/auth\/me$/, me],
+  [/^\/api\/auth\/mfa$/, mfa],
   [/^\/api\/users$/, usersIndex],
   [/^\/api\/users\/([^/]+)$/, userById, 'id'],
   [/^\/api\/projects$/, projectsIndex],
@@ -362,6 +365,76 @@ async function main() {
   ok(r.status === 200 && r.json.token, 'login works with new password');
   r = await call('POST', '/api/auth/login', { body: { email: 'lead2@cm.com', password: 'lead2-strong-pass' } });
   ok(r.status === 401, 'old password no longer works');
+
+  // ---- 12. TOTP 2FA end-to-end ------------------------------------------------
+  // Fresh admin dedicated to the MFA flow so the lockout counter is clean.
+  const mfaHash = await hashPassword('mfa-admin-pass');
+  await query(
+    `INSERT INTO users (company_id, name, email, password_hash, role, status)
+     VALUES ($1,'MFA Admin','mfaadmin@cm.com',$2,'admin','active')`,
+    [co.id, mfaHash]
+  );
+  let mtok = (await call('POST', '/api/auth/login', { body: { email: 'mfaadmin@cm.com', password: 'mfa-admin-pass' } })).json.token;
+  ok(!!mtok, 'MFA admin logs in (pre-enrollment, single factor)');
+
+  // Enrollment: init returns a secret; activate with a live code from that secret.
+  r = await call('POST', '/api/auth/mfa?action=totp-init', { token: mtok });
+  ok(r.status === 200 && r.json.secret && r.json.otpauth_uri, 'totp-init returns secret + uri');
+  const totpSecret = r.json.secret;
+  const makeCode = () => new OTPAuth.TOTP({ secret: OTPAuth.Secret.fromBase32(totpSecret), digits: 6, period: 30, algorithm: 'SHA1' }).generate();
+
+  r = await call('POST', '/api/auth/mfa?action=totp-activate', { token: mtok, body: { code: '000000' } });
+  ok(r.status === 401, 'totp-activate rejects a wrong code');
+  r = await call('POST', '/api/auth/mfa?action=totp-activate', { token: mtok, body: { code: makeCode() } });
+  ok(r.status === 200 && Array.isArray(r.json.recovery_codes) && r.json.recovery_codes.length === 10,
+     'totp-activate confirms and returns 10 recovery codes (first factor)');
+  const recoveryCodes = r.json.recovery_codes;
+
+  // Now login must return an MFA challenge, not a session.
+  r = await call('POST', '/api/auth/login', { body: { email: 'mfaadmin@cm.com', password: 'mfa-admin-pass' } });
+  ok(r.status === 200 && r.json.mfa_required === true && r.json.pending_token && !r.json.token,
+     'login now returns mfa_required + pending_token, NOT a session');
+  ok(r.json.methods.includes('totp'), 'challenge advertises the totp method');
+  const pending = r.json.pending_token;
+
+  // The pending token must NOT be usable as a real session anywhere.
+  r = await call('GET', '/api/auth/me', { token: pending });
+  ok(r.status === 401, 'pending token is REJECTED by /api/auth/me (not a session)');
+  r = await call('GET', '/api/users', { token: pending });
+  ok(r.status === 401, 'pending token is REJECTED by a normal protected route');
+
+  // Verify with a live code → real session.
+  const liveCode = makeCode();
+  r = await call('POST', '/api/auth/mfa?action=verify', { token: pending, body: { method: 'totp', code: liveCode } });
+  ok(r.status === 200 && r.json.token && r.json.user.role === 'admin', 'mfa verify with correct TOTP issues a session');
+  const mfaSession = r.json.token;
+  r = await call('GET', '/api/auth/me', { token: mfaSession });
+  ok(r.status === 200 && r.json.user.email === 'mfaadmin@cm.com', 'post-MFA session works on /me');
+
+  // Replay: the SAME code, fresh pending token, must fail (last_step guard).
+  let p2 = (await call('POST', '/api/auth/login', { body: { email: 'mfaadmin@cm.com', password: 'mfa-admin-pass' } })).json.pending_token;
+  r = await call('POST', '/api/auth/mfa?action=verify', { token: p2, body: { method: 'totp', code: liveCode } });
+  ok(r.status === 401, 'replay of an already-used TOTP code is rejected');
+
+  // Recovery code: single-use.
+  let p3 = (await call('POST', '/api/auth/login', { body: { email: 'mfaadmin@cm.com', password: 'mfa-admin-pass' } })).json.pending_token;
+  r = await call('POST', '/api/auth/mfa?action=verify', { token: p3, body: { method: 'recovery', code: recoveryCodes[0] } });
+  ok(r.status === 200 && r.json.token, 'recovery code completes MFA');
+  let p4 = (await call('POST', '/api/auth/login', { body: { email: 'mfaadmin@cm.com', password: 'mfa-admin-pass' } })).json.pending_token;
+  r = await call('POST', '/api/auth/mfa?action=verify', { token: p4, body: { method: 'recovery', code: recoveryCodes[0] } });
+  ok(r.status === 401, 'the same recovery code cannot be used twice');
+
+  // Employee login is completely unaffected by all of this.
+  r = await call('POST', '/api/auth/login', { body: { email: 'emp@cm.com', password: 'wrong' } });
+  ok(r.status === 401, 'employee login still single-factor (no MFA branch)');
+
+  // Disable requires the password; afterwards login is single-factor again.
+  r = await call('POST', '/api/auth/mfa?action=disable', { token: mfaSession, body: { password: 'wrong' } });
+  ok(r.status === 401, 'disable 2FA rejects a wrong password');
+  r = await call('POST', '/api/auth/mfa?action=disable', { token: mfaSession, body: { password: 'mfa-admin-pass' } });
+  ok(r.status === 200, 'disable 2FA with correct password');
+  r = await call('POST', '/api/auth/login', { body: { email: 'mfaadmin@cm.com', password: 'mfa-admin-pass' } });
+  ok(r.status === 200 && r.json.token && !r.json.mfa_required, 'login is single-factor again after disable');
 
   console.log(`\n${passed} passed, ${failed} failed`);
   server.close();
