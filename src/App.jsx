@@ -120,6 +120,15 @@ function SizedChart({ children }) {
 // matches the app's existing accent set used elsewhere for status/identity.
 const CATEGORY_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#3b82f6', '#a855f7', '#ef4444', '#14b8a6', '#84cc16'];
 
+// Passkeys are bound to the web origin and can't work in the Electron desktop
+// agent (127.0.0.1 can never satisfy the WebAuthn RP origin). Gate the passkey
+// buttons on this so an admin signing into the agent isn't dead-ended — TOTP and
+// recovery codes are origin-agnostic and always remain available.
+const MFA_ON_ORIGIN =
+  typeof window !== 'undefined' &&
+  !!window.PublicKeyCredential &&
+  window.location.protocol === 'https:';
+
 // Plain checkbox-driven toggle switch — avoids pulling in @radix-ui/react-switch
 // as a new dependency (this environment can't regenerate package-lock.json).
 function ToggleSwitch({ checked, onChange, title }) {
@@ -225,6 +234,152 @@ function ActivityHeatmap({ data }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// One-time recovery-code display. Codes are shown exactly once (the server only
+// ever returns the plaintext at generation); the user must acknowledge before
+// the panel lets them move on.
+function RecoveryCodes({ codes, onClose }) {
+  return (
+    <div className="space-y-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
+      <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+        <Key className="w-4 h-4" />
+        <span className="text-xs font-semibold uppercase tracking-wider">Save your recovery codes</span>
+      </div>
+      <p className="text-[11px] text-muted-foreground">Each works once if you lose your authenticator or passkey. They won't be shown again.</p>
+      <div className="grid grid-cols-2 gap-1.5 font-mono text-[11px]">
+        {codes.map((c) => <div key={c} className="rounded bg-background border border-border px-2 py-1 text-center">{c}</div>)}
+      </div>
+      <div className="flex gap-2">
+        <button onClick={() => navigator.clipboard?.writeText(codes.join('\n'))} className="flex-1 py-2 bg-muted border border-border rounded-lg text-[10px] font-semibold uppercase">Copy all</button>
+        <button onClick={onClose} className="flex-1 py-2 bg-primary text-primary-foreground rounded-lg text-[10px] font-semibold uppercase">I've saved them</button>
+      </div>
+    </div>
+  );
+}
+
+// Security / 2FA enrollment panel — lives in the Profile modal for admin & lead.
+// Self-contained: owns its status + enrollment state so the modal stays simple.
+function MfaSection({ showToast }) {
+  const [status, setStatus] = useState(null);
+  const [totpSetup, setTotpSetup] = useState(null); // { secret, uri, qr }
+  const [totpCode, setTotpCode] = useState('');
+  const [recovery, setRecovery] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [disablePw, setDisablePw] = useState('');
+  const [showDisable, setShowDisable] = useState(false);
+
+  const load = () => api.mfa.status().then(setStatus).catch(() => {});
+  useEffect(() => { load(); }, []);
+
+  const startTotp = async () => {
+    setBusy(true);
+    try {
+      const { secret, otpauth_uri } = await api.mfa.totpInit();
+      const QR = await import('qrcode');
+      const qr = await QR.toDataURL(otpauth_uri, { margin: 1, width: 180 });
+      setTotpSetup({ secret, uri: otpauth_uri, qr });
+    } catch (e) { showToast(e.message || 'Could not start TOTP setup.', 'error'); }
+    finally { setBusy(false); }
+  };
+
+  const activateTotp = async () => {
+    setBusy(true);
+    try {
+      const { recovery_codes } = await api.mfa.totpActivate(totpCode.trim());
+      setTotpSetup(null); setTotpCode('');
+      if (recovery_codes) setRecovery(recovery_codes);
+      showToast('Authenticator enabled.', 'success');
+      await load();
+    } catch (e) { showToast(e.message || 'Activation failed.', 'error'); }
+    finally { setBusy(false); }
+  };
+
+  const addPasskey = async () => {
+    setBusy(true);
+    try {
+      const options = await api.mfa.passkeyRegisterOptions();
+      const { startRegistration } = await import('@simplewebauthn/browser');
+      const response = await startRegistration({ optionsJSON: options });
+      const label = `${navigator.platform || 'Passkey'} · ${new Date().toLocaleDateString()}`;
+      const { recovery_codes } = await api.mfa.passkeyRegisterVerify(response, label);
+      if (recovery_codes) setRecovery(recovery_codes);
+      showToast('Passkey registered.', 'success');
+      await load();
+    } catch (e) { showToast(e.message || 'Passkey registration failed or was cancelled.', 'error'); }
+    finally { setBusy(false); }
+  };
+
+  const removePasskey = async (id) => {
+    try { await api.mfa.passkeyRemove(id); await load(); showToast('Passkey removed.', 'info'); }
+    catch (e) { showToast(e.message || 'Failed.', 'error'); }
+  };
+
+  const disable = async () => {
+    setBusy(true);
+    try { await api.mfa.disable(disablePw); setDisablePw(''); setShowDisable(false); showToast('2FA disabled.', 'info'); await load(); }
+    catch (e) { showToast(e.message || 'Disable failed.', 'error'); }
+    finally { setBusy(false); }
+  };
+
+  if (recovery) return <RecoveryCodes codes={recovery} onClose={() => setRecovery(null)} />;
+
+  return (
+    <div className="border-t border-border pt-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <label className="text-[9px] uppercase font-semibold text-muted-foreground flex items-center gap-1.5"><Lock className="w-3.5 h-3.5" /> Two-Factor Authentication</label>
+        {status?.mfa_enabled && <span className="text-[8px] bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-2 py-0.5 rounded-full font-bold uppercase">On</span>}
+      </div>
+
+      {/* TOTP */}
+      {status?.totp ? (
+        <div className="flex items-center justify-between text-[11px] text-muted-foreground"><span>Authenticator app</span><span className="text-emerald-500 font-semibold">Enabled</span></div>
+      ) : totpSetup ? (
+        <div className="space-y-2 rounded-xl border border-border bg-muted/30 p-3">
+          <p className="text-[10px] text-muted-foreground">Scan in your authenticator app, then enter the 6-digit code.</p>
+          <img src={totpSetup.qr} alt="TOTP QR" className="mx-auto rounded-lg bg-white p-2" width={160} height={160} />
+          <p className="text-[9px] text-center font-mono text-muted-foreground break-all">{totpSetup.secret}</p>
+          <div className="flex gap-2">
+            <input value={totpCode} onChange={(e) => setTotpCode(e.target.value)} placeholder="123456" inputMode="numeric"
+              className="flex-1 bg-background border border-border rounded-lg px-2 py-1.5 text-xs font-mono tracking-widest text-center outline-none focus:border-primary" />
+            <button onClick={activateTotp} disabled={busy || totpCode.trim().length < 6} className="px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-[10px] font-semibold uppercase disabled:opacity-50">Activate</button>
+          </div>
+        </div>
+      ) : (
+        <button onClick={startTotp} disabled={busy} className="w-full py-2 bg-muted border border-border rounded-lg text-[10px] font-semibold uppercase hover:text-foreground">Set up authenticator app</button>
+      )}
+
+      {/* Passkeys — only where the origin can satisfy WebAuthn. */}
+      {MFA_ON_ORIGIN ? (
+        <div className="space-y-1.5">
+          {status?.passkeys?.map((p) => (
+            <div key={p.id} className="flex items-center justify-between text-[11px] rounded-lg border border-border bg-muted/30 px-2.5 py-1.5">
+              <span className="text-foreground truncate">{p.label || 'Passkey'}</span>
+              <button onClick={() => removePasskey(p.credential_id || p.id)} className="text-muted-foreground hover:text-red-400"><X className="w-3.5 h-3.5" /></button>
+            </div>
+          ))}
+          <button onClick={addPasskey} disabled={busy} className="w-full py-2 bg-muted border border-border rounded-lg text-[10px] font-semibold uppercase hover:text-foreground">+ Add a passkey</button>
+        </div>
+      ) : (
+        <p className="text-[10px] text-muted-foreground">Passkeys can be added from the web console (they don't work inside the desktop agent).</p>
+      )}
+
+      {status?.mfa_enabled && (
+        <div className="space-y-2 pt-1">
+          <div className="text-[10px] text-muted-foreground">{status.recovery_remaining} recovery code(s) remaining.</div>
+          {showDisable ? (
+            <div className="flex gap-2">
+              <input type="password" value={disablePw} onChange={(e) => setDisablePw(e.target.value)} placeholder="Confirm password"
+                className="flex-1 bg-background border border-border rounded-lg px-2 py-1.5 text-xs outline-none focus:border-primary" />
+              <button onClick={disable} disabled={busy || !disablePw} className="px-3 py-1.5 bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg text-[10px] font-semibold uppercase disabled:opacity-50">Confirm</button>
+            </div>
+          ) : (
+            <button onClick={() => setShowDisable(true)} className="text-[10px] text-red-400/80 hover:text-red-400">Disable 2FA</button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -464,6 +619,13 @@ export default function App() {
   const [sessionToken, setSessionToken] = useState(() => localStorage.getItem('civil_session_token') || '');
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  // Second-factor challenge state (held in memory only — the pending token is
+  // never persisted). mfaChallenge = { pendingToken, methods, recovery } | null.
+  const [mfaChallenge, setMfaChallenge] = useState(null);
+  const [mfaMethod, setMfaMethod] = useState('totp');
+  const [mfaCode, setMfaCode] = useState('');
+  const [mfaError, setMfaError] = useState('');
+  const [mfaBusy, setMfaBusy] = useState(false);
   // Real analytics from /api/analytics (overview/team/self), loaded after login.
   const [serverAnalytics, setServerAnalytics] = useState(null);
   // Real project time entries for the ROI attribution ledger.
@@ -985,7 +1147,21 @@ export default function App() {
     return `${str.slice(0, 8)}… (deleted)`;
   };
 
-  // Authentication Submission — real backend, email + password, no fallback.
+  // Shared post-authentication routing — reached from both the direct login and
+  // the MFA-verified path, so the two can't drift.
+  const completeLogin = (user) => {
+    const route = roleToRoute(user.role);
+    localStorage.setItem('civil_role', route);
+    setSessionToken(api.getToken());
+    setCurrentRole(route);
+    setLoginPassword('');
+    setMfaChallenge(null);
+    setMfaCode('');
+    showToast(`Logged in as ${user.name || user.email}.`, 'success');
+    if (route !== 'employee') loadServerData();
+  };
+
+  // Authentication Submission — real backend, email + password, then optional 2FA.
   const handleLoginSubmit = async (e) => {
     if (e) e.preventDefault();
     setLoginError('');
@@ -996,16 +1172,48 @@ export default function App() {
     }
 
     try {
-      const user = await api.auth.login(loginEmail.trim(), loginPassword);
-      const route = roleToRoute(user.role);
-      localStorage.setItem('civil_role', route);
-      setSessionToken(api.getToken());
-      setCurrentRole(route);
-      setLoginPassword('');
-      showToast(`Logged in as ${user.name || user.email}.`, 'success');
-      if (route !== 'employee') loadServerData();
+      const res = await api.auth.login(loginEmail.trim(), loginPassword);
+      if (res.mfaRequired) {
+        // Second factor needed — hold the pending token in memory (never stored)
+        // and show the challenge. Default method: passkey if available, else totp.
+        setMfaChallenge(res);
+        setMfaMethod(res.methods.includes('passkey') && MFA_ON_ORIGIN ? 'passkey' : (res.methods[0] || 'recovery'));
+        setLoginPassword('');
+        return;
+      }
+      completeLogin(res.user);
     } catch (err) {
       setLoginError(err.message || 'Authentication failed');
+    }
+  };
+
+  // Complete the second factor. method: 'totp' | 'recovery' | 'passkey'.
+  const handleMfaVerify = async (method, extra = {}) => {
+    if (!mfaChallenge) return;
+    setMfaError('');
+    setMfaBusy(true);
+    try {
+      const user = await api.auth.mfaVerify(mfaChallenge.pendingToken, { method, ...extra });
+      completeLogin(user);
+    } catch (err) {
+      setMfaError(err.message || 'Verification failed');
+    } finally {
+      setMfaBusy(false);
+    }
+  };
+
+  const handlePasskeyLogin = async () => {
+    if (!mfaChallenge) return;
+    setMfaError('');
+    setMfaBusy(true);
+    try {
+      const options = await api.auth.mfaPasskeyAuthOptions(mfaChallenge.pendingToken);
+      const { startAuthentication } = await import('@simplewebauthn/browser');
+      const response = await startAuthentication({ optionsJSON: options });
+      await handleMfaVerify('passkey', { response });
+    } catch (err) {
+      setMfaError(err.message || 'Passkey sign-in failed or was cancelled.');
+      setMfaBusy(false);
     }
   };
 
@@ -2063,7 +2271,7 @@ export default function App() {
         const u = api.getUser() || {};
         return (
           <div className="fixed inset-0 z-50 bg-muted/70 flex items-center justify-center p-6" onClick={() => setShowProfile(false)}>
-            <div className="w-full max-w-md bg-card border border-border rounded-xl p-6 space-y-5" onClick={(e) => e.stopPropagation()}>
+            <div className="w-full max-w-md max-h-[90vh] overflow-y-auto bg-card border border-border rounded-xl p-6 space-y-5" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-foreground uppercase tracking-wider flex items-center space-x-2">
                   <User className="w-4 h-4 text-primary" /><span>My Profile</span>
@@ -2090,6 +2298,7 @@ export default function App() {
                   className="w-full bg-background border border-border focus:border-primary rounded-xl px-3 py-2 text-xs text-foreground outline-none" />
                 <button onClick={changePassword} className="w-full py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl text-[10px] font-semibold uppercase tracking-widest">Update Password</button>
               </div>
+              {(u.role === 'admin' || u.role === 'lead') && <MfaSection showToast={showToast} />}
             </div>
           </div>
         );
@@ -2341,10 +2550,56 @@ export default function App() {
               <div className="inline-flex p-2.5 bg-primary/10 rounded-xl text-primary">
                 <Shield className="w-5 h-5" />
               </div>
-              <h2 className="text-xl font-semibold tracking-tight text-foreground">Sign in to ChronoTrack</h2>
-              <p className="text-sm text-muted-foreground">Access your workspace console.</p>
+              <h2 className="text-xl font-semibold tracking-tight text-foreground">{mfaChallenge ? 'Two-factor verification' : 'Sign in to ChronoTrack'}</h2>
+              <p className="text-sm text-muted-foreground">{mfaChallenge ? 'Confirm your identity with your second factor.' : 'Access your workspace console.'}</p>
             </div>
 
+            {mfaChallenge ? (
+              <div className="space-y-5">
+                {mfaChallenge.methods.length > 1 && (
+                  <div className="flex gap-2 flex-wrap">
+                    {mfaChallenge.methods.includes('passkey') && MFA_ON_ORIGIN && (
+                      <button type="button" onClick={() => setMfaMethod('passkey')} className={`px-3 py-1.5 rounded-lg border text-xs font-medium ${mfaMethod === 'passkey' ? 'bg-primary/10 border-primary text-primary' : 'border-border text-muted-foreground'}`}>Passkey</button>
+                    )}
+                    {mfaChallenge.methods.includes('totp') && (
+                      <button type="button" onClick={() => setMfaMethod('totp')} className={`px-3 py-1.5 rounded-lg border text-xs font-medium ${mfaMethod === 'totp' ? 'bg-primary/10 border-primary text-primary' : 'border-border text-muted-foreground'}`}>Authenticator</button>
+                    )}
+                  </div>
+                )}
+
+                {mfaMethod === 'passkey' && MFA_ON_ORIGIN ? (
+                  <Button type="button" size="lg" className="w-full" disabled={mfaBusy} onClick={handlePasskeyLogin}>
+                    {mfaBusy ? 'Waiting for passkey…' : 'Use a passkey'}
+                  </Button>
+                ) : (
+                  <form onSubmit={(e) => { e.preventDefault(); handleMfaVerify(mfaMethod === 'recovery' ? 'recovery' : 'totp', { code: mfaCode.trim() }); }} className="space-y-4">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="mfa-code">{mfaMethod === 'recovery' ? 'Recovery code' : '6-digit code'}</Label>
+                      <Input id="mfa-code" value={mfaCode} onChange={(e) => setMfaCode(e.target.value)}
+                        placeholder={mfaMethod === 'recovery' ? 'XXXX-XXXX-XXXX-XXXX' : '123456'}
+                        inputMode={mfaMethod === 'recovery' ? 'text' : 'numeric'} autoComplete="one-time-code" autoFocus className="font-mono tracking-widest text-center" />
+                    </div>
+                    <Button type="submit" size="lg" className="w-full" disabled={mfaBusy || !mfaCode.trim()}>
+                      {mfaBusy ? 'Verifying…' : 'Verify'}
+                    </Button>
+                  </form>
+                )}
+
+                {mfaError && (
+                  <div className="text-sm text-destructive font-medium bg-destructive/10 border border-destructive/20 p-3 rounded-lg text-center">{mfaError}</div>
+                )}
+
+                <div className="flex items-center justify-between text-xs">
+                  {mfaChallenge.recovery && mfaMethod !== 'recovery' && (
+                    <button type="button" onClick={() => { setMfaMethod('recovery'); setMfaError(''); }} className="text-muted-foreground hover:text-foreground">Use a recovery code</button>
+                  )}
+                  {mfaMethod === 'recovery' && mfaChallenge.methods.length > 0 && (
+                    <button type="button" onClick={() => { setMfaMethod(mfaChallenge.methods[0]); setMfaError(''); }} className="text-muted-foreground hover:text-foreground">Back to {mfaChallenge.methods[0] === 'passkey' ? 'passkey' : 'authenticator'}</button>
+                  )}
+                  <button type="button" onClick={() => { setMfaChallenge(null); setMfaCode(''); setMfaError(''); }} className="text-muted-foreground hover:text-foreground ml-auto">Cancel</button>
+                </div>
+              </div>
+            ) : (
             <form onSubmit={handleLoginSubmit} className="space-y-5">
               <div className="space-y-1.5">
                 <Label className="text-muted-foreground">Role</Label>
@@ -2421,6 +2676,7 @@ export default function App() {
                 </Button>
               )}
             </form>
+            )}
           </Card>
         </div>
       )}

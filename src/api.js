@@ -32,9 +32,11 @@ export class ApiError extends Error {
   }
 }
 
-async function request(method, path, body) {
+// opts.authToken overrides the stored session token — used for the short-lived
+// MFA "pending" token, which is deliberately NEVER persisted to localStorage.
+async function request(method, path, body, opts = {}) {
   const headers = { 'Content-Type': 'application/json' };
-  const token = getToken();
+  const token = opts.authToken !== undefined ? opts.authToken : getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
 
   const res = await fetch(`${BASE}${path}`, {
@@ -58,10 +60,26 @@ async function request(method, path, body) {
 
 // --- Auth ----------------------------------------------------------------
 export const auth = {
+  // Returns either { user } (logged in) or { mfaRequired, pendingToken, methods,
+  // recovery } (second factor needed). The pending token stays in caller memory
+  // only — it is never written to localStorage.
   async login(email, password) {
     const data = await request('POST', '/api/auth/login', { email, password });
+    if (data.mfa_required) {
+      return { mfaRequired: true, pendingToken: data.pending_token, methods: data.methods || [], recovery: !!data.recovery };
+    }
+    setSession(data.token, data.user);
+    return { user: data.user };
+  },
+  // Complete the second factor with the pending token; on success, this is where
+  // the real session is finally established.
+  async mfaVerify(pendingToken, payload) {
+    const data = await request('POST', '/api/auth/mfa?action=verify', payload, { authToken: pendingToken });
     setSession(data.token, data.user);
     return data.user;
+  },
+  mfaPasskeyAuthOptions(pendingToken) {
+    return request('POST', '/api/auth/mfa?action=passkey-auth-options', {}, { authToken: pendingToken }).then((d) => d.options);
   },
   me() {
     return request('GET', '/api/auth/me');
@@ -72,6 +90,34 @@ export const auth = {
   },
   logout() {
     clearSession();
+  },
+};
+
+// --- MFA enrollment / management (admin & lead) --------------------------
+export const mfa = {
+  status() {
+    return request('GET', '/api/auth/mfa?action=status');
+  },
+  totpInit() {
+    return request('POST', '/api/auth/mfa?action=totp-init', {});
+  },
+  totpActivate(code) {
+    return request('POST', '/api/auth/mfa?action=totp-activate', { code });
+  },
+  passkeyRegisterOptions() {
+    return request('POST', '/api/auth/mfa?action=passkey-register-options', {}).then((d) => d.options);
+  },
+  passkeyRegisterVerify(response, label) {
+    return request('POST', '/api/auth/mfa?action=passkey-register-verify', { response, label });
+  },
+  passkeyRemove(credentialId) {
+    return request('POST', '/api/auth/mfa?action=passkey-remove', { credential_id: credentialId });
+  },
+  regenerateRecovery(password) {
+    return request('POST', '/api/auth/mfa?action=recovery-regenerate', { password }).then((d) => d.recovery_codes);
+  },
+  disable(password) {
+    return request('POST', '/api/auth/mfa?action=disable', { password });
   },
 };
 
@@ -218,4 +264,4 @@ export const consent = {
   },
 };
 
-export default { auth, users, projects, activation, timeEntries, consent, analytics, rules, auditLogs, telemetryFeed, dataRights, getUser, getToken, clearSession };
+export default { auth, mfa, users, projects, activation, timeEntries, consent, analytics, rules, auditLogs, telemetryFeed, dataRights, getUser, getToken, clearSession };
