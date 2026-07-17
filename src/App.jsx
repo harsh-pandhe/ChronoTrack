@@ -32,6 +32,7 @@ import {
   Mail,
   Phone,
   Briefcase,
+  ArrowLeft,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -53,7 +54,41 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Skeleton } from '@/components/ui/skeleton';
 import { ThemeToggle } from '@/components/ThemeToggle';
+
+// Shared chart tooltip styling — was duplicated inline at every chart site.
+const CHART_TOOLTIP = {
+  backgroundColor: 'hsl(var(--popover))',
+  borderColor: 'hsl(var(--border))',
+  color: 'hsl(var(--popover-foreground))',
+  borderRadius: '12px',
+  fontSize: '11px',
+};
+
+// Small presentational primitives, shared across the detail pages and
+// dashboards so spacing/'type scale stay consistent instead of every section
+// hand-rolling its own sizes.
+const SectionTitle = ({ children }) => (
+  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground block">{children}</span>
+);
+
+const StatTile = ({ label, value, accent, small }) => (
+  <div className="p-4 rounded-xl bg-card border border-border">
+    <span className="text-[10px] uppercase font-semibold tracking-wider text-muted-foreground block">{label}</span>
+    <span className={`mt-1.5 block font-semibold tabular-nums ${small ? 'text-xs' : 'text-2xl'} ${accent || 'text-foreground'}`}>
+      {value}
+    </span>
+  </div>
+);
+
+// Honest empty state for charts — shown instead of an axis-only chart that
+// looks broken. Absolutely positioned so the chart box keeps its height.
+const EmptyChart = ({ children }) => (
+  <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground text-center px-4 pointer-events-none">
+    {children}
+  </div>
+);
 
 // Renders a recharts ResponsiveContainer only once its box has a real size —
 // avoids the "width(-1)/height(-1)" console warning on first paint / tab switch.
@@ -348,8 +383,10 @@ export default function App() {
   const [viewingProject, setViewingProject] = useState(null);
   const [viewingProjectAssignments, setViewingProjectAssignments] = useState([]);
   const openProjectDetail = async (project) => {
+    setViewingUser(null);
     setViewingProject(project);
     setViewingProjectAssignments([]);
+    pushDetailHistory();
     try {
       setViewingProjectAssignments(await api.projects.assignments(project.id));
     } catch { /* non-fatal — assignment roster just stays empty */ }
@@ -362,9 +399,11 @@ export default function App() {
   const [viewingUserAnalytics, setViewingUserAnalytics] = useState(null);
   const [viewingUserBusy, setViewingUserBusy] = useState(false);
   const openUserDetail = async (user) => {
+    setViewingProject(null);
     setViewingUser(user);
     setViewingUserAnalytics(null);
     setViewingUserBusy(true);
+    pushDetailHistory();
     try {
       setViewingUserAnalytics(await api.analytics.employee(user.id, 30));
     } catch (err) {
@@ -372,6 +411,33 @@ export default function App() {
     } finally {
       setViewingUserBusy(false);
     }
+  };
+
+  // Detail views are full pages, not modals — they replace the tab content.
+  // There's no router here (navigation is React state), so Back is wired by
+  // hand: opening a detail pushes one history entry, and popstate closes it.
+  // Without this the browser/hardware Back button would leave the app entirely
+  // from what looks like a sub-page.
+  const detailActive = !!(viewingUser || viewingProject);
+  const pushDetailHistory = () => {
+    if (!detailActive) window.history.pushState({ ctDetail: true }, '');
+  };
+  const closeDetail = () => {
+    setViewingUser(null);
+    setViewingUserAnalytics(null);
+    setViewingProject(null);
+    setViewingProjectAssignments([]);
+  };
+  useEffect(() => {
+    if (!detailActive) return;
+    const onPop = () => closeDetail();
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [detailActive]);
+  // Back button: unwind our pushed entry so history doesn't accumulate.
+  const goBackFromDetail = () => {
+    if (window.history.state?.ctDetail) window.history.back();
+    else closeDetail();
   };
   // Profile / change-password modal.
   const [showProfile, setShowProfile] = useState(false);
@@ -1482,6 +1548,255 @@ export default function App() {
     );
   };
 
+  // --- Detail pages -------------------------------------------------------
+  // These render *inside* a portal's <main>, replacing the tab content, so the
+  // sidebar stays put and it reads as a real page rather than a modal. Shared
+  // by admin and lead (RBAC is enforced server-side by the analytics/assignment
+  // endpoints, so the same view is safe for both).
+
+  const DetailHeader = ({ icon, title, subtitle, crumb }) => (
+    <div className="space-y-4 border-b border-border pb-5">
+      <button
+        onClick={goBackFromDetail}
+        className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <ArrowLeft className="w-3.5 h-3.5" />
+        <span>Back to {crumb}</span>
+      </button>
+      <div className="flex items-center gap-4">
+        {icon}
+        <div className="min-w-0">
+          <h2 className="text-2xl font-semibold tracking-tight text-foreground truncate">{title}</h2>
+          <p className="text-xs text-muted-foreground mt-1 truncate">{subtitle}</p>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderUserDetailPage = () => {
+    const a = viewingUserAnalytics;
+    const myEntries = timeEntriesData.filter(e => e.user_id === viewingUser.id);
+    const assignedProjectIds = new Set(myEntries.map(e => e.project_id).filter(Boolean));
+    if (viewingUser.activeProject) assignedProjectIds.add(viewingUser.activeProject);
+    const assignedProjects = projects.filter(p => assignedProjectIds.has(p.id));
+    const idlePct = a ? Math.max(0, 100 - a.rollup.active_pct) : 0;
+
+    return (
+      <div className="space-y-8 animate-fade-in">
+        <DetailHeader
+          crumb={currentRole === 'admin' ? 'User Directory' : 'Team'}
+          title={viewingUser.name}
+          subtitle={`${viewingUser.role || 'Team Lead'}${viewingUser.dept ? ` · ${viewingUser.dept}` : ''} · ${viewingUser.email}${viewingUser.phone ? ` · ${viewingUser.phone}` : ''}`}
+          icon={
+            <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0 font-bold text-xl">
+              {viewingUser.name?.[0]?.toUpperCase() || '?'}
+            </div>
+          }
+        />
+
+        {viewingUserBusy && !a && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[0, 1, 2, 3].map(i => <Skeleton key={i} className="h-20 rounded-xl" />)}
+            </div>
+            <Skeleton className="h-56 rounded-xl" />
+            <Skeleton className="h-40 rounded-xl" />
+          </div>
+        )}
+
+        {a && (
+          <div className="space-y-8">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <StatTile label="Active Hours (30d)" value={a.rollup.active_hours} accent="text-primary" />
+              <StatTile label="Idle %" value={`${idlePct}%`} />
+              <StatTile label="Anomalies" value={a.rollup.anomalies} accent={a.rollup.anomalies > 0 ? 'text-amber-500' : undefined} />
+              <StatTile label="Last Seen" value={a.rollup.last_seen ? new Date(a.rollup.last_seen).toLocaleString() : 'Never'} small />
+            </div>
+
+            <section className="p-6 rounded-xl bg-card border border-border">
+              <SectionTitle>Daily Active Hours (30d)</SectionTitle>
+              <div className="h-56 w-full relative mt-3">
+                {!a.trend?.length && <EmptyChart>No activity recorded in the last 30 days</EmptyChart>}
+                <SizedChart>
+                  <AreaChart data={a.trend || []}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis dataKey="day" stroke="hsl(var(--muted-foreground))" fontSize={10} />
+                    <YAxis stroke="hsl(var(--muted-foreground))" fontSize={10} />
+                    <Tooltip contentStyle={CHART_TOOLTIP} />
+                    <Area type="monotone" dataKey="active_hours" stroke="hsl(var(--primary))" fill="hsl(var(--primary))" fillOpacity={0.15} strokeWidth={2} name="Active Hours" />
+                  </AreaChart>
+                </SizedChart>
+              </div>
+            </section>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <section className="p-6 rounded-xl bg-card border border-border">
+                <SectionTitle>Apps Recorded</SectionTitle>
+                {!a.top_apps?.length ? (
+                  <p className="text-xs text-muted-foreground mt-3">No app data yet.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    {a.top_apps.map(app => (
+                      <span key={app.category} className="px-2.5 py-1.5 rounded-lg bg-muted border border-border text-xs text-foreground/80">
+                        {app.category} <span className="text-muted-foreground tabular-nums">({app.samples})</span>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </section>
+              <section className="p-6 rounded-xl bg-card border border-border">
+                <SectionTitle>Assigned Projects</SectionTitle>
+                {assignedProjects.length === 0 ? (
+                  <p className="text-xs text-muted-foreground mt-3">No projects assigned.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    {assignedProjects.map(p => (
+                      <button
+                        key={p.id}
+                        onClick={() => openProjectDetail(p)}
+                        className="px-2.5 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-xs text-primary hover:bg-primary/20 transition-colors"
+                      >
+                        {p.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </section>
+            </div>
+
+            <section className="p-6 rounded-xl bg-card border border-border">
+              <SectionTitle>Work Log</SectionTitle>
+              {myEntries.length === 0 ? (
+                <p className="text-xs text-muted-foreground mt-3">No logged time entries yet.</p>
+              ) : (
+                <div className="border border-border rounded-xl overflow-hidden mt-3">
+                  <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead className="sticky top-0 bg-card z-10">
+                        <tr className="border-b border-border bg-muted/30 text-[10px] uppercase font-semibold tracking-wider text-muted-foreground">
+                          <th className="p-3">Date</th>
+                          <th className="p-3">Project</th>
+                          <th className="p-3">Hours</th>
+                          <th className="p-3">Note</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-xs text-foreground/80 divide-y divide-border">
+                        {myEntries.slice(0, 100).map(e => (
+                          <tr key={e.id} className="hover:bg-muted/10">
+                            <td className="p-3 whitespace-nowrap tabular-nums">{new Date(e.start_ts).toLocaleDateString()}</td>
+                            <td className="p-3">{projects.find(p => p.id === e.project_id)?.name || 'Unassigned'}</td>
+                            <td className="p-3 font-semibold tabular-nums">{Number(e.hours).toFixed(1)}</td>
+                            <td className="p-3 text-muted-foreground">{e.note || ''}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </section>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderProjectDetailPage = () => {
+    const entries = timeEntriesData.filter(e => e.project_id === viewingProject.id);
+    const byEmployee = new Map();
+    const byDay = new Map();
+    for (const e of entries) {
+      const hrs = Number(e.hours) || 0;
+      const emp = byEmployee.get(e.user_id) || { hrs: 0, entries: 0 };
+      emp.hrs += hrs; emp.entries += 1;
+      byEmployee.set(e.user_id, emp);
+      const day = new Date(e.start_ts).toLocaleDateString();
+      byDay.set(day, (byDay.get(day) || 0) + hrs);
+    }
+    const dayTrend = Array.from(byDay.entries())
+      .map(([day, hours]) => ({ day, hours: Math.round(hours * 10) / 10 }))
+      .slice(-30);
+    const totalHours = entries.reduce((s, e) => s + (Number(e.hours) || 0), 0);
+
+    return (
+      <div className="space-y-8 animate-fade-in">
+        <DetailHeader
+          crumb={currentRole === 'admin' ? 'Contribution ROI' : 'Projects'}
+          title={viewingProject.name}
+          subtitle={`${viewingProject.client ? `${viewingProject.client} · ` : ''}Rs. ${((viewingProject.contractValue || 0) / 10000000).toFixed(2)} Cr contract`}
+          icon={
+            <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
+              <LayoutDashboard className="w-6 h-6" />
+            </div>
+          }
+        />
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <StatTile label="Total Logged Hours" value={totalHours.toFixed(1)} accent="text-primary" />
+          <StatTile label="Assigned Employees" value={viewingProjectAssignments.length} />
+          <StatTile label="Contributors Logged" value={byEmployee.size} />
+        </div>
+
+        <section className="p-6 rounded-xl bg-card border border-border">
+          <SectionTitle>Hours by Day</SectionTitle>
+          <div className="h-56 w-full relative mt-3">
+            {!dayTrend.length && <EmptyChart>No hours logged against this project yet</EmptyChart>}
+            <SizedChart>
+              <BarChart data={dayTrend}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="day" stroke="hsl(var(--muted-foreground))" fontSize={10} interval={0} angle={-20} textAnchor="end" height={44} />
+                <YAxis stroke="hsl(var(--muted-foreground))" fontSize={10} />
+                <Tooltip contentStyle={CHART_TOOLTIP} />
+                <Bar dataKey="hours" fill="hsl(var(--chart-positive))" radius={[4, 4, 0, 0]} name="Hours" />
+              </BarChart>
+            </SizedChart>
+          </div>
+        </section>
+
+        <section className="p-6 rounded-xl bg-card border border-border">
+          <SectionTitle>Assigned Employees</SectionTitle>
+          {viewingProjectAssignments.length === 0 ? (
+            <p className="text-xs text-muted-foreground mt-3">No employees assigned to this project.</p>
+          ) : (
+            <div className="border border-border rounded-xl overflow-hidden mt-3 overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-border bg-muted/30 text-[10px] uppercase font-semibold tracking-wider text-muted-foreground">
+                    <th className="p-3">Employee</th>
+                    <th className="p-3">Logged Hours</th>
+                    <th className="p-3">Entries</th>
+                  </tr>
+                </thead>
+                <tbody className="text-xs text-foreground/80 divide-y divide-border">
+                  {viewingProjectAssignments.map(as => {
+                    const stats = byEmployee.get(as.id) || { hrs: 0, entries: 0 };
+                    return (
+                      <tr key={as.id} className="hover:bg-muted/10">
+                        <td className="p-3">
+                          <button
+                            onClick={() => openUserDetail({ id: as.id, name: as.name, role: as.title, email: as.email, dept: as.dept })}
+                            className="font-semibold text-foreground hover:text-primary hover:underline transition-colors"
+                          >
+                            {as.name}
+                          </button>
+                        </td>
+                        <td className="p-3 font-semibold tabular-nums">{stats.hrs.toFixed(1)}</td>
+                        <td className="p-3 tabular-nums">{stats.entries}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </div>
+    );
+  };
+
+  const renderDetailPage = () =>
+    viewingUser ? renderUserDetailPage() : viewingProject ? renderProjectDetailPage() : null;
+
   return (
     <div className="min-h-screen bg-background text-foreground selection:bg-primary/30 selection:text-foreground font-sans antialiased">
       
@@ -1500,249 +1815,6 @@ export default function App() {
           </div>
         </div>
       )}
-
-      {/* USER DETAIL DIALOG — click any user (admin: any user; lead: their own
-          team; employee: self) to see their full work history, timeline,
-          apps recorded, idle time, and assigned projects. */}
-      <Dialog open={!!viewingUser} onOpenChange={(open) => { if (!open) { setViewingUser(null); setViewingUserAnalytics(null); } }}>
-        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
-          {viewingUser && (() => {
-            const a = viewingUserAnalytics;
-            const myEntries = timeEntriesData.filter(e => e.user_id === viewingUser.id);
-            const assignedProjectIds = new Set(myEntries.map(e => e.project_id).filter(Boolean));
-            if (viewingUser.activeProject) assignedProjectIds.add(viewingUser.activeProject);
-            const assignedProjects = projects.filter(p => assignedProjectIds.has(p.id));
-            const idlePct = a ? Math.max(0, 100 - a.rollup.active_pct) : 0;
-            return (
-              <>
-                <DialogHeader>
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0 font-bold text-lg">
-                      {viewingUser.name?.[0]?.toUpperCase() || '?'}
-                    </div>
-                    <div>
-                      <DialogTitle className="text-sm text-foreground">{viewingUser.name}</DialogTitle>
-                      <p className="text-[10px] text-muted-foreground mt-0.5">
-                        {viewingUser.role || 'Team Lead'} {viewingUser.dept ? `· ${viewingUser.dept}` : ''} · {viewingUser.email}
-                        {viewingUser.phone ? ` · ${viewingUser.phone}` : ''}
-                      </p>
-                    </div>
-                  </div>
-                </DialogHeader>
-
-                {viewingUserBusy && <p className="text-xs text-muted-foreground py-8 text-center">Loading…</p>}
-
-                {a && (
-                  <div className="space-y-6 pt-2">
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                      <div className="p-3 rounded-xl bg-muted/50 border border-border">
-                        <span className="text-[9px] uppercase font-semibold text-muted-foreground block">Active Hours (30d)</span>
-                        <span className="text-lg font-semibold text-primary">{a.rollup.active_hours}</span>
-                      </div>
-                      <div className="p-3 rounded-xl bg-muted/50 border border-border">
-                        <span className="text-[9px] uppercase font-semibold text-muted-foreground block">Idle %</span>
-                        <span className="text-lg font-semibold text-foreground">{idlePct}%</span>
-                      </div>
-                      <div className="p-3 rounded-xl bg-muted/50 border border-border">
-                        <span className="text-[9px] uppercase font-semibold text-muted-foreground block">Anomalies</span>
-                        <span className="text-lg font-semibold text-amber-400">{a.rollup.anomalies}</span>
-                      </div>
-                      <div className="p-3 rounded-xl bg-muted/50 border border-border">
-                        <span className="text-[9px] uppercase font-semibold text-muted-foreground block">Last Seen</span>
-                        <span className="text-[11px] font-semibold text-foreground">{a.rollup.last_seen ? new Date(a.rollup.last_seen).toLocaleString() : 'Never'}</span>
-                      </div>
-                    </div>
-
-                    <div>
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-2">Daily Active Hours (30d)</span>
-                      <div className="h-40 w-full relative">
-                        {!a.trend?.length && <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">No activity data yet</div>}
-                        <SizedChart>
-                          <AreaChart data={a.trend || []}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                            <XAxis dataKey="day" stroke="hsl(var(--muted-foreground))" fontSize={9} />
-                            <YAxis stroke="hsl(var(--muted-foreground))" fontSize={9} />
-                            <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--popover))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--popover-foreground))', borderRadius: '12px', fontSize: '10px' }} />
-                            <Area type="monotone" dataKey="active_hours" stroke="#6366f1" fill="#6366f1" fillOpacity={0.15} strokeWidth={2} name="Active Hours" />
-                          </AreaChart>
-                        </SizedChart>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div>
-                        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-2">Apps Recorded</span>
-                        {!a.top_apps?.length ? (
-                          <p className="text-[10px] text-muted-foreground">No app data yet.</p>
-                        ) : (
-                          <div className="flex flex-wrap gap-1.5">
-                            {a.top_apps.map(app => (
-                              <span key={app.category} className="px-2 py-1 rounded-lg bg-muted border border-border text-[10px] text-foreground/80">
-                                {app.category} <span className="text-muted-foreground">({app.samples})</span>
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      <div>
-                        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-2">Assigned Projects</span>
-                        {assignedProjects.length === 0 ? (
-                          <p className="text-[10px] text-muted-foreground">No projects assigned.</p>
-                        ) : (
-                          <div className="flex flex-wrap gap-1.5">
-                            {assignedProjects.map(p => (
-                              <span key={p.id} className="px-2 py-1 rounded-lg bg-primary/10 border border-primary/20 text-[10px] text-primary">{p.name}</span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <div>
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-2">Work Log</span>
-                      {myEntries.length === 0 ? (
-                        <p className="text-[10px] text-muted-foreground">No logged time entries yet.</p>
-                      ) : (
-                        <div className="border border-border rounded-xl overflow-hidden max-h-48 overflow-y-auto">
-                          <table className="w-full text-left border-collapse">
-                            <thead className="sticky top-0 bg-card">
-                              <tr className="border-b border-border bg-muted/30 text-[9px] uppercase font-semibold tracking-wider text-muted-foreground">
-                                <th className="p-2">Date</th>
-                                <th className="p-2">Project</th>
-                                <th className="p-2">Hours</th>
-                                <th className="p-2">Note</th>
-                              </tr>
-                            </thead>
-                            <tbody className="text-[10px] text-foreground/80 divide-y divide-border">
-                              {myEntries.slice(0, 100).map(e => (
-                                <tr key={e.id}>
-                                  <td className="p-2 whitespace-nowrap">{new Date(e.start_ts).toLocaleDateString()}</td>
-                                  <td className="p-2">{projects.find(p => p.id === e.project_id)?.name || 'Unassigned'}</td>
-                                  <td className="p-2 font-semibold">{Number(e.hours).toFixed(1)}</td>
-                                  <td className="p-2 text-muted-foreground truncate max-w-[160px]">{e.note || ''}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </>
-            );
-          })()}
-        </DialogContent>
-      </Dialog>
-
-      {/* PROJECT DETAIL DIALOG — assigned employees, per-day work breakdown,
-          per-employee totals. */}
-      <Dialog open={!!viewingProject} onOpenChange={(open) => { if (!open) { setViewingProject(null); setViewingProjectAssignments([]); } }}>
-        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
-          {viewingProject && (() => {
-            const entries = timeEntriesData.filter(e => e.project_id === viewingProject.id);
-            const byEmployee = new Map();
-            const byDay = new Map();
-            for (const e of entries) {
-              const hrs = Number(e.hours) || 0;
-              const emp = byEmployee.get(e.user_id) || { hrs: 0, entries: 0 };
-              emp.hrs += hrs; emp.entries += 1;
-              byEmployee.set(e.user_id, emp);
-              const day = new Date(e.start_ts).toLocaleDateString();
-              byDay.set(day, (byDay.get(day) || 0) + hrs);
-            }
-            const dayTrend = Array.from(byDay.entries())
-              .map(([day, hours]) => ({ day, hours: Math.round(hours * 10) / 10 }))
-              .slice(-30);
-            const totalHours = entries.reduce((s, e) => s + (Number(e.hours) || 0), 0);
-            return (
-              <>
-                <DialogHeader>
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
-                      <LayoutDashboard className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <DialogTitle className="text-sm text-foreground">{viewingProject.name}</DialogTitle>
-                      <p className="text-[10px] text-muted-foreground mt-0.5">
-                        {viewingProject.client ? `${viewingProject.client} · ` : ''}Rs. {((viewingProject.contractValue || 0) / 10000000).toFixed(2)} Cr contract
-                      </p>
-                    </div>
-                  </div>
-                </DialogHeader>
-
-                <div className="space-y-6 pt-2">
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="p-3 rounded-xl bg-muted/50 border border-border">
-                      <span className="text-[9px] uppercase font-semibold text-muted-foreground block">Total Logged Hours</span>
-                      <span className="text-lg font-semibold text-primary">{totalHours.toFixed(1)}</span>
-                    </div>
-                    <div className="p-3 rounded-xl bg-muted/50 border border-border">
-                      <span className="text-[9px] uppercase font-semibold text-muted-foreground block">Assigned Employees</span>
-                      <span className="text-lg font-semibold text-foreground">{viewingProjectAssignments.length}</span>
-                    </div>
-                    <div className="p-3 rounded-xl bg-muted/50 border border-border">
-                      <span className="text-[9px] uppercase font-semibold text-muted-foreground block">Contributors Logged</span>
-                      <span className="text-lg font-semibold text-foreground">{byEmployee.size}</span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-2">Hours by Day</span>
-                    <div className="h-40 w-full relative">
-                      {!dayTrend.length && <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">No logged hours yet</div>}
-                      <SizedChart>
-                        <BarChart data={dayTrend}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                          <XAxis dataKey="day" stroke="hsl(var(--muted-foreground))" fontSize={9} interval={0} angle={-20} textAnchor="end" height={40} />
-                          <YAxis stroke="hsl(var(--muted-foreground))" fontSize={9} />
-                          <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--popover))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--popover-foreground))', borderRadius: '12px', fontSize: '10px' }} />
-                          <Bar dataKey="hours" fill="#10b981" radius={[4, 4, 0, 0]} name="Hours" />
-                        </BarChart>
-                      </SizedChart>
-                    </div>
-                  </div>
-
-                  <div>
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-2">Assigned Employees</span>
-                    {viewingProjectAssignments.length === 0 ? (
-                      <p className="text-[10px] text-muted-foreground">No employees assigned to this project.</p>
-                    ) : (
-                      <div className="border border-border rounded-xl overflow-hidden">
-                        <table className="w-full text-left border-collapse">
-                          <thead>
-                            <tr className="border-b border-border bg-muted/30 text-[9px] uppercase font-semibold tracking-wider text-muted-foreground">
-                              <th className="p-2">Employee</th>
-                              <th className="p-2">Logged Hours</th>
-                              <th className="p-2">Entries</th>
-                            </tr>
-                          </thead>
-                          <tbody className="text-[10px] text-foreground/80 divide-y divide-border">
-                            {viewingProjectAssignments.map(a => {
-                              const stats = byEmployee.get(a.id) || { hrs: 0, entries: 0 };
-                              return (
-                                <tr key={a.id}>
-                                  <td className="p-2">
-                                    <button onClick={() => { setViewingProject(null); openUserDetail({ id: a.id, name: a.name, role: a.title, email: a.email, dept: a.dept }); }} className="font-semibold text-foreground hover:text-primary hover:underline transition-colors">
-                                      {a.name}
-                                    </button>
-                                  </td>
-                                  <td className="p-2 font-semibold">{stats.hrs.toFixed(1)}</td>
-                                  <td className="p-2">{stats.entries}</td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </>
-            );
-          })()}
-        </DialogContent>
-      </Dialog>
 
       {/* CONFIRM MODAL — replaces window.confirm() */}
       {confirmModal && (
@@ -2250,8 +2322,13 @@ export default function App() {
           </aside>
 
           {/* Main Content Area */}
-          <main className="flex-1 p-6 md:p-8 space-y-6 overflow-y-auto max-w-7xl mx-auto w-full">
-            
+          <main className="flex-1 p-6 md:p-8 space-y-6 overflow-y-auto max-w-7xl 2xl:max-w-[96rem] mx-auto w-full">
+
+            {/* A detail drill-down takes over the content area as a real page —
+                the sidebar stays, so you keep your bearings and the Back button
+                returns you to whichever tab you came from. */}
+            {detailActive ? renderDetailPage() : (<>
+
             {/* Overview Panel with AI/ML Analytics */}
             {activeAdminTab === 'overview' && (
               <div className="space-y-6">
@@ -3114,6 +3191,7 @@ export default function App() {
               </div>
             )}
 
+            </>)}
           </main>
         </div>
       )}
@@ -3167,8 +3245,10 @@ export default function App() {
           </aside>
 
           {/* Main Content */}
-          <main className="flex-1 p-6 md:p-8 space-y-6 overflow-y-auto max-w-7xl mx-auto w-full">
-            
+          <main className="flex-1 p-6 md:p-8 space-y-6 overflow-y-auto max-w-7xl 2xl:max-w-[96rem] mx-auto w-full">
+
+            {detailActive ? renderDetailPage() : (<>
+
             {activeTlTab === 'overview' && (
               <div className="space-y-6">
                 <div className="border-b border-border pb-4">
@@ -3551,6 +3631,7 @@ export default function App() {
               </div>
             )}
 
+            </>)}
           </main>
         </div>
       )}

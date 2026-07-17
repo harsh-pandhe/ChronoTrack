@@ -26,6 +26,19 @@
     --input: 240 6% 90%;
     --ring: 243 75% 59%;
     --radius: 0.625rem;
+
+    /* Chart palette. Charts used to hardcode hex (#6366f1, #10b981, ...) which
+       ignored the theme and read badly in dark mode. These are tokens so the
+       same series colour adapts, and so the productive/unproductive/neutral
+       semantics stay consistent everywhere they're plotted. */
+    --chart-1: 243 75% 59%;
+    --chart-2: 262 72% 60%;
+    --chart-3: 199 89% 48%;
+    --chart-4: 32 95% 54%;
+    --chart-5: 330 75% 58%;
+    --chart-positive: 160 84% 39%;
+    --chart-negative: 0 72% 51%;
+    --chart-neutral: 240 4% 60%;
   }
 
   /* Dark mode: retained deep-navy surfaces, brighter indigo for contrast. */
@@ -49,6 +62,16 @@
     --border: 240 4% 16%;
     --input: 240 4% 16%;
     --ring: 243 75% 66%;
+
+    /* Brighter/desaturated variants so series stay legible on the dark canvas. */
+    --chart-1: 243 75% 68%;
+    --chart-2: 262 72% 70%;
+    --chart-3: 199 89% 60%;
+    --chart-4: 32 95% 62%;
+    --chart-5: 330 75% 68%;
+    --chart-positive: 160 74% 48%;
+    --chart-negative: 0 72% 60%;
+    --chart-neutral: 240 5% 55%;
   }
 
   * {
