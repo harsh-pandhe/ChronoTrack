@@ -990,28 +990,68 @@ export default function App() {
       setEmployees(emps);
 
       // Real analytics (telemetry + time entries), role-scoped.
+      //
+      // These used to be awaited one after another — 7 sequential round trips
+      // against a serverless backend, each paying its own latency (and possibly
+      // a cold start) before the next even started. Nothing here depends on
+      // anything else here, so they all go out at once instead; the slowest
+      // call now sets the total, not the sum.
+      //
+      // Deliberately NOT fetched here (loaded lazily on first visit to the tab
+      // that needs them, see ensureTabData): the audit log and the raw
+      // telemetry feed. Both are large, both are one-tab-only, and paying for
+      // them on every login was pure waste.
       const role = (api.getUser() && api.getUser().role) || '';
-      try { await loadRules(); } catch { /* ignore */ }
-      try { setTimeEntriesData(await api.timeEntries.list()); } catch { /* ignore */ }
-      try { setServerTelemetryFeed(await api.telemetryFeed.list(50)); } catch { /* ignore */ }
-      try { if (role === 'admin') setServerAuditLogs(await api.auditLogs.list()); } catch { /* ignore */ }
-      try { if (role === 'admin' || role === 'lead') setPersistedPending(await api.activation.pending()); } catch { /* ignore */ }
-      try {
-        if (role === 'admin') {
-          setServerAnalytics({ overview: await api.analytics.overview(7), team: await api.analytics.team(7) });
-        } else if (role === 'lead') {
-          setServerAnalytics({ team: await api.analytics.team(7) });
-        } else if (role === 'employee') {
-          setServerAnalytics({ self: await api.analytics.employee(null, 7) });
-        }
-      } catch (e) {
-        console.warn('[analytics] load failed:', e.message);
-      }
+      const settle = (p, onOk) => p.then(onOk).catch(() => { /* non-fatal: section renders its empty state */ });
+
+      await Promise.all([
+        settle(loadRules(), () => {}),
+        settle(api.timeEntries.list(), setTimeEntriesData),
+        role === 'admin' || role === 'lead'
+          ? settle(api.activation.pending(), setPersistedPending)
+          : null,
+        role === 'admin'
+          ? Promise.all([api.analytics.overview(7), api.analytics.team(7)])
+              .then(([overview, team]) => setServerAnalytics({ overview, team }))
+              .catch((e) => console.warn('[analytics] load failed:', e.message))
+          : role === 'lead'
+            ? settle(api.analytics.team(7), (team) => setServerAnalytics({ team }))
+            : role === 'employee'
+              ? settle(api.analytics.employee(null, 7), (self) => setServerAnalytics({ self }))
+              : null,
+      ].filter(Boolean));
     } catch (err) {
       // Keep last-known data on transient failure; surface once.
       console.warn('[data] server load failed:', err.message);
     }
   }
+
+  // Tab-scoped lazy loads. Fetched on first visit and then cached for the
+  // session, so switching back is instant and login doesn't pay for tabs you
+  // never open.
+  const [tabDataLoaded, setTabDataLoaded] = useState({});
+  const ensureTabData = async (key) => {
+    if (tabDataLoaded[key]) return;
+    setTabDataLoaded((prev) => ({ ...prev, [key]: true }));
+    try {
+      if (key === 'audit') setServerAuditLogs(await api.auditLogs.list());
+      if (key === 'telemetry') setServerTelemetryFeed(await api.telemetryFeed.list(50));
+    } catch (e) {
+      // Allow a retry on the next visit rather than caching the failure.
+      setTabDataLoaded((prev) => ({ ...prev, [key]: false }));
+      console.warn(`[data] ${key} load failed:`, e.message);
+    }
+  };
+
+  // Drives the lazy tab loads. An effect (rather than hanging it off the tab
+  // click handler) because the active tab is also restored from localStorage on
+  // reload, which never goes through a click.
+  useEffect(() => {
+    if (!api.getToken()) return;
+    if (currentRole === 'admin' && activeAdminTab === 'audit') ensureTabData('audit');
+    if (currentRole === 'admin' && activeAdminTab === 'overview') ensureTabData('telemetry');
+    if (currentRole === 'tl' && activeTlTab === 'members') ensureTabData('telemetry');
+  }, [currentRole, activeAdminTab, activeTlTab]);
 
   // Interactive CRUD State for User Management
   const [showAddForm, setShowAddForm] = useState(false);
