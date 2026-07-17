@@ -4,6 +4,29 @@ const fs = require('fs');
 const http = require('http');
 const { spawn } = require('child_process');
 
+// Auto-update against the GitHub Releases feed (electron-builder publishes a
+// latest.yml alongside the installers). Best-effort and fully non-fatal: a
+// telemetry agent must never fail to launch because an update check errored.
+// NOTE: while the build is unsigned, Windows still shows SmartScreen on the
+// downloaded update — auto-update becomes truly seamless once code signing is
+// wired (the release.yml cert hook already exists).
+let autoUpdater = null;
+try { ({ autoUpdater } = require('electron-updater')); } catch { /* dep missing in some dev setups */ }
+
+function initAutoUpdate() {
+  if (!autoUpdater || !app.isPackaged) return;
+  try {
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true; // apply the update on the next quit, no interruption
+    autoUpdater.on('error', (e) => console.error('[updater] error:', e?.message || e));
+    autoUpdater.on('update-available', (i) => console.log('[updater] update available:', i?.version));
+    autoUpdater.on('update-downloaded', (i) => console.log('[updater] downloaded, will install on quit:', i?.version));
+    autoUpdater.checkForUpdatesAndNotify().catch((e) => console.error('[updater] check failed:', e?.message || e));
+  } catch (e) {
+    console.error('[updater] init failed:', e?.message || e);
+  }
+}
+
 // NOTE: do NOT force --no-sandbox. On some kernels the unsandboxed path fails to
 // create /dev/shm shared memory (ESRCH) and the renderer aborts. The .deb ships
 // chrome-sandbox setuid-root (like Discord/VS Code), so the normal sandbox works.
@@ -276,6 +299,7 @@ app.whenReady().then(async () => {
   startTelemetryDaemon();
   startWatchdog();
   createWindow();
+  initAutoUpdate();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
