@@ -871,7 +871,7 @@ export default function App() {
   // Create project (admin or lead).
   const [showAddProject, setShowAddProject] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [projForm, setProjForm] = useState({ name: '', client: '', billed_revenue: '' });
+  const [projForm, setProjForm] = useState({ name: '', client: '', billed_revenue: '', team_lead_id: '' });
 
   const [savingProject, setSavingProject] = useState(false);
   const handleAddProject = async (e) => {
@@ -883,9 +883,10 @@ export default function App() {
       await api.projects.create({
         name: projForm.name, client: projForm.client,
         billed_revenue: Number(projForm.billed_revenue) || 0,
+        team_lead_id: projForm.team_lead_id || null,
       });
       await loadServerData();
-      setShowAddProject(false); setProjForm({ name: '', client: '', billed_revenue: '' });
+      setShowAddProject(false); setProjForm({ name: '', client: '', billed_revenue: '', team_lead_id: '' });
       showToast(`Project "${projForm.name}" created.`, 'success');
     } catch (err) { showToast(err.message || 'Failed to create project.', 'error'); }
     finally { setSavingProject(false); }
@@ -1829,20 +1830,38 @@ export default function App() {
           </div>
         </div>
 
-        {showAddProject && (
-          <form onSubmit={handleAddProject} className="p-6 rounded-xl bg-card border border-primary/20 space-y-4 animate-fade-in">
-            <div className="flex justify-between items-center">
-              <h3 className="text-xs font-semibold uppercase tracking-widest text-primary">New Project</h3>
-              <button type="button" onClick={() => setShowAddProject(false)} className="text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <input value={projForm.name} onChange={(e) => setProjForm({ ...projForm, name: e.target.value })} placeholder="Project name" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-foreground outline-none" />
-              <input value={projForm.client} onChange={(e) => setProjForm({ ...projForm, client: e.target.value })} placeholder="Client (optional)" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-foreground outline-none" />
-              <input type="number" value={projForm.billed_revenue} onChange={(e) => setProjForm({ ...projForm, billed_revenue: e.target.value })} placeholder="Contract value (Rs.)" className="bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-foreground outline-none" />
-            </div>
-            <button type="submit" disabled={savingProject} className="px-5 py-2.5 bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-primary-foreground font-semibold text-xs uppercase tracking-widest rounded-xl">{savingProject ? 'Creating…' : 'Create Project'}</button>
-          </form>
-        )}
+        <Dialog open={showAddProject} onOpenChange={setShowAddProject}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="text-xs uppercase tracking-widest text-primary">New Project</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleAddProject} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[9px] uppercase font-semibold text-muted-foreground">Project Name</label>
+                <input autoFocus value={projForm.name} onChange={(e) => setProjForm({ ...projForm, name: e.target.value })} placeholder="e.g. NHAI Delhi Bypass" className="w-full bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-foreground outline-none" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-[9px] uppercase font-semibold text-muted-foreground">Client (optional)</label>
+                  <input value={projForm.client} onChange={(e) => setProjForm({ ...projForm, client: e.target.value })} placeholder="Client" className="w-full bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-foreground outline-none" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[9px] uppercase font-semibold text-muted-foreground">Contract Value (Rs.)</label>
+                  <input type="number" value={projForm.billed_revenue} onChange={(e) => setProjForm({ ...projForm, billed_revenue: e.target.value })} placeholder="0" className="w-full bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-foreground outline-none" />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[9px] uppercase font-semibold text-muted-foreground">Assign to Team Lead</label>
+                <select value={projForm.team_lead_id} onChange={(e) => setProjForm({ ...projForm, team_lead_id: e.target.value })} className="w-full bg-background border border-border focus:border-primary rounded-xl px-4 py-2.5 text-xs text-foreground outline-none">
+                  <option value="">Unassigned</option>
+                  {teamLeads.map((tl) => <option key={tl.id} value={tl.id}>{tl.name}</option>)}
+                </select>
+                <p className="text-[9px] text-muted-foreground">The lead sees the project on their board and can allocate their employees to it.</p>
+              </div>
+              <button type="submit" disabled={savingProject} className="w-full py-2.5 bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-primary-foreground font-semibold text-xs uppercase tracking-widest rounded-xl">{savingProject ? 'Creating…' : 'Create Project'}</button>
+            </form>
+          </DialogContent>
+        </Dialog>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="p-6 rounded-xl bg-card border border-border shadow-md">
