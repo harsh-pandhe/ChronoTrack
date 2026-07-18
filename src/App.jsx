@@ -148,7 +148,7 @@ function ToggleSwitch({ checked, onChange, title }) {
 // Real searchable select (replaces the flaky native <datalist>): filters an
 // item list as you type and shows the matches in a dropdown you click. Generic
 // over any {id,...} item via getLabel/getSub.
-function SearchSelect({ items, value, onChange, placeholder = 'Search…', getLabel, getSub, emptyText = 'No matches' }) {
+function SearchSelect({ items, value, onChange, placeholder = 'Search…', getLabel, getSub, emptyText = 'No matches', disabled = false }) {
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
   const boxRef = useRef(null);
@@ -167,9 +167,10 @@ function SearchSelect({ items, value, onChange, placeholder = 'Search…', getLa
       <input
         value={open ? q : (selected ? getLabel(selected) : q)}
         onChange={(e) => { setQ(e.target.value); setOpen(true); if (value) onChange(''); }}
-        onFocus={() => { setOpen(true); setQ(''); }}
+        onFocus={() => { if (!disabled) { setOpen(true); setQ(''); } }}
         placeholder={placeholder}
-        className="w-full bg-background border border-border focus:border-primary rounded-xl px-3 py-2 text-xs text-foreground outline-none"
+        disabled={disabled}
+        className="w-full bg-background border border-border focus:border-primary rounded-xl px-3 py-2 text-xs text-foreground outline-none disabled:opacity-50 disabled:cursor-not-allowed"
       />
       {open && (
         <div className="absolute z-30 mt-1 w-full max-h-56 overflow-y-auto rounded-xl border border-border bg-popover shadow-lg">
@@ -694,6 +695,7 @@ export default function App() {
   // own team) plus one fetch for the assignment roster.
   const [viewingProject, setViewingProject] = useState(null);
   const [viewingProjectAssignments, setViewingProjectAssignments] = useState([]);
+  const [reassignBusy, setReassignBusy] = useState(false);
   const openProjectDetail = async (project) => {
     setViewingUser(null);
     setViewingProject(project);
@@ -702,6 +704,46 @@ export default function App() {
     try {
       setViewingProjectAssignments(await api.projects.assignments(project.id));
     } catch { /* non-fatal — assignment roster just stays empty */ }
+  };
+
+  // Reassigning a project to a different lead moves it out from under the old
+  // lead's team entirely — their assigned employees no longer make sense on it
+  // (they were put there by/for the old lead's team), so we clear the roster
+  // and let the new lead re-assign from their own people. Admin-only (backend
+  // enforces this too).
+  const handleReassignProjectLead = (newLeadId) => {
+    // SearchSelect also fires onChange('') the instant the user starts typing
+    // to search (it's normally just a state setter elsewhere) — since here
+    // onChange IS the reassign action, guard against that or every keystroke
+    // would trigger a "clear the lead" confirm dialog.
+    if (!newLeadId || !viewingProject || newLeadId === viewingProject.teamLeadId) return;
+    const newLead = teamLeads.find((t) => t.id === newLeadId);
+    const doReassign = async () => {
+      setReassignBusy(true);
+      try {
+        await Promise.all(
+          viewingProjectAssignments.map((a) => api.projects.unassign(viewingProject.id, a.id))
+        );
+        const updated = await api.projects.update(viewingProject.id, { team_lead_id: newLeadId });
+        setViewingProject((p) => ({ ...p, teamLeadId: updated.team_lead_id }));
+        setViewingProjectAssignments([]);
+        await loadServerData();
+        showToast(`Project reassigned to ${newLead?.name || 'new lead'}.`, 'success');
+      } catch (err) {
+        showToast(err.message || 'Failed to reassign project.', 'error');
+      } finally {
+        setReassignBusy(false);
+      }
+    };
+    if (viewingProjectAssignments.length > 0) {
+      askConfirm(
+        `Reassign "${viewingProject.name}" to ${newLead?.name || 'this lead'}? The ${viewingProjectAssignments.length} employee(s) currently assigned will be taken off this project — the new lead will need to re-assign from their own team.`,
+        doReassign,
+        { title: 'Reassign project lead', danger: true, confirmLabel: 'Reassign' }
+      );
+    } else {
+      doReassign();
+    }
   };
 
   // User detail drill-down (admin: any user; lead: their own team; click a row
@@ -2021,6 +2063,16 @@ export default function App() {
     if (viewingUser.activeProject) assignedProjectIds.add(viewingUser.activeProject);
     const assignedProjects = projects.filter(p => assignedProjectIds.has(p.id));
     const idlePct = a ? Math.max(0, 100 - a.rollup.active_pct) : 0;
+
+    // Scoping for a team-lead viewer: a lead should only see how much of an
+    // employee's day went to THEIR project(s) — "worked on A for 2h in the
+    // morning" — not the employee's full-day device telemetry (idle %, focus
+    // score, every app used), which is admin-only. Admin still sees everything.
+    const viewerIsLead = currentRole === 'tl';
+    const myLedProjectIds = new Set(projects.filter(p => p.teamLeadId === api.getUser()?.id).map(p => p.id));
+    const myProjectEntries = myEntries.filter(e => myLedProjectIds.has(e.project_id));
+    const myProjectHours = myProjectEntries.reduce((s, e) => s + (Number(e.hours) || 0), 0);
+
     // Team leads don't run the desktop agent, so activity analytics are always
     // empty/zero for them — show a lead-appropriate view (their team + the
     // projects they own) instead of a wall of meaningless 0s.
@@ -2083,7 +2135,53 @@ export default function App() {
           </div>
         )}
 
-        {!isLead && viewingUserBusy && !a && (
+        {!isLead && viewerIsLead && (
+          <div className="space-y-6">
+            <DecisionNote tone="info">
+              Full-day activity telemetry (idle %, focus score, apps used) is admin-only. Here's how much of {viewingUser.name}'s logged time went to project(s) you lead.
+            </DecisionNote>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              <StatTile label="Hours on Your Projects" value={myProjectHours.toFixed(1)} accent="text-primary" />
+              <StatTile label="Entries" value={myProjectEntries.length} />
+              <StatTile label="Your Projects" value={new Set(myProjectEntries.map(e => e.project_id)).size} />
+            </div>
+            <section className="p-6 rounded-xl bg-card border border-border">
+              <SectionTitle>Work Log — Your Projects</SectionTitle>
+              {myProjectEntries.length === 0 ? (
+                <p className="text-xs text-muted-foreground mt-3">No logged hours on your project(s) yet.</p>
+              ) : (
+                <div className="border border-border rounded-xl overflow-hidden mt-3">
+                  <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead className="sticky top-0 bg-card z-10">
+                        <tr className="border-b border-border bg-muted/30 text-[10px] uppercase font-semibold tracking-wider text-muted-foreground">
+                          <th className="p-3">Date</th>
+                          <th className="p-3">Time</th>
+                          <th className="p-3">Project</th>
+                          <th className="p-3">Hours</th>
+                          <th className="p-3">Note</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-xs text-foreground/80 divide-y divide-border">
+                        {myProjectEntries.slice(0, 100).map(e => (
+                          <tr key={e.id} className="hover:bg-muted/10">
+                            <td className="p-3 whitespace-nowrap tabular-nums">{new Date(e.start_ts).toLocaleDateString()}</td>
+                            <td className="p-3 whitespace-nowrap tabular-nums text-muted-foreground">{new Date(e.start_ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
+                            <td className="p-3">{projects.find(p => p.id === e.project_id)?.name || 'Unassigned'}</td>
+                            <td className="p-3 font-semibold tabular-nums">{Number(e.hours).toFixed(1)}</td>
+                            <td className="p-3 text-muted-foreground">{e.note || ''}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </section>
+          </div>
+        )}
+
+        {!isLead && !viewerIsLead && viewingUserBusy && !a && (
           <div className="space-y-6">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {[0, 1, 2, 3].map(i => <Skeleton key={i} className="h-20 rounded-xl" />)}
@@ -2093,7 +2191,7 @@ export default function App() {
           </div>
         )}
 
-        {!isLead && a && (
+        {!isLead && !viewerIsLead && a && (
           <div className="space-y-8">
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
               <StatTile label="Active Hours (30d)" value={a.rollup.active_hours} accent="text-primary" />
@@ -2249,6 +2347,27 @@ export default function App() {
           <StatTile label="Assigned Employees" value={viewingProjectAssignments.length} />
           <StatTile label="Contributors Logged" value={byEmployee.size} />
         </div>
+
+        {currentRole === 'admin' && (
+          <section className="p-6 rounded-xl bg-card border border-border">
+            <SectionTitle>Team Lead</SectionTitle>
+            <div className="mt-3 flex items-center gap-3 flex-wrap">
+              <div className="w-64">
+                <SearchSelect
+                  items={teamLeads}
+                  value={viewingProject.teamLeadId || ''}
+                  onChange={handleReassignProjectLead}
+                  placeholder="Unassigned — search leads…"
+                  getLabel={(t) => t.name}
+                  getSub={(t) => t.dept}
+                  disabled={reassignBusy}
+                />
+              </div>
+              {reassignBusy && <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Reassigning…</span>}
+              <span className="text-[10px] text-muted-foreground">Changing this moves the project to a new lead's team and clears its assigned employees.</span>
+            </div>
+          </section>
+        )}
 
         <section className="p-6 rounded-xl bg-card border border-border">
           <SectionTitle>Hours by Day</SectionTitle>
