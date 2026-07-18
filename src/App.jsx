@@ -1152,29 +1152,54 @@ export default function App() {
     return localStorage.getItem('civil_desktop_activated') === 'true';
   });
 
-  // Real latest-release asset URLs. Hardcoding a version in the filename
-  // (the previous approach) broke silently the moment a new version shipped —
-  // the "3.0.0" links kept serving after 3.2.1 released and the download page
-  // handed out the wrong installer. Fetch the actual latest-release asset list
-  // from GitHub instead; falls back to the versionless /latest/download/ path
-  // (which 404s cleanly rather than silently serving a stale build) if the API
-  // call fails, e.g. offline or rate-limited.
-  const [latestReleaseAssets, setLatestReleaseAssets] = useState(null);
+  // Real latest-release asset URLs. Hardcoding a version in the filename (the
+  // original approach) broke silently the moment a new version shipped — the
+  // "3.0.0" links kept serving after 3.2.1 released. Querying GitHub's API at
+  // runtime fixed the staleness but introduced a NEW failure mode found live:
+  // that API is unauthenticated and rate-limited (60 req/hr per IP) — one
+  // rate-limited visitor (or a shared office/CGNAT IP) saw every download
+  // button read "not available yet" with no real fallback.
+  //
+  // Fix: build the exact same filenames electron-builder produces
+  // (ChronoTrackAgent.Setup.<version>.exe / ChronoTrackAgent-<version>.
+  // AppImage / chronotrack_<version>_amd64.deb) from __APP_VERSION__ — the
+  // SPA's own build-time package.json version, injected by vite.config.js —
+  // and use that immediately as a working link. The GitHub API call still
+  // runs and overwrites it with the verified real asset list when it
+  // succeeds (covers the rare case where a web deploy ships slightly ahead
+  // of its matching desktop release build), but a rate-limited or offline
+  // visitor now gets a working download instead of a dead button. Cache a
+  // successful API result in sessionStorage for an hour so repeat page loads
+  // in one browsing session don't re-spend the rate limit.
+  const fallbackReleaseAssets = {
+    tag: `v${__APP_VERSION__}`,
+    windows: `https://github.com/harsh-pandhe/ChronoTrack/releases/download/v${__APP_VERSION__}/ChronoTrackAgent.Setup.${__APP_VERSION__}.exe`,
+    appImage: `https://github.com/harsh-pandhe/ChronoTrack/releases/download/v${__APP_VERSION__}/ChronoTrackAgent-${__APP_VERSION__}.AppImage`,
+    deb: `https://github.com/harsh-pandhe/ChronoTrack/releases/download/v${__APP_VERSION__}/chronotrack_${__APP_VERSION__}_amd64.deb`,
+  };
+  const [latestReleaseAssets, setLatestReleaseAssets] = useState(fallbackReleaseAssets);
   useEffect(() => {
     let cancelled = false;
+    const CACHE_KEY = 'ct_release_cache_v1';
+    try {
+      const cached = JSON.parse(sessionStorage.getItem(CACHE_KEY) || 'null');
+      if (cached && Date.now() - cached.at < 3600_000) { setLatestReleaseAssets(cached.data); return; }
+    } catch { /* ignore malformed cache */ }
     fetch('https://api.github.com/repos/harsh-pandhe/ChronoTrack/releases/latest')
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        if (cancelled || !data?.assets) return;
+        if (cancelled || !data?.assets) return; // keep the working fallback on failure/rate-limit
         const find = (suffix) => data.assets.find((a) => a.name.toLowerCase().endsWith(suffix))?.browser_download_url || null;
-        setLatestReleaseAssets({
+        const resolved = {
           tag: data.tag_name,
-          windows: find('.exe'),
-          appImage: find('.appimage'),
-          deb: find('.deb'),
-        });
+          windows: find('.exe') || fallbackReleaseAssets.windows,
+          appImage: find('.appimage') || fallbackReleaseAssets.appImage,
+          deb: find('.deb') || fallbackReleaseAssets.deb,
+        };
+        setLatestReleaseAssets(resolved);
+        try { sessionStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), data: resolved })); } catch { /* storage full/disabled — non-fatal */ }
       })
-      .catch(() => { /* falls back to the static links below */ });
+      .catch(() => { /* keep the working fallback */ });
     return () => { cancelled = true; };
   }, []);
 
@@ -1764,9 +1789,19 @@ export default function App() {
   }, [desktopActivated]);
 
   // Employee's own historical logged time entries (My Logged Time panel).
+  // Own project list too — the shared top-level `projects` state is only ever
+  // populated for admin/lead (loadServerData explicitly skips it for
+  // employees), so "My Logged Time" was resolving every single entry's
+  // project name against an empty array and always showing "Unassigned",
+  // even for entries logged against a real, correctly-assigned project.
   const [myTimeEntries, setMyTimeEntries] = useState([]);
+  const [myProjects, setMyProjects] = useState([]);
   const reloadMyTimeEntries = async () => {
-    try { setMyTimeEntries(await api.timeEntries.list()); } catch { /* not an employee token / offline */ }
+    try {
+      const [entries, projs] = await Promise.all([api.timeEntries.list(), api.projects.list()]);
+      setMyTimeEntries(entries);
+      setMyProjects(projs.map((p) => ({ id: p.id, name: p.name })));
+    } catch { /* not an employee token / offline */ }
   };
   useEffect(() => {
     if (!desktopActivated || !api.getToken()) return;
@@ -1783,8 +1818,19 @@ export default function App() {
     reloadMyConsent();
   }, [desktopActivated]);
   const handleWithdrawConsent = () => {
+    // Withdrawing stops the CLOUD relationship (revokes the device / marks
+    // consent withdrawn server-side) — it doesn't reach into the local
+    // daemon to force a final flush first. If there's a real local backlog
+    // (the daemon buffers offline and syncs in batches of 200, so this can
+    // be nonzero), that data won't reach the server before this cuts the
+    // device off — surface the actual pending count so the employee can see
+    // it and choose to wait, instead of silently losing already-tracked time.
+    const pending = cloudSyncStatus?.pendingSync;
+    const pendingNote = typeof pending === 'number' && pending > 0
+      ? ` Heads up: ${pending} tracked record(s) are still queued locally and have NOT reached the server yet — withdrawing now means they will never sync.`
+      : '';
     askConfirm(
-      'Withdraw consent for activity monitoring? This stops the desktop agent from collecting new telemetry immediately — your historical data is unaffected.',
+      `Withdraw consent for activity monitoring? This stops the desktop agent from collecting new telemetry immediately — your historical data already on the server is unaffected.${pendingNote}`,
       async () => {
         try {
           await api.consent.withdraw();
@@ -1794,7 +1840,7 @@ export default function App() {
           showToast(err.message || 'Failed to withdraw consent.', 'error');
         }
       },
-      { title: 'Withdraw consent', danger: true, confirmLabel: 'Withdraw consent' }
+      { title: 'Withdraw consent', danger: true, confirmLabel: pendingNote ? 'Withdraw anyway' : 'Withdraw consent' }
     );
   };
 
@@ -2627,6 +2673,33 @@ export default function App() {
                 <button onClick={changePassword} className="w-full py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl text-[10px] font-semibold uppercase tracking-widest">Update Password</button>
               </div>
               {(u.role === 'admin' || u.role === 'lead') && <MfaSection showToast={showToast} />}
+              {u.role === 'employee' && (
+                <div className="border-t border-border pt-4 space-y-2">
+                  <span className="text-[9px] uppercase font-semibold text-muted-foreground flex items-center gap-1.5"><ShieldOff className="w-3.5 h-3.5 text-indigo-400" /> Privacy & Consent</span>
+                  {!myConsent ? (
+                    <p className="text-[10px] text-muted-foreground">No consent record found yet.</p>
+                  ) : myConsent.withdrawn_at ? (
+                    <div className="p-3 bg-red-950/30 border border-red-900/50 rounded-xl space-y-1">
+                      <span className="text-[10px] font-bold text-red-400">Consent withdrawn</span>
+                      <p className="text-[10px] text-red-300/80">Monitoring stopped on {new Date(myConsent.withdrawn_at).toLocaleString()}.</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="p-3 bg-emerald-950/20 border border-emerald-900/40 rounded-xl space-y-1">
+                        <span className="text-[10px] font-bold text-emerald-400">Consent granted (v{myConsent.consent_version})</span>
+                        <p className="text-[10px] text-muted-foreground">Since {new Date(myConsent.granted_at).toLocaleString()}. Only activity counts and window titles are recorded — never keystroke content or screen content.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleWithdrawConsent}
+                        className="w-full py-2 bg-muted border border-red-500/20 text-red-400 hover:bg-red-500/10 text-[10px] font-semibold uppercase tracking-wider rounded-xl transition-all"
+                      >
+                        Withdraw Consent
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         );
@@ -4651,6 +4724,14 @@ export default function App() {
                     </span>
                     {desktopActivated && (
                       <button
+                        onClick={openProfile}
+                        className="px-3 py-1 bg-muted hover:bg-accent border border-border text-muted-foreground hover:text-foreground rounded-lg text-[9px] font-semibold uppercase tracking-wider transition-all flex items-center gap-1"
+                      >
+                        <User className="w-3 h-3" /> Profile
+                      </button>
+                    )}
+                    {desktopActivated && (
+                      <button
                         onClick={handleDesktopSignOut}
                         className="px-3 py-1 bg-muted hover:bg-accent border border-border text-muted-foreground hover:text-foreground rounded-lg text-[9px] font-semibold uppercase tracking-wider transition-all flex items-center gap-1"
                       >
@@ -4919,7 +5000,7 @@ export default function App() {
                             {myTimeEntries.slice(0, 50).map(e => (
                               <tr key={e.id}>
                                 <td className="p-2.5 whitespace-nowrap">{new Date(e.start_ts).toLocaleDateString()}</td>
-                                <td className="p-2.5">{projects.find(p => p.id === e.project_id)?.name || 'Unassigned'}</td>
+                                <td className="p-2.5">{myProjects.find(p => p.id === e.project_id)?.name || 'Unassigned'}</td>
                                 <td className="p-2.5 font-semibold">{Number(e.hours).toFixed(1)}</td>
                                 <td className="p-2.5 text-muted-foreground truncate max-w-[140px]">{e.note || ''}</td>
                               </tr>
@@ -4930,35 +5011,20 @@ export default function App() {
                     )}
                   </div>
 
-                  {/* Privacy & Consent — review status, withdraw at any time (DPDP). */}
-                  <div className="p-6 rounded-xl bg-card border border-border space-y-4">
-                    <span className="text-xs font-semibold text-foreground uppercase tracking-wider flex items-center space-x-2">
+                  {/* Privacy & Consent moved to the Profile page (top-right "Profile"
+                      button) — settings/account-level controls belong there, not
+                      mixed into the day's live telemetry view. */}
+                  <button
+                    type="button"
+                    onClick={openProfile}
+                    className="w-full p-4 rounded-xl bg-card border border-border hover:border-primary/40 transition-colors flex items-center justify-between text-left"
+                  >
+                    <span className="text-xs font-semibold text-foreground uppercase tracking-wider flex items-center gap-2">
                       <ShieldOff className="w-4 h-4 text-indigo-400" />
-                      <span>Privacy & Consent</span>
+                      Privacy & Consent
                     </span>
-                    {!myConsent ? (
-                      <p className="text-[10px] text-muted-foreground">No consent record found yet.</p>
-                    ) : myConsent.withdrawn_at ? (
-                      <div className="p-3 bg-red-950/30 border border-red-900/50 rounded-xl space-y-1">
-                        <span className="text-[10px] font-bold text-red-400">Consent withdrawn</span>
-                        <p className="text-[10px] text-red-300/80">Monitoring stopped on {new Date(myConsent.withdrawn_at).toLocaleString()}.</p>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="p-3 bg-emerald-950/20 border border-emerald-900/40 rounded-xl space-y-1">
-                          <span className="text-[10px] font-bold text-emerald-400">Consent granted (v{myConsent.consent_version})</span>
-                          <p className="text-[10px] text-muted-foreground">Since {new Date(myConsent.granted_at).toLocaleString()}. Only activity counts and window titles are recorded — never keystroke content or screen content.</p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={handleWithdrawConsent}
-                          className="w-full py-2 bg-muted border border-red-500/20 text-red-400 hover:bg-red-500/10 text-[10px] font-semibold uppercase tracking-wider rounded-xl transition-all"
-                        >
-                          Withdraw Consent
-                        </button>
-                      </>
-                    )}
-                  </div>
+                    <span className="text-[10px] text-muted-foreground uppercase tracking-wider">View in Profile →</span>
+                  </button>
                 </div>
 
               </div>

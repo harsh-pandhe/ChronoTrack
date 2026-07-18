@@ -25,9 +25,15 @@
   DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "ChronoTrackDaemon"
   DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "CivilMantraDaemon"
 
-  ; Deliberately NOT deleting %APPDATA%\chronotrack (telemetry.db, config,
-  ; logs) here -- uninstalling the app isn't the same thing as withdrawing
-  ; consent or wanting local history erased, and the employee-facing
-  ; "Withdraw Consent" flow already exists in-app for that. Stopping the
-  ; running process and its autostart is the part uninstall must guarantee.
+  ; Clear the device's cloud activation (cloud_url + device_token) so a fresh
+  ; install genuinely starts fresh and asks for an activation code again --
+  ; found live: uninstall -> reinstall silently logged straight back into the
+  ; old session because this file survived and the daemon read cloud_url +
+  ; device_token from it on first launch, self-reporting as already
+  ; activated. Deliberately NOT touching config.json/telemetry.db/daemon.log
+  ; here (or their pre-rebrand civil-mantra equivalents) -- local telemetry
+  ; history is a separate concern from "is this device currently signed in",
+  ; and the in-app "Withdraw Consent" flow is the real way to erase that.
+  Delete "$APPDATA\chronotrack-daemon\cloud.json"
+  Delete "$APPDATA\civil-mantra\cloud.json"
 !macroend
