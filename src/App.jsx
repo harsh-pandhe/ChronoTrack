@@ -590,9 +590,9 @@ export default function App() {
   // Persist the active tab across a reload — losing your place every refresh
   // (always bouncing back to Dashboard) was a real, reported annoyance.
   const [activeAdminTab, setActiveAdminTabState] = useState(() => localStorage.getItem('ct_admin_tab') || 'overview'); // 'overview' | 'users' | 'contribution' | 'provision' | 'rules' | 'audit'
-  const setActiveAdminTab = (tab) => { setActiveAdminTabState(tab); localStorage.setItem('ct_admin_tab', tab); };
+  const setActiveAdminTab = (tab) => { closeDetail(); setActiveAdminTabState(tab); localStorage.setItem('ct_admin_tab', tab); };
   const [activeTlTab, setActiveTlTabState] = useState(() => localStorage.getItem('ct_tl_tab') || 'overview'); // 'overview' | 'contribution' | 'members' | 'manage'
-  const setActiveTlTab = (tab) => { setActiveTlTabState(tab); localStorage.setItem('ct_tl_tab', tab); };
+  const setActiveTlTab = (tab) => { closeDetail(); setActiveTlTabState(tab); localStorage.setItem('ct_tl_tab', tab); };
   
   // Custom Analytics & Team Lead State Variables
   const [selectedAttributionProject, setSelectedAttributionProject] = useState('Project Alpha');
@@ -1719,12 +1719,14 @@ export default function App() {
                 <option key={p.id} value={p.id}>{p.name || p.id}</option>
               ))}
             </select>
-            <button
-              onClick={() => setShowAddProject(true)}
-              className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs uppercase tracking-widest rounded-xl transition-all flex items-center space-x-1.5 whitespace-nowrap"
-            >
-              <Plus className="w-4 h-4" /><span>New Project</span>
-            </button>
+            {currentRole === 'admin' && (
+              <button
+                onClick={() => setShowAddProject(true)}
+                className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs uppercase tracking-widest rounded-xl transition-all flex items-center space-x-1.5 whitespace-nowrap"
+              >
+                <Plus className="w-4 h-4" /><span>New Project</span>
+              </button>
+            )}
             {activeProj && (
               <button
                 onClick={() => openProjectDetail(activeProj)}
@@ -2601,68 +2603,32 @@ export default function App() {
               </div>
             ) : (
             <form onSubmit={handleLoginSubmit} className="space-y-5">
-              <div className="space-y-1.5">
-                <Label className="text-muted-foreground">Role</Label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { id: 'admin', label: 'Admin', icon: Shield },
-                    { id: 'tl', label: 'Team Lead', icon: Users },
-                    { id: 'employee', label: 'Employee', icon: User },
-                  ].map((r) => (
-                    <button
-                      key={r.id}
-                      type="button"
-                      onClick={() => setLoginRole(r.id)}
-                      className={`py-2.5 rounded-lg border text-xs font-medium flex flex-col items-center justify-center gap-1.5 transition-colors ${
-                        loginRole === r.id
-                          ? 'bg-primary/10 border-primary text-primary'
-                          : 'bg-background border-border text-muted-foreground hover:text-foreground hover:bg-accent'
-                      }`}
-                    >
-                      <r.icon className="w-4 h-4" />
-                      <span>{r.label}</span>
-                    </button>
-                  ))}
+              {/* Admin + Team Lead only — employees never sign into the web
+                  console; they onboard through the desktop agent. */}
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="login-email">Corporate email</Label>
+                  <Input
+                    id="login-email"
+                    type="email"
+                    value={loginEmail}
+                    onChange={(e) => setLoginEmail(e.target.value)}
+                    placeholder="you@company.com"
+                    autoComplete="username"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="login-password">Password</Label>
+                  <Input
+                    id="login-password"
+                    type="password"
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    placeholder="••••••••"
+                    autoComplete="current-password"
+                  />
                 </div>
               </div>
-
-              {loginRole !== 'employee' ? (
-                <div className="space-y-4">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="login-email">Corporate email</Label>
-                    <Input
-                      id="login-email"
-                      type="email"
-                      value={loginEmail}
-                      onChange={(e) => setLoginEmail(e.target.value)}
-                      placeholder="you@company.com"
-                      autoComplete="username"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="login-password">Password</Label>
-                    <Input
-                      id="login-password"
-                      type="password"
-                      value={loginPassword}
-                      onChange={(e) => setLoginPassword(e.target.value)}
-                      placeholder="••••••••"
-                      autoComplete="current-password"
-                    />
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-muted border border-border p-4 rounded-lg text-center space-y-2">
-                  <p className="text-sm text-muted-foreground">Employees sign in through the desktop agent.</p>
-                  <button
-                    type="button"
-                    onClick={() => setCurrentRole('employee')}
-                    className="text-xs font-medium text-primary hover:underline"
-                  >
-                    Open desktop view
-                  </button>
-                </div>
-              )}
 
               {loginError && (
                 <div className="text-sm text-destructive font-medium bg-destructive/10 border border-destructive/20 p-3 rounded-lg text-center">
@@ -2670,11 +2636,16 @@ export default function App() {
                 </div>
               )}
 
-              {loginRole !== 'employee' && (
-                <Button type="submit" size="lg" className="w-full">
-                  Sign in
-                </Button>
-              )}
+              <Button type="submit" size="lg" className="w-full">
+                Sign in
+              </Button>
+
+              <p className="text-center text-xs text-muted-foreground">
+                Are you an employee?{' '}
+                <button type="button" onClick={() => setCurrentRole('employee')} className="text-primary font-medium hover:underline">
+                  Get the desktop agent
+                </button>
+              </p>
             </form>
             )}
           </Card>
@@ -4009,67 +3980,27 @@ export default function App() {
                     )}
                   </div>
 
-                  {/* Create Project Form */}
-                  <div className="p-6 rounded-xl bg-card border border-border space-y-4">
-                    <span className="text-[10px] font-semibold uppercase text-muted-foreground block">Register Project Contract</span>
-                    <form onSubmit={async (e) => {
-                      e.preventDefault();
-                      if (savingTLProject) return; // guard against double-submit creating duplicates
-                      if (!newProjName) {
-                        showToast('Enter project name.', 'error');
-                        return;
-                      }
-                      setSavingTLProject(true);
-                      try {
-                        await api.projects.create({
-                          name: newProjName,
-                          budget: parseFloat(newProjBudget) || 0,
-                          billed_revenue: parseFloat(newProjBudget) || 0,
-                        });
-                        await loadServerData();
-                        showToast('Project Contract Registered!', 'success');
-                        setNewProjName('');
-                      } catch (err) {
-                        showToast(err.message || 'Failed to create project.', 'error');
-                      } finally {
-                        setSavingTLProject(false);
-                      }
-                    }} className="space-y-3">
-                      <div className="space-y-1">
-                        <label className="text-[9px] uppercase font-semibold text-muted-foreground">Project Contract Name</label>
-                        <input
-                          type="text"
-                          required
-                          value={newProjName}
-                          onChange={(e) => setNewProjName(e.target.value)}
-                          placeholder="e.g. NHAI Delhi Bypass Road"
-                          className="w-full bg-background border border-border rounded-xl px-4 py-2 text-xs text-foreground outline-none"
-                        />
+                  {/* Projects are created by the admin and assigned to a lead;
+                      a lead assigns their own employees onto those projects. */}
+                  <div className="p-6 rounded-xl bg-card border border-border space-y-3">
+                    <span className="text-[10px] font-semibold uppercase text-muted-foreground block">Your Projects</span>
+                    <div className="flex items-start gap-2.5 rounded-xl border border-primary/15 bg-primary/5 px-3.5 py-2.5 text-xs text-muted-foreground leading-relaxed">
+                      <Info className="w-4 h-4 shrink-0 mt-0.5 text-primary" />
+                      <span>Projects are set up by your administrator and assigned to you. Once assigned, they appear in your Team Board and Contribution ROI, where you can allocate your employees to them.</span>
+                    </div>
+                    {projects.length === 0 ? (
+                      <p className="text-[11px] text-muted-foreground">No projects assigned to you yet — ask your admin to assign one.</p>
+                    ) : (
+                      <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                        {projects.map((p) => (
+                          <button key={p.id} onClick={() => openProjectDetail(p)}
+                            className="w-full flex items-center justify-between rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs hover:border-primary/40 transition-colors text-left">
+                            <span className="font-semibold text-foreground truncate">{p.name}</span>
+                            <span className="text-muted-foreground shrink-0 ml-2">Rs. {((p.contractValue || 0) / 1e7).toFixed(2)} Cr</span>
+                          </button>
+                        ))}
                       </div>
-                      <div className="space-y-1">
-                        <label className="text-[9px] uppercase font-semibold text-muted-foreground">Contract Value (Rs.)</label>
-                        <input
-                          type="number"
-                          required
-                          value={newProjBudget}
-                          onChange={(e) => setNewProjBudget(e.target.value)}
-                          className="w-full bg-background border border-border rounded-xl px-4 py-2 text-xs text-foreground outline-none"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[9px] uppercase font-semibold text-muted-foreground">Project Profit Margin Target (%)</label>
-                        <input
-                          type="number"
-                          required
-                          value={newProjMargin}
-                          onChange={(e) => setNewProjMargin(e.target.value)}
-                          className="w-full bg-background border border-border rounded-xl px-4 py-2 text-xs text-foreground outline-none"
-                        />
-                      </div>
-                      <button type="submit" disabled={savingTLProject} className="w-full py-3 bg-muted border border-border text-foreground hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed font-semibold text-xs uppercase tracking-widest rounded-xl transition-all">
-                        {savingTLProject ? 'Registering…' : 'Register Contract'}
-                      </button>
-                    </form>
+                    )}
                   </div>
                 </div>
               </div>

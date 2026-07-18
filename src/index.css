@@ -6,25 +6,28 @@
   /* Light-first "Linear/Vercel" palette: near-white canvas, hairline borders,
      one indigo accent, strong contrast. */
   :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 10%;
+    /* Soft neutral canvas instead of harsh pure-white, with white cards that
+       lift off it (Linear/Notion-style depth). Secondary text darkened for
+       readability — the old 46% muted-foreground was too faint. */
+    --background: 220 20% 97%;
+    --foreground: 222 22% 14%;
     --card: 0 0% 100%;
-    --card-foreground: 240 10% 10%;
+    --card-foreground: 222 22% 14%;
     --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 10%;
-    --primary: 243 75% 59%;
+    --popover-foreground: 222 22% 14%;
+    --primary: 243 75% 58%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 240 5% 96%;
-    --secondary-foreground: 240 6% 20%;
-    --muted: 240 5% 96%;
-    --muted-foreground: 240 4% 46%;
-    --accent: 240 5% 96%;
-    --accent-foreground: 240 6% 20%;
+    --secondary: 220 16% 93%;
+    --secondary-foreground: 222 20% 22%;
+    --muted: 220 16% 93%;
+    --muted-foreground: 220 10% 38%;
+    --accent: 220 16% 93%;
+    --accent-foreground: 222 20% 22%;
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
-    --border: 240 6% 90%;
-    --input: 240 6% 90%;
-    --ring: 243 75% 59%;
+    --border: 220 15% 88%;
+    --input: 220 15% 88%;
+    --ring: 243 75% 58%;
     --radius: 0.625rem;
 
     /* Chart palette. Charts used to hardcode hex (#6366f1, #10b981, ...) which
