@@ -3970,6 +3970,32 @@ export default function App() {
                   <p className="text-xs text-muted-foreground mt-1">Real-time application polling and timesheet validations for assigned engineers.</p>
                 </div>
 
+                {/* KPI row — was missing entirely, making the dashboard feel
+                    empty even when there was real data behind the charts below. */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <StatTile label="Team Size" value={(serverAnalytics?.team?.members || []).length} />
+                  <StatTile label="Projects Led" value={projects.filter(p => p.teamLeadId === api.getUser()?.id).length} />
+                  <StatTile
+                    label="Team Active %"
+                    value={(() => {
+                      const m = serverAnalytics?.team?.members || [];
+                      return m.length ? `${Math.round(m.reduce((s, x) => s + (x.active_pct || 0), 0) / m.length)}%` : '—';
+                    })()}
+                    accent="text-primary"
+                  />
+                  <StatTile label="Idle Bench" value={`${serverAnalytics?.team?.idle?.idle_pct ?? 0}%`} accent={serverAnalytics?.team?.idle?.idle_pct > 50 ? 'text-amber-500' : undefined} />
+                </div>
+
+                {serverAnalytics?.team?.productivity?.total > 0 && (() => {
+                  const p = serverAnalytics.team.productivity;
+                  const tone = p.productive_pct >= 60 ? 'good' : p.unproductive_pct >= 30 ? 'bad' : 'watch';
+                  return (
+                    <DecisionNote tone={tone}>
+                      Your team logged {p.productive_hours}h productive · {p.neutral_hours}h neutral · {p.unproductive_hours}h unproductive over the last 7 days.
+                    </DecisionNote>
+                  );
+                })()}
+
                 {/* Team charts — real telemetry */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <div className="p-6 rounded-xl bg-card border border-border space-y-4">
@@ -4015,6 +4041,19 @@ export default function App() {
                         </BarChart>
                       </SizedChart>
                     </div>
+                  </div>
+                </div>
+
+                {/* Productivity split + working-hours heatmap — computed by the
+                    backend for the team scope already, just never rendered here. */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="p-6 rounded-xl bg-card border border-border">
+                    <span className="text-xs font-semibold text-foreground uppercase tracking-wider">Productive vs Unproductive</span>
+                    <div className="mt-3"><ProductivitySplit data={serverAnalytics?.team?.productivity} /></div>
+                  </div>
+                  <div className="p-6 rounded-xl bg-card border border-border">
+                    <span className="text-xs font-semibold text-foreground uppercase tracking-wider">Working-Hours Pattern</span>
+                    <div className="mt-3"><ActivityHeatmap data={serverAnalytics?.team?.heatmap} /></div>
                   </div>
                 </div>
 
