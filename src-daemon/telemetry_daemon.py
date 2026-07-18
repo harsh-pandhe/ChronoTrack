@@ -968,10 +968,23 @@ class TelemetryAPIHandler(BaseHTTPRequestHandler):
         self.wfile.write(json.dumps(obj).encode("utf-8"))
 
     def do_POST(self):
-        # Activation handoff from the Electron app after the user activates in
-        # the cloud: stores cloud_url + device_token so the sync thread starts.
         if not self.is_authenticated():
             return self._json(401, {"error": "Unauthorized"})
+
+        # "Sign Out" in the renderer used to only clear its own web session
+        # (ct_token/desktopActivated) and never told the daemon anything. The
+        # daemon kept reporting itself cloud-activated on the next /api/status
+        # poll, which flipped the renderer straight back onto the dashboard —
+        # which then made cloud API calls with no token (the "Missing bearer
+        # token" 401s). Mark revoked=True (keep the url/token around, just
+        # gated off) so /api/status honestly reports not-activated and the
+        # background sync thread stops pushing telemetry for this device.
+        if self.path == "/api/deactivate":
+            save_cloud_config(CLOUD["cloud_url"], CLOUD["device_token"], revoked=True)
+            return self._json(200, {"deactivated": True})
+
+        # Activation handoff from the Electron app after the user activates in
+        # the cloud: stores cloud_url + device_token so the sync thread starts.
         if self.path != "/api/activate":
             return self._json(404, {"error": "Not found"})
         try:

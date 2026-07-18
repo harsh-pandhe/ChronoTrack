@@ -1386,7 +1386,22 @@ export default function App() {
   const handleDesktopSignOut = () => {
     askConfirm(
       'Sign out of the desktop agent? You will need an activation code to sign back in.',
-      () => {
+      async () => {
+        // Tell the DAEMON first, before clearing our own token. Sign-out used
+        // to only clear the renderer's web session; the daemon kept reporting
+        // itself cloud-activated on its next /api/status poll, which flipped
+        // the UI straight back onto the dashboard — which then made cloud API
+        // calls with the now-cleared token ("Missing bearer token" 401s). The
+        // daemon is the actual source of truth for "is this device active".
+        try {
+          const daemonToken = window.electronAPI ? window.electronAPI.getApiToken() : '';
+          await fetch('http://localhost:5050/api/deactivate', {
+            method: 'POST',
+            headers: daemonToken ? { Authorization: `Bearer ${daemonToken}` } : {},
+          });
+        } catch (daemonErr) {
+          console.warn('Daemon deactivate failed (daemon may not be running):', daemonErr);
+        }
         api.clearSession();
         localStorage.removeItem('civil_desktop_activated');
         setDesktopActivated(false);
