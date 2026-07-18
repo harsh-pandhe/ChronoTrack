@@ -16,7 +16,6 @@ import projectById from '../api/projects/[id].js';
 import activation from '../api/activation.js';
 import ingest from '../api/ingest.js';
 import timeEntries from '../api/time-entries.js';
-import consent from '../api/consent.js';
 import analytics from '../api/analytics.js';
 import reports from '../api/reports.js';
 
@@ -32,7 +31,6 @@ const routes = [
   [/^\/api\/activation$/, activation],
   [/^\/api\/ingest$/, ingest],
   [/^\/api\/time-entries$/, timeEntries],
-  [/^\/api\/consent$/, consent],
   [/^\/api\/analytics$/, analytics],
   [/^\/api\/reports$/, reports],
 ];
@@ -223,7 +221,7 @@ async function main() {
     'timeline lists the employee\'s assigned projects');
 
   // 8h. Device management: list own devices, expiry enforcement, per-device revoke.
-  r = await call('GET', '/api/consent?devices=1', { token: empToken });
+  r = await call('GET', '/api/reports?kind=consent&devices=1', { token: empToken });
   ok(r.status === 200 && r.json.devices.length >= 1 && !!r.json.devices[0].expires_at,
      'employee lists own devices (with expiry)');
   const devId = r.json.devices[0].id;
@@ -231,7 +229,7 @@ async function main() {
   r = await call('POST', '/api/ingest', { token: deviceToken, body: { samples } });
   ok(r.status === 403 && /expired/i.test(r.json.error || ''), 'ingest rejected when device token expired');
   await query(`UPDATE devices SET expires_at = now() + interval '30 days' WHERE id=$1`, [devId]);
-  r = await call('DELETE', `/api/consent?device_id=${devId}`, { token: empToken });
+  r = await call('DELETE', `/api/reports?kind=consent&device_id=${devId}`, { token: empToken });
   ok(r.status === 200, 'employee revokes a single device (not full consent)');
   r = await call('POST', '/api/ingest', { token: deviceToken, body: { samples } });
   ok(r.status === 403, 'ingest blocked after per-device revoke');
@@ -269,7 +267,7 @@ async function main() {
   ok(assignRows.length === 1, 'PATCH active_project_id also populates project_assignments');
 
   // 10. Consent withdrawal stops collection (DPDP)
-  r = await call('DELETE', '/api/consent', { token: empToken });
+  r = await call('DELETE', '/api/reports?kind=consent', { token: empToken });
   ok(r.status === 200, 'employee withdraws consent');
   r = await call('POST', '/api/ingest', { token: deviceToken, body: { samples } });
   ok(r.status === 403, 'ingest blocked after consent withdrawal (device revoked)');

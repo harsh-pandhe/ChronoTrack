@@ -28,6 +28,48 @@ export default handler(async (req, res) => {
   const actor = await requireAuth(req);
   const kind = url.searchParams.get('kind') || 'rules';
 
+  // ---- consent (any authed user; DPDP self-service) ----
+  // Folded in from the former standalone /api/consent to stay within Vercel
+  // Hobby's 12-function-per-deployment cap (2FA's api/auth/mfa.js was the 13th).
+  if (kind === 'consent') {
+    if (req.method === 'GET') {
+      if (url.searchParams.get('devices') === '1') {
+        const { rows } = await query(
+          `SELECT id, platform, hostname, revoked, last_seen, expires_at, created_at
+             FROM devices WHERE user_id = $1 ORDER BY created_at DESC`,
+          [actor.id]
+        );
+        return send(res, 200, { devices: rows });
+      }
+      const { rows } = await query(
+        `SELECT consent_version, granted_at, withdrawn_at FROM consents
+          WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
+        [actor.id]
+      );
+      return send(res, 200, { consent: rows[0] || null });
+    }
+    if (req.method === 'DELETE') {
+      const deviceId = url.searchParams.get('device_id');
+      if (deviceId) {
+        const { rowCount } = await query(
+          `UPDATE devices SET revoked = true WHERE id = $1 AND user_id = $2`,
+          [deviceId, actor.id]
+        );
+        if (rowCount === 0) throw new HttpError(404, 'Device not found');
+        await audit(req, actor, 'revoke device', deviceId);
+        return send(res, 200, { ok: true, message: 'Device revoked.' });
+      }
+      await query(`UPDATE devices SET revoked = true WHERE user_id = $1`, [actor.id]);
+      await query(
+        `UPDATE consents SET withdrawn_at = now() WHERE user_id = $1 AND withdrawn_at IS NULL`,
+        [actor.id]
+      );
+      await audit(req, actor, 'withdraw consent', actor.id);
+      return send(res, 200, { ok: true, message: 'Consent withdrawn; monitoring stopped.' });
+    }
+    throw new HttpError(405, 'Method Not Allowed');
+  }
+
   // ---- rules ----
   if (kind === 'rules') {
     if (req.method === 'GET') {

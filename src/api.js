@@ -255,12 +255,14 @@ export const dataRights = {
 };
 
 // --- Consent (DPDP) ------------------------------------------------------
+// Served by /api/reports?kind=consent (folded in to stay under Vercel Hobby's
+// 12-serverless-function limit once 2FA added api/auth/mfa.js).
 export const consent = {
   status() {
-    return request('GET', '/api/consent').then((d) => d.consent);
+    return request('GET', '/api/reports?kind=consent').then((d) => d.consent);
   },
   withdraw() {
-    return request('DELETE', '/api/consent');
+    return request('DELETE', '/api/reports?kind=consent');
   },
 };
 
