@@ -400,7 +400,10 @@ export default handler(async (req, res) => {
       ...r,
       roi: r.cost > 0 ? Math.round(((r.revenue - r.cost) / r.cost) * 10) / 10 : null,
     }));
-    const productivity = await productivitySplit(actor.company_id, sinceSql);
+    const [productivity, heatmap] = await Promise.all([
+      productivitySplit(actor.company_id, sinceSql),
+      activityHeatmap(actor.company_id, sinceSql), // company-wide — was missing, so the admin heatmap always read empty
+    ]);
     return send(res, 200, {
       scope, days,
       headcount: hc[0],
@@ -411,6 +414,7 @@ export default handler(async (req, res) => {
       trend,
       categories: catRows.rows,
       productivity,
+      heatmap,
     });
   }
 
