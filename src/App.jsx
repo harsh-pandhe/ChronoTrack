@@ -1128,6 +1128,32 @@ export default function App() {
     return localStorage.getItem('civil_desktop_activated') === 'true';
   });
 
+  // Real latest-release asset URLs. Hardcoding a version in the filename
+  // (the previous approach) broke silently the moment a new version shipped —
+  // the "3.0.0" links kept serving after 3.2.1 released and the download page
+  // handed out the wrong installer. Fetch the actual latest-release asset list
+  // from GitHub instead; falls back to the versionless /latest/download/ path
+  // (which 404s cleanly rather than silently serving a stale build) if the API
+  // call fails, e.g. offline or rate-limited.
+  const [latestReleaseAssets, setLatestReleaseAssets] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch('https://api.github.com/repos/harsh-pandhe/ChronoTrack/releases/latest')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data?.assets) return;
+        const find = (suffix) => data.assets.find((a) => a.name.toLowerCase().endsWith(suffix))?.browser_download_url || null;
+        setLatestReleaseAssets({
+          tag: data.tag_name,
+          windows: find('.exe'),
+          appImage: find('.appimage'),
+          deb: find('.deb'),
+        });
+      })
+      .catch(() => { /* falls back to the static links below */ });
+    return () => { cancelled = true; };
+  }, []);
+
   useEffect(() => {
     // Only the Electron desktop agent talks to the local daemon (127.0.0.1:5050).
     // In a plain browser (admin/lead web dashboards) there is no daemon — skip the
@@ -2590,7 +2616,7 @@ export default function App() {
                   Console Access
                 </button>
                 <button
-                  onClick={() => window.open('https://github.com/harsh-pandhe/ChronoTrack/releases/latest', '_blank', 'noopener')}
+                  onClick={() => setCurrentRole('employee')}
                   className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-xs uppercase rounded-full transition-all duration-200 active:scale-[0.98]"
                 >
                   Download Agent
@@ -2620,7 +2646,7 @@ export default function App() {
                     Console Access
                   </button>
                   <button
-                    onClick={() => { setMobileNavOpen(false); window.open('https://github.com/harsh-pandhe/ChronoTrack/releases/latest', '_blank', 'noopener'); }}
+                    onClick={() => { setMobileNavOpen(false); setCurrentRole('employee'); }}
                     className="w-full px-4 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-xs uppercase rounded-full transition-all duration-200 active:scale-[0.98]"
                   >
                     Download Agent
@@ -4449,12 +4475,15 @@ export default function App() {
                   </div>
 
                   {/* Downloader Section */}
+                  {latestReleaseAssets?.tag && (
+                    <p className="text-center text-[10px] text-muted-foreground uppercase tracking-wider -mt-2">Latest version: {latestReleaseAssets.tag}</p>
+                  )}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     {[
-                      { os: 'Windows Agent', ext: 'exe', size: '96 MB', icon: Laptop, desc: 'NSIS installer with the bundled telemetry daemon — no Python needed.', file: 'https://github.com/harsh-pandhe/ChronoTrack/releases/latest/download/ChronoTrackAgent.Setup.3.0.0.exe' },
-                      { os: 'macOS Agent', ext: 'Client.dmg', size: '52 MB', icon: Globe, desc: 'Includes Apple Silicon and Intel universal bundle configurations.', file: null },
-                      { os: 'Linux (AppImage)', ext: 'AppImage', size: '132 MB', icon: HardDrive, desc: 'Self-contained portable executable. chmod +x and run — no install needed.', file: 'https://github.com/harsh-pandhe/ChronoTrack/releases/latest/download/ChronoTrackAgent-3.0.0.AppImage' },
-                      { os: 'Linux (.deb)', ext: 'deb', size: '94 MB', icon: HardDrive, desc: 'Debian/Ubuntu package. Installs to your app menu like any native app.', file: 'https://github.com/harsh-pandhe/ChronoTrack/releases/latest/download/chronotrack_3.0.0_amd64.deb' }
+                      { os: 'Windows Agent', ext: 'exe', size: '~100 MB', icon: Laptop, desc: 'NSIS installer with the bundled telemetry daemon — no Python needed.', file: latestReleaseAssets?.windows },
+                      { os: 'macOS Agent', ext: 'dmg', size: '52 MB', icon: Globe, desc: 'Includes Apple Silicon and Intel universal bundle configurations.', file: null },
+                      { os: 'Linux (AppImage)', ext: 'AppImage', size: '~135 MB', icon: HardDrive, desc: 'Self-contained portable executable. chmod +x and run — no install needed.', file: latestReleaseAssets?.appImage },
+                      { os: 'Linux (.deb)', ext: 'deb', size: '~95 MB', icon: HardDrive, desc: 'Debian/Ubuntu package. Installs to your app menu like any native app.', file: latestReleaseAssets?.deb }
                     ].map(dl => (
                       <div key={dl.os} className="p-6 rounded-xl bg-card border border-border hover:border-border transition-all flex flex-col justify-between h-56">
                         <div className="space-y-2">
