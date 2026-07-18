@@ -1271,6 +1271,7 @@ export default function App() {
       const mappedProjects = srvProjects.map((p, i) => ({
         id: p.id,
         name: p.name,
+        teamLeadId: p.team_lead_id,
         contractValue: Number(p.billed_revenue) || Number(p.budget) || 0,
         margin: p.roi != null ? Math.round(p.roi * 100) : 0,
         cost: Number(p.cost) || 0,
@@ -1949,13 +1950,19 @@ export default function App() {
     if (viewingUser.activeProject) assignedProjectIds.add(viewingUser.activeProject);
     const assignedProjects = projects.filter(p => assignedProjectIds.has(p.id));
     const idlePct = a ? Math.max(0, 100 - a.rollup.active_pct) : 0;
+    // Team leads don't run the desktop agent, so activity analytics are always
+    // empty/zero for them — show a lead-appropriate view (their team + the
+    // projects they own) instead of a wall of meaningless 0s.
+    const isLead = teamLeads.some(t => t.id === viewingUser.id);
+    const managedEmployees = employees.filter(e => e.teamLeadId === viewingUser.id);
+    const ledProjects = projects.filter(p => p.teamLeadId === viewingUser.id);
 
     return (
       <div className="space-y-8 animate-fade-in">
         <DetailHeader
           crumb={currentRole === 'admin' ? 'User Directory' : 'Team'}
           title={viewingUser.name}
-          subtitle={`${viewingUser.role || 'Team Lead'}${viewingUser.dept ? ` · ${viewingUser.dept}` : ''} · ${viewingUser.email}${viewingUser.phone ? ` · ${viewingUser.phone}` : ''}`}
+          subtitle={`${isLead ? 'Team Lead' : (viewingUser.role || 'Employee')}${viewingUser.dept ? ` · ${viewingUser.dept}` : ''} · ${viewingUser.email}${viewingUser.phone ? ` · ${viewingUser.phone}` : ''}`}
           icon={
             <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0 font-bold text-xl">
               {viewingUser.name?.[0]?.toUpperCase() || '?'}
@@ -1963,7 +1970,49 @@ export default function App() {
           }
         />
 
-        {viewingUserBusy && !a && (
+        {isLead && (
+          <div className="space-y-6">
+            <DecisionNote tone="info">
+              {viewingUser.name} is a team lead. Team leads coordinate projects and people from the web console and don't run the desktop agent, so there's no activity telemetry for them — their team's activity is tracked individually below.
+            </DecisionNote>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <section className="p-6 rounded-xl bg-card border border-border">
+                <SectionTitle>Team Members ({managedEmployees.length})</SectionTitle>
+                {managedEmployees.length === 0 ? (
+                  <p className="text-xs text-muted-foreground mt-3">No employees report to this lead yet.</p>
+                ) : (
+                  <div className="space-y-1.5 mt-3 max-h-80 overflow-y-auto">
+                    {managedEmployees.map(e => (
+                      <button key={e.id} onClick={() => openUserDetail(e)}
+                        className="w-full flex items-center gap-3 rounded-lg border border-border bg-muted/30 px-3 py-2 text-left hover:border-primary/40 transition-colors">
+                        <span className="w-8 h-8 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 text-xs font-bold shrink-0">{e.name?.[0]?.toUpperCase() || '?'}</span>
+                        <span className="min-w-0"><span className="block text-xs font-semibold text-foreground truncate">{e.name}</span><span className="block text-[10px] text-muted-foreground truncate">{e.role} · {e.email}</span></span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </section>
+              <section className="p-6 rounded-xl bg-card border border-border">
+                <SectionTitle>Projects Led ({ledProjects.length})</SectionTitle>
+                {ledProjects.length === 0 ? (
+                  <p className="text-xs text-muted-foreground mt-3">No projects assigned to this lead.</p>
+                ) : (
+                  <div className="space-y-1.5 mt-3 max-h-80 overflow-y-auto">
+                    {ledProjects.map(p => (
+                      <button key={p.id} onClick={() => openProjectDetail(p)}
+                        className="w-full flex items-center justify-between rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs hover:border-primary/40 transition-colors text-left">
+                        <span className="font-semibold text-foreground truncate">{p.name}</span>
+                        <span className="text-muted-foreground shrink-0 ml-2 tabular-nums">Rs. {((p.contractValue || 0) / 1e7).toFixed(2)} Cr</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </section>
+            </div>
+          </div>
+        )}
+
+        {!isLead && viewingUserBusy && !a && (
           <div className="space-y-6">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {[0, 1, 2, 3].map(i => <Skeleton key={i} className="h-20 rounded-xl" />)}
@@ -1973,7 +2022,7 @@ export default function App() {
           </div>
         )}
 
-        {a && (
+        {!isLead && a && (
           <div className="space-y-8">
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
               <StatTile label="Active Hours (30d)" value={a.rollup.active_hours} accent="text-primary" />
