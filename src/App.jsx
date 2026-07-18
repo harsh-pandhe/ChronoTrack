@@ -1885,25 +1885,25 @@ export default function App() {
             <div className="flex justify-between items-center flex-wrap gap-3">
               <span className="text-xs font-semibold text-foreground uppercase tracking-wider block">
                 Assigned Employees — {activeProj.name}
+                <span className="ml-2 text-[10px] text-muted-foreground normal-case tabular-nums">({projectAssignments.length})</span>
               </span>
-              <div className="flex items-center gap-2">
-                <select
-                  value={assignPickerId}
-                  onChange={(e) => setAssignPickerId(e.target.value)}
-                  className="bg-background border border-border rounded-xl px-3 py-1.5 text-xs text-foreground outline-none min-w-[180px]"
-                >
-                  <option value="">Select employee…</option>
-                  {employees
-                    .filter(emp => !projectAssignments.some(a => a.id === emp.id))
-                    .map(emp => (
-                      <option key={emp.id} value={emp.id}>{emp.name} ({emp.role})</option>
-                    ))}
-                </select>
+              <div className="flex items-start gap-2">
+                <div className="w-56">
+                  <SearchSelect
+                    items={employees.filter(emp => !projectAssignments.some(a => a.id === emp.id))}
+                    value={assignPickerId}
+                    onChange={setAssignPickerId}
+                    placeholder="Search to assign…"
+                    getLabel={(e) => e.name}
+                    getSub={(e) => `${e.role} · ${e.email}`}
+                    emptyText="Everyone's already assigned"
+                  />
+                </div>
                 <button
                   type="button"
                   disabled={!assignPickerId || assignBusy}
                   onClick={() => handleAssignEmployee(activeProj.id)}
-                  className="px-4 py-1.5 bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-primary-foreground font-semibold text-[10px] uppercase tracking-widest rounded-xl transition-all flex items-center space-x-1.5 whitespace-nowrap"
+                  className="px-4 py-2 bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-primary-foreground font-semibold text-[10px] uppercase tracking-widest rounded-xl transition-all flex items-center space-x-1.5 whitespace-nowrap"
                 >
                   <Plus className="w-3.5 h-3.5" /><span>Assign</span>
                 </button>
@@ -1912,17 +1912,20 @@ export default function App() {
             {projectAssignments.length === 0 ? (
               <p className="text-[11px] text-muted-foreground">No employees assigned to this project yet — an employee can be assigned to multiple projects across different team leads.</p>
             ) : (
-              <div className="flex flex-wrap gap-2">
+              <div className="border border-border rounded-xl divide-y divide-border max-h-72 overflow-y-auto">
                 {projectAssignments.map(a => (
-                  <div key={a.id} className="px-3 py-1.5 rounded-xl bg-muted border border-border text-xs text-foreground/80 flex items-center space-x-2">
-                    <span className="font-semibold">{a.name}</span>
-                    <span className="text-[10px] text-muted-foreground uppercase">{a.title || ''}</span>
+                  <div key={a.id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/20 transition-colors">
+                    <span className="w-8 h-8 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 text-xs font-bold shrink-0">{a.name?.[0]?.toUpperCase() || '?'}</span>
+                    <button onClick={() => openUserDetail({ id: a.id, name: a.name, role: a.title, email: a.email, dept: a.dept, phone: a.phone })} className="min-w-0 flex-1 text-left group">
+                      <span className="block text-xs font-semibold text-foreground truncate group-hover:text-primary transition-colors">{a.name}</span>
+                      <span className="block text-[10px] text-muted-foreground truncate">{a.title || 'Employee'}{a.email ? ` · ${a.email}` : ''}</span>
+                    </button>
                     <button
                       onClick={() => handleUnassignEmployee(activeProj.id, a.id, a.name)}
                       title="Unassign from project"
-                      className="text-muted-foreground hover:text-red-400 transition-colors"
+                      className="text-muted-foreground hover:text-red-400 transition-colors shrink-0 p-1"
                     >
-                      <X className="w-3 h-3" />
+                      <X className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 ))}
