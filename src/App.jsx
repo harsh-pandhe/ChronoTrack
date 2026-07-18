@@ -145,6 +145,53 @@ function ToggleSwitch({ checked, onChange, title }) {
   );
 }
 
+// Real searchable select (replaces the flaky native <datalist>): filters an
+// item list as you type and shows the matches in a dropdown you click. Generic
+// over any {id,...} item via getLabel/getSub.
+function SearchSelect({ items, value, onChange, placeholder = 'Search…', getLabel, getSub, emptyText = 'No matches' }) {
+  const [q, setQ] = useState('');
+  const [open, setOpen] = useState(false);
+  const boxRef = useRef(null);
+  const selected = items.find((i) => i.id === value);
+  useEffect(() => {
+    const onDoc = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, []);
+  const needle = q.trim().toLowerCase();
+  const filtered = needle
+    ? items.filter((i) => getLabel(i).toLowerCase().includes(needle) || (getSub?.(i) || '').toLowerCase().includes(needle))
+    : items;
+  return (
+    <div className="relative" ref={boxRef}>
+      <input
+        value={open ? q : (selected ? getLabel(selected) : q)}
+        onChange={(e) => { setQ(e.target.value); setOpen(true); if (value) onChange(''); }}
+        onFocus={() => { setOpen(true); setQ(''); }}
+        placeholder={placeholder}
+        className="w-full bg-background border border-border focus:border-primary rounded-xl px-3 py-2 text-xs text-foreground outline-none"
+      />
+      {open && (
+        <div className="absolute z-30 mt-1 w-full max-h-56 overflow-y-auto rounded-xl border border-border bg-popover shadow-lg">
+          {filtered.length === 0 ? (
+            <div className="px-3 py-2 text-[11px] text-muted-foreground">{emptyText}</div>
+          ) : filtered.map((i) => (
+            <button
+              key={i.id}
+              type="button"
+              onClick={() => { onChange(i.id); setOpen(false); setQ(''); }}
+              className={`w-full text-left px-3 py-2 hover:bg-accent transition-colors ${i.id === value ? 'bg-primary/10' : ''}`}
+            >
+              <div className="text-xs font-medium text-foreground truncate">{getLabel(i)}</div>
+              {getSub && <div className="text-[10px] text-muted-foreground truncate">{getSub(i)}</div>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // A plain-language "what this means" line so a dashboard number becomes a
 // decision, not just a stat. tone drives the accent (good / watch / bad / info).
 function DecisionNote({ tone = 'info', children }) {
@@ -3465,22 +3512,15 @@ export default function App() {
                     <form onSubmit={generateActivationCode} className="space-y-4">
                       <div className="space-y-1.5">
                         <label className="text-[9px] uppercase font-semibold text-muted-foreground">Employee</label>
-                        <input
-                          list="provision-employee-list"
-                          required
-                          value={employees.find(e => e.id === provisionUserId)?.name || ''}
-                          onChange={(e) => {
-                            const match = employees.find(emp => emp.name === e.target.value);
-                            setProvisionUserId(match ? match.id : '');
-                          }}
-                          className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground outline-none"
-                          placeholder="Start typing a name…"
+                        <SearchSelect
+                          items={employees}
+                          value={provisionUserId}
+                          onChange={setProvisionUserId}
+                          placeholder="Search employees by name or email…"
+                          getLabel={(e) => e.name}
+                          getSub={(e) => e.email}
+                          emptyText="No matching employees"
                         />
-                        <datalist id="provision-employee-list">
-                          {employees.map(emp => (
-                            <option key={emp.id} value={emp.name}>{emp.email}</option>
-                          ))}
-                        </datalist>
                         {employees.length === 0 && (
                           <p className="text-[9px] text-muted-foreground">No employees yet — create one in User Directory first.</p>
                         )}
@@ -3937,11 +3977,33 @@ export default function App() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Issue a code to an EXISTING employee — separate from creating
+                      a new one, so a lead doesn't have to fake a new account just to
+                      re-issue an activation code to someone already on their team. */}
+                  <div className="p-6 rounded-xl bg-card border border-border space-y-4">
+                    <span className="text-[10px] font-semibold uppercase text-muted-foreground block">Issue Activation Code</span>
+                    <p className="text-[10px] text-muted-foreground -mt-2">For an employee who's already on your team.</p>
+                    <form onSubmit={generateActivationCode} className="space-y-3">
+                      <SearchSelect
+                        items={employees}
+                        value={provisionUserId}
+                        onChange={setProvisionUserId}
+                        placeholder="Search your employees…"
+                        getLabel={(e) => e.name}
+                        getSub={(e) => e.email}
+                        emptyText="No employees on your team yet"
+                      />
+                      <button type="submit" disabled={!provisionUserId} className="w-full py-2.5 bg-primary hover:bg-primary/95 disabled:opacity-50 disabled:cursor-not-allowed text-primary-foreground font-semibold text-[10px] uppercase tracking-widest rounded-xl transition-all">
+                        Generate Code
+                      </button>
+                    </form>
+                  </div>
+
                   {/* Register Employee Form — only shown if this lead actually has
                       authority to add employees; otherwise they'd fill out the whole
                       form only to be rejected by the server at submit time. */}
                   <div className="p-6 rounded-xl bg-card border border-border space-y-4">
-                    <span className="text-[10px] font-semibold uppercase text-muted-foreground block">Provision New Employee Account</span>
+                    <span className="text-[10px] font-semibold uppercase text-muted-foreground block">Create New Employee Account</span>
                     {!api.getUser()?.can_manage_employees ? (
                       <div className="p-4 rounded-2xl bg-muted/50 border border-border/60 text-xs text-muted-foreground flex items-start gap-3">
                         <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
