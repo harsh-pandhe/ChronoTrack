@@ -120,6 +120,10 @@ function SizedChart({ children }) {
 // matches the app's existing accent set used elsewhere for status/identity.
 const CATEGORY_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#3b82f6', '#a855f7', '#ef4444', '#14b8a6', '#84cc16'];
 
+// Build version, injected from package.json by vite (see vite.config.js) so the
+// desktop-agent header always matches the actual installer version.
+const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
+
 // Passkeys are bound to the web origin and can't work in the Electron desktop
 // agent (127.0.0.1 can never satisfy the WebAuthn RP origin). Gate the passkey
 // buttons on this so an admin signing into the agent isn't dead-ended — TOTP and
@@ -1233,6 +1237,24 @@ export default function App() {
   const handleExitAgent = () => {
     if (window.electronAPI?.quitApp) window.electronAPI.quitApp();
     else handleLogout();
+  };
+
+  // Sign the employee out of the agent WITHOUT quitting: clears the cloud
+  // session + local activation so a different employee can activate on this
+  // machine, and returns to the onboarding screen. (The background daemon is
+  // separate; withdrawing consent is the in-app "revoke" flow.)
+  const handleDesktopSignOut = () => {
+    askConfirm(
+      'Sign out of the desktop agent? You will need an activation code to sign back in.',
+      () => {
+        api.clearSession();
+        localStorage.removeItem('civil_desktop_activated');
+        setDesktopActivated(false);
+        setSessionToken('');
+        showToast('Signed out of the agent.', 'info');
+      },
+      { title: 'Sign out', confirmLabel: 'Sign out' }
+    );
   };
 
   // Map backend rows -> existing UI shapes and load real data from the server.
@@ -4104,7 +4126,7 @@ export default function App() {
                     <Laptop className="w-5 h-5 text-primary" />
                     <div className="flex flex-col">
                       <span className="font-extrabold text-xs text-foreground uppercase tracking-wider">ChronoTrack Desktop Agent</span>
-                      <span className="text-[8px] text-muted-foreground font-bold uppercase tracking-widest">Version 1.0.0</span>
+                      <span className="text-[8px] text-muted-foreground font-bold uppercase tracking-widest">Version {APP_VERSION}</span>
                     </div>
                   </div>
                   <div className="flex items-center space-x-3">
@@ -4112,9 +4134,17 @@ export default function App() {
                     <span className="text-[10px] uppercase font-bold text-muted-foreground">
                       {localDaemonState.online ? 'Daemon Active (Port 5050)' : 'Daemon Offline'}
                     </span>
+                    {desktopActivated && (
+                      <button
+                        onClick={handleDesktopSignOut}
+                        className="px-3 py-1 bg-muted hover:bg-accent border border-border text-muted-foreground hover:text-foreground rounded-lg text-[9px] font-semibold uppercase tracking-wider transition-all flex items-center gap-1"
+                      >
+                        <LogOut className="w-3 h-3" /> Sign Out
+                      </button>
+                    )}
                     <button
                       onClick={handleExitAgent}
-                      className="px-3 py-1 bg-muted hover:bg-muted border border-border text-muted-foreground hover:text-foreground rounded-lg text-[9px] font-semibold uppercase tracking-wider transition-all"
+                      className="px-3 py-1 bg-muted hover:bg-accent border border-border text-muted-foreground hover:text-foreground rounded-lg text-[9px] font-semibold uppercase tracking-wider transition-all"
                     >
                       Exit Agent
                     </button>

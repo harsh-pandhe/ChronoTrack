@@ -1,12 +1,21 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
+import { readFileSync } from 'fs'
+
+// Single source of truth for the displayed version: package.json (which also
+// names the installers), so the desktop-agent header can never disagree with
+// the actual build again.
+const pkgVersion = JSON.parse(readFileSync(path.resolve(__dirname, 'package.json'), 'utf8')).version
 
 // https://vite.dev/config/
 export default defineConfig({
   // Relative base so the built index.html loads its assets under file://
   // (packaged Electron) as well as over http (web portal).
   base: './',
+  define: {
+    __APP_VERSION__: JSON.stringify(pkgVersion),
+  },
   plugins: [react()],
   resolve: {
     alias: {
