@@ -74,9 +74,11 @@ export default handler(async (req, res) => {
   if (kind === 'audit') {
     if (req.method !== 'GET') throw new HttpError(405, 'Method Not Allowed');
     if (actor.role !== 'admin') throw new HttpError(403, 'Admin only');
+    // Return a generous recent window so the UI's search/pagination has real
+    // history to work over (the client filters + pages client-side).
     const { rows } = await query(
       `SELECT id, actor_name, action, target, ip, ts
-         FROM audit_logs WHERE company_id=$1 ORDER BY ts DESC LIMIT 100`,
+         FROM audit_logs WHERE company_id=$1 ORDER BY ts DESC LIMIT 1000`,
       [actor.company_id]
     );
     return send(res, 200, { logs: rows });

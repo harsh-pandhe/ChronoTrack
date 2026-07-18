@@ -683,6 +683,8 @@ export default function App() {
   const [timeEntriesData, setTimeEntriesData] = useState([]);
   // Real audit trail + telemetry feed.
   const [serverAuditLogs, setServerAuditLogs] = useState([]);
+  const [auditQuery, setAuditQuery] = useState('');
+  const [auditPage, setAuditPage] = useState(1);
   const [serverTelemetryFeed, setServerTelemetryFeed] = useState([]);
   // Employee's OWN analytics (transparency self-view in the desktop agent).
   const [selfAnalytics, setSelfAnalytics] = useState(null);
@@ -3687,35 +3689,80 @@ export default function App() {
               </div>
             )}
 
-            {/* Audit Trail */}
-            {activeAdminTab === 'audit' && (
+            {/* Audit Trail — searchable + paginated table */}
+            {activeAdminTab === 'audit' && (() => {
+              const AUDIT_PER_PAGE = 15;
+              const q = auditQuery.trim().toLowerCase();
+              const filtered = q
+                ? serverAuditLogs.filter(l =>
+                    (l.actor_name || '').toLowerCase().includes(q) ||
+                    (l.action || '').toLowerCase().includes(q) ||
+                    resolveAuditTarget(l.target || '').toLowerCase().includes(q) ||
+                    (l.ip || '').toLowerCase().includes(q))
+                : serverAuditLogs;
+              const pages = Math.max(1, Math.ceil(filtered.length / AUDIT_PER_PAGE));
+              const page = Math.min(auditPage, pages);
+              const slice = filtered.slice((page - 1) * AUDIT_PER_PAGE, page * AUDIT_PER_PAGE);
+              return (
               <div className="space-y-6">
                 <div className="border-b border-border pb-4">
-                  <h2 className="text-xl font-semibold text-foreground uppercase tracking-wider">Immutable System Audit Log Trail</h2>
-                  <p className="text-xs text-muted-foreground mt-1">Read-only ledger logging access actions, manager key configurations, and telemetry events.</p>
+                  <h2 className="text-xl font-semibold text-foreground uppercase tracking-wider">Immutable Audit Trail</h2>
+                  <p className="text-xs text-muted-foreground mt-1">Every privileged action — who did what, to whom, and from where. Read-only.</p>
                 </div>
 
-                <div className="bg-card border border-border p-6 rounded-xl space-y-4 shadow-xl">
-                  <div className="flex justify-between items-center">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center space-x-2">
-                      <Terminal className="w-4 h-4 text-primary" />
-                      <span>Ledger Storage Block Feed</span>
-                    </span>
-                    <span className="text-[8px] bg-muted border border-border px-2.5 py-1 rounded-full text-muted-foreground font-bold uppercase">SECURED</span>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="relative flex-1 min-w-[220px]">
+                    <input
+                      value={auditQuery}
+                      onChange={(e) => { setAuditQuery(e.target.value); setAuditPage(1); }}
+                      placeholder="Search by actor, action, target, or IP…"
+                      className="w-full bg-card border border-border focus:border-primary rounded-xl pl-3 pr-3 py-2 text-xs text-foreground outline-none"
+                    />
                   </div>
+                  <span className="text-[10px] text-muted-foreground tabular-nums">{filtered.length} event{filtered.length === 1 ? '' : 's'}</span>
+                </div>
 
-                  <div className="bg-muted/80 border border-border p-5 rounded-2xl font-mono text-[10px] text-muted-foreground space-y-2.5 max-h-96 overflow-y-auto">
-                    {serverAuditLogs.length === 0 && <span className="text-muted-foreground">No audit events yet.</span>}
-                    {serverAuditLogs.map(log => (
-                      <div key={log.id} className="flex justify-between border-b border-border/50 pb-2 last:border-0 last:pb-0 gap-3">
-                        <span>[{new Date(log.ts).toLocaleString()}] <strong className="text-foreground/80">{log.actor_name || 'system'}:</strong> {log.action}{log.target ? ` (${resolveAuditTarget(log.target)})` : ''}</span>
-                        <span className="text-muted-foreground shrink-0">{log.ip || ''}</span>
-                      </div>
-                    ))}
+                <div className="bg-card border border-border rounded-xl overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="border-b border-border bg-muted/40 text-[9px] uppercase font-semibold tracking-wider text-muted-foreground">
+                          <th className="p-3">Time</th>
+                          <th className="p-3">Actor</th>
+                          <th className="p-3">Action</th>
+                          <th className="p-3">Target</th>
+                          <th className="p-3 text-right">IP</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-xs text-foreground/80 divide-y divide-border">
+                        {slice.length === 0 && (
+                          <tr><td colSpan={5} className="p-6 text-center text-muted-foreground">{serverAuditLogs.length === 0 ? 'No audit events yet.' : 'No events match your search.'}</td></tr>
+                        )}
+                        {slice.map(log => (
+                          <tr key={log.id} className="hover:bg-muted/10">
+                            <td className="p-3 whitespace-nowrap tabular-nums text-[11px] text-muted-foreground">{new Date(log.ts).toLocaleString()}</td>
+                            <td className="p-3 font-semibold text-foreground whitespace-nowrap">{log.actor_name || 'system'}</td>
+                            <td className="p-3">{log.action}</td>
+                            <td className="p-3 text-muted-foreground">{log.target ? resolveAuditTarget(log.target) : '—'}</td>
+                            <td className="p-3 text-right font-mono text-[10px] text-muted-foreground whitespace-nowrap">{log.ip || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
+                  {pages > 1 && (
+                    <div className="flex items-center justify-between px-4 py-3 border-t border-border">
+                      <button onClick={() => setAuditPage(Math.max(1, page - 1))} disabled={page === 1}
+                        className="px-3 py-1.5 text-[10px] font-semibold uppercase rounded-lg border border-border bg-muted disabled:opacity-40 hover:text-foreground transition-colors">Prev</button>
+                      <span className="text-[10px] text-muted-foreground tabular-nums">Page {page} of {pages}</span>
+                      <button onClick={() => setAuditPage(Math.min(pages, page + 1))} disabled={page === pages}
+                        className="px-3 py-1.5 text-[10px] font-semibold uppercase rounded-lg border border-border bg-muted disabled:opacity-40 hover:text-foreground transition-colors">Next</button>
+                    </div>
+                  )}
                 </div>
               </div>
-            )}
+              );
+            })()}
 
             </>)}
           </main>
