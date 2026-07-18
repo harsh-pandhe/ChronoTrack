@@ -248,6 +248,28 @@ function ProductivitySplit({ data }) {
   );
 }
 
+// Scroll-triggered reveal for the landing page — fades + slides a section up
+// once it enters the viewport (IntersectionObserver, fires once). Reuses the
+// existing slide-in-bottom keyframe rather than adding an animation library.
+function Reveal({ children, className = '', delay = 0 }) {
+  const ref = useRef(null);
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const io = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) { setVisible(true); io.disconnect(); }
+    }, { threshold: 0.15 });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  return (
+    <div ref={ref} className={`${visible ? 'animate-slide-in-bottom' : 'opacity-0'} ${className}`} style={delay ? { animationDelay: `${delay}ms` } : undefined}>
+      {children}
+    </div>
+  );
+}
+
 // Hour-of-day × weekday activity heatmap. Reveals real working patterns from
 // timestamps the daemon has always logged. Cell intensity = active minutes,
 // scaled to the busiest cell, tinted with the theme primary.
@@ -2605,7 +2627,9 @@ export default function App() {
               </div>
               <nav className="hidden md:flex items-center space-x-8 text-xs font-bold uppercase tracking-wider text-muted-foreground">
                 <a href="#features" className="hover:text-foreground transition-colors">Features</a>
+                <a href="#how-it-works" className="hover:text-foreground transition-colors">How It Works</a>
                 <a href="#about" className="hover:text-foreground transition-colors">Security</a>
+                <a href="#faq" className="hover:text-foreground transition-colors">FAQ</a>
                 <a href="#contact" className="hover:text-foreground transition-colors">Contact</a>
               </nav>
               <div className="hidden md:flex items-center space-x-4">
@@ -2635,7 +2659,9 @@ export default function App() {
               <div className="md:hidden border-t border-border bg-background px-6 py-4 space-y-4 animate-fade-in">
                 <nav className="flex flex-col space-y-3 text-xs font-bold uppercase tracking-wider text-muted-foreground">
                   <a href="#features" onClick={() => setMobileNavOpen(false)} className="hover:text-foreground transition-colors">Features</a>
+                  <a href="#how-it-works" onClick={() => setMobileNavOpen(false)} className="hover:text-foreground transition-colors">How It Works</a>
                   <a href="#about" onClick={() => setMobileNavOpen(false)} className="hover:text-foreground transition-colors">Security</a>
+                  <a href="#faq" onClick={() => setMobileNavOpen(false)} className="hover:text-foreground transition-colors">FAQ</a>
                   <a href="#contact" onClick={() => setMobileNavOpen(false)} className="hover:text-foreground transition-colors">Contact</a>
                 </nav>
                 <div className="flex flex-col space-y-3 pt-2">
@@ -2688,13 +2714,13 @@ export default function App() {
           {/* Features Grid */}
           <section id="features" className="py-20 bg-background/40 border-t border-b border-border">
             <div className="max-w-7xl mx-auto px-6 space-y-12">
-              <div className="text-center space-y-3">
-                <h2 className="text-2xl font-semibold text-foreground uppercase tracking-wider">Engine Capabilities</h2>
+              <Reveal className="text-center space-y-3">
+                <h2 className="text-2xl font-display font-semibold text-foreground uppercase tracking-wider">Engine Capabilities</h2>
                 <p className="text-xs text-muted-foreground max-w-xl mx-auto uppercase tracking-wide">Structured tracking features mapped directly to organizational workflows.</p>
-              </div>
+              </Reveal>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="p-8 rounded-xl bg-card border border-border space-y-4 hover:border-border transition-all duration-300">
+                <Reveal className="p-8 rounded-xl bg-card border border-border space-y-4 hover:border-primary/30 hover:-translate-y-1 transition-all duration-300">
                   <div className="w-10 h-10 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
                     <Activity className="w-5 h-5" />
                   </div>
@@ -2702,9 +2728,9 @@ export default function App() {
                   <p className="text-xs text-muted-foreground leading-relaxed">
                     Queries active window titles and maps keyboard/mouse events per interval. Does not capture sensitive inputs, logs, or tabs.
                   </p>
-                </div>
+                </Reveal>
 
-                <div className="p-8 rounded-xl bg-card border border-border space-y-4 hover:border-border transition-all duration-300">
+                <Reveal delay={80} className="p-8 rounded-xl bg-card border border-border space-y-4 hover:border-primary/30 hover:-translate-y-1 transition-all duration-300">
                   <div className="w-10 h-10 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
                     <Lock className="w-5 h-5" />
                   </div>
@@ -2712,42 +2738,66 @@ export default function App() {
                   <p className="text-xs text-muted-foreground leading-relaxed">
                     Telemetry logs are stored in a local SQLite file securely locked with AES-256 Fernet ciphers to prevent administrative data tampering.
                   </p>
-                </div>
+                </Reveal>
 
-                <div className="p-8 rounded-xl bg-card border border-border space-y-4 hover:border-border transition-all duration-300">
+                <Reveal delay={160} className="p-8 rounded-xl bg-card border border-border space-y-4 hover:border-primary/30 hover:-translate-y-1 transition-all duration-300">
                   <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
                     <Cpu className="w-5 h-5" />
                   </div>
-                  <h3 className="text-base font-extrabold text-foreground">AI-Driven Anomaly Mapping</h3>
+                  <h3 className="text-base font-extrabold text-foreground">Rule-Based Productivity Classification</h3>
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    Predictive models forecast idle benches and flag active outliers without disrupting employee focus.
+                    Every active sample is classified productive, neutral, or unproductive against keyword rules your own admins define — not a black box.
                   </p>
-                </div>
+                </Reveal>
               </div>
+            </div>
+          </section>
+
+          {/* How It Works — 3 concrete steps, matches what the product actually does. */}
+          <section id="how-it-works" className="py-20 max-w-7xl mx-auto px-6">
+            <Reveal className="text-center space-y-3 mb-14">
+              <h2 className="text-2xl font-display font-semibold text-foreground uppercase tracking-wider">How It Works</h2>
+              <p className="text-xs text-muted-foreground max-w-xl mx-auto uppercase tracking-wide">From install to insight in three steps.</p>
+            </Reveal>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              {[
+                { n: '01', icon: Download, title: 'Install & Consent', desc: 'Employees download the desktop agent, enter their activation code, and explicitly grant consent before anything is recorded — revocable anytime.' },
+                { n: '02', icon: Activity, title: 'Track Transparently', desc: 'The agent polls active window titles and input density every 10 seconds — never keystrokes, never screenshots — and syncs to the cloud continuously.' },
+                { n: '03', icon: TrendingUp, title: 'Decide With Data', desc: 'Admins and leads see productivity splits, working-hour patterns, and per-project ROI — real numbers, not guesswork.' },
+              ].map((s, i) => (
+                <Reveal key={s.n} delay={i * 100} className="relative p-8 rounded-xl bg-card border border-border space-y-4">
+                  <span className="absolute top-6 right-6 text-4xl font-display font-bold text-primary/10">{s.n}</span>
+                  <div className="w-10 h-10 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
+                    <s.icon className="w-5 h-5" />
+                  </div>
+                  <h3 className="text-base font-extrabold text-foreground">{s.title}</h3>
+                  <p className="text-xs text-muted-foreground leading-relaxed">{s.desc}</p>
+                </Reveal>
+              ))}
             </div>
           </section>
 
           {/* About Section */}
           <section id="about" className="py-20 max-w-7xl mx-auto px-6 grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
-            <div className="space-y-6">
-              <h2 className="text-2xl font-semibold text-foreground uppercase tracking-wider">High Trust Telemetry</h2>
+            <Reveal className="space-y-6">
+              <h2 className="text-2xl font-display font-semibold text-foreground uppercase tracking-wider">High Trust Telemetry</h2>
               <p className="text-xs text-muted-foreground leading-relaxed">
                 Organizations must operate at scale without compromising privacy. ChronoTrack replaces legacy screen recorders with metadata-driven pipelines. By tracking active applications and input density counters, it provides clear workforce analytics while preserving absolute employee safety.
               </p>
               <div className="space-y-3">
                 {[
-                  'Zero key-logging guarantees credential security',
-                  'Local SQLite caches allow offline mapping capabilities',
-                  'Fully signed installer targets for Linux, macOS & Windows'
+                  'Zero key-logging — window titles and input counts only, never keystroke content',
+                  'Local SQLite buffer means telemetry keeps recording offline and syncs once reconnected',
+                  'Consent can be withdrawn by the employee at any time, which stops collection immediately',
                 ].map((txt, idx) => (
                   <div key={idx} className="flex items-center space-x-3 text-xs text-foreground/80">
-                    <CheckCircle2 className="w-4 h-4 text-primary" />
+                    <CheckCircle2 className="w-4 h-4 text-primary shrink-0" />
                     <span>{txt}</span>
                   </div>
                 ))}
               </div>
-            </div>
-            <div className="p-8 rounded-xl bg-muted/40 border border-border space-y-4">
+            </Reveal>
+            <Reveal delay={120} className="p-8 rounded-xl bg-muted/40 border border-border space-y-4">
               <div className="flex justify-between items-center border-b border-border pb-4">
                 <span className="text-xs font-semibold text-foreground uppercase tracking-wider">Telemetry Profile</span>
                 <span className="text-[10px] bg-primary/10 border border-primary/20 text-primary px-2.5 py-0.5 rounded-full font-bold uppercase">Active</span>
@@ -2758,6 +2808,28 @@ export default function App() {
                 <div>[DAEMON] Active Window: AutoCAD 2026 (Focus verified)</div>
                 <div>[DAEMON] Keystrokes: 18 | Mouse Movements: 104</div>
                 <div className="text-muted-foreground">[DAEMON] Encrypting SQLite telemetry block [AES-256]</div>
+              </div>
+            </Reveal>
+          </section>
+
+          {/* FAQ */}
+          <section id="faq" className="py-20 bg-background/40 border-t border-border">
+            <div className="max-w-3xl mx-auto px-6 space-y-10">
+              <Reveal className="text-center space-y-3">
+                <h2 className="text-2xl font-display font-semibold text-foreground uppercase tracking-wider">Frequently Asked</h2>
+              </Reveal>
+              <div className="space-y-4">
+                {[
+                  { q: 'Does it record my screen or keystrokes?', a: 'No. The agent records active window titles, an app category, and a keyboard/mouse activity count every 10 seconds — never keystroke content or screenshots.' },
+                  { q: 'Can an employee stop being tracked?', a: 'Yes. Consent can be withdrawn from the desktop agent at any time, which immediately stops collection on that device.' },
+                  { q: 'What happens if my laptop goes offline?', a: 'The agent buffers telemetry locally in an encrypted SQLite database and syncs to the cloud automatically once connectivity returns — nothing is lost.' },
+                  { q: 'Is the desktop installer code-signed?', a: 'Not yet — Windows will show an "unknown publisher" SmartScreen warning until a code-signing certificate is added. The download and install process itself is unaffected.' },
+                ].map((f) => (
+                  <Reveal key={f.q} className="p-5 rounded-xl bg-card border border-border">
+                    <h3 className="text-xs font-semibold text-foreground">{f.q}</h3>
+                    <p className="text-xs text-muted-foreground leading-relaxed mt-2">{f.a}</p>
+                  </Reveal>
+                ))}
               </div>
             </div>
           </section>
@@ -2814,8 +2886,21 @@ export default function App() {
           </section>
 
           {/* Footer */}
-          <footer className="mt-auto border-t border-border bg-background py-8 text-center text-[10px] text-muted-foreground uppercase tracking-widest">
-            ChronoTrack Telemetry Systems License MIT.
+          <footer className="mt-auto border-t border-border bg-background py-10">
+            <div className="max-w-7xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="flex items-center space-x-2">
+                <Shield className="w-4 h-4 text-primary" />
+                <span className="font-extrabold text-xs tracking-widest text-foreground uppercase">ChronoTrack</span>
+              </div>
+              <nav className="flex items-center gap-6 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <a href="#features" className="hover:text-foreground transition-colors">Features</a>
+                <a href="#how-it-works" className="hover:text-foreground transition-colors">How It Works</a>
+                <a href="#about" className="hover:text-foreground transition-colors">Security</a>
+                <a href="#faq" className="hover:text-foreground transition-colors">FAQ</a>
+                <button onClick={() => window.open('https://github.com/harsh-pandhe/ChronoTrack', '_blank', 'noopener')} className="hover:text-foreground transition-colors">Source</button>
+              </nav>
+              <span className="text-[10px] text-muted-foreground uppercase tracking-widest">ChronoTrack Telemetry Systems · License MIT</span>
+            </div>
           </footer>
         </div>
       )}
