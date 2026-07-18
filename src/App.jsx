@@ -30,6 +30,8 @@ import {
   ShieldOff,
   History,
   Mail,
+  ChevronLeft,
+  ChevronRight,
   Phone,
   Briefcase,
   ArrowLeft,
@@ -4018,12 +4020,22 @@ export default function App() {
                     </table>
                   </div>
                   {pages > 1 && (
-                    <div className="flex items-center justify-between px-4 py-3 border-t border-border">
-                      <button onClick={() => setAuditPage(Math.max(1, page - 1))} disabled={page === 1}
-                        className="px-3 py-1.5 text-[10px] font-semibold uppercase rounded-lg border border-border bg-muted disabled:opacity-40 hover:text-foreground transition-colors">Prev</button>
-                      <span className="text-[10px] text-muted-foreground tabular-nums">Page {page} of {pages}</span>
-                      <button onClick={() => setAuditPage(Math.min(pages, page + 1))} disabled={page === pages}
-                        className="px-3 py-1.5 text-[10px] font-semibold uppercase rounded-lg border border-border bg-muted disabled:opacity-40 hover:text-foreground transition-colors">Next</button>
+                    <div className="flex items-center justify-between px-4 py-3 border-t border-border bg-muted/20">
+                      <button
+                        onClick={() => setAuditPage(Math.max(1, page - 1))}
+                        disabled={page === 1}
+                        className="flex items-center gap-1 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider rounded-lg border border-border bg-card text-foreground/80 hover:text-foreground hover:border-primary/40 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-border transition-colors"
+                      >
+                        <ChevronLeft className="w-3.5 h-3.5" /> Prev
+                      </button>
+                      <span className="text-[10px] text-muted-foreground tabular-nums font-semibold">Page {page} of {pages}</span>
+                      <button
+                        onClick={() => setAuditPage(Math.min(pages, page + 1))}
+                        disabled={page === pages}
+                        className="flex items-center gap-1 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider rounded-lg border border-border bg-card text-foreground/80 hover:text-foreground hover:border-primary/40 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-border transition-colors"
+                      >
+                        Next <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   )}
                 </div>
