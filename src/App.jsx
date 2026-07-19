@@ -3339,19 +3339,19 @@ export default function App() {
               ))}
             </nav>
 
-            <div className="p-4 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
-              <div className="flex items-center space-x-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span className="font-semibold uppercase tracking-wider">Session Active</span>
+            <div className="p-4 border-t border-border space-y-3 text-xs text-muted-foreground">
+              <div className="flex items-center space-x-2 min-w-0">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
+                <span className="font-semibold uppercase tracking-wider truncate">Session Active</span>
               </div>
-              <div className="flex items-center space-x-2">
+              <div className="grid grid-cols-2 gap-2">
                 <button onClick={openProfile}
-                  className="px-2.5 py-1 bg-muted hover:bg-muted border border-border hover:text-foreground rounded-lg transition-all flex items-center space-x-1 uppercase text-[10px] font-bold">
-                  <User className="w-3 h-3" /><span>Profile</span>
+                  className="px-2.5 py-1.5 bg-muted hover:bg-muted border border-border hover:text-foreground rounded-lg transition-all flex items-center justify-center space-x-1 uppercase text-[10px] font-bold">
+                  <User className="w-3 h-3 shrink-0" /><span>Profile</span>
                 </button>
                 <button onClick={handleLogout}
-                  className="px-2.5 py-1 bg-muted hover:bg-muted border border-border hover:text-foreground rounded-lg transition-all flex items-center space-x-1 uppercase text-[10px] font-bold">
-                  <LogOut className="w-3 h-3" /><span>Logout</span>
+                  className="px-2.5 py-1.5 bg-muted hover:bg-muted border border-border hover:text-foreground rounded-lg transition-all flex items-center justify-center space-x-1 uppercase text-[10px] font-bold">
+                  <LogOut className="w-3 h-3 shrink-0" /><span>Logout</span>
                 </button>
               </div>
             </div>
