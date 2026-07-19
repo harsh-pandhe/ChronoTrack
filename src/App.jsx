@@ -479,42 +479,31 @@ function addDaysToIso(dayStr, delta) {
   d.setDate(d.getDate() + delta);
   return isoDateOf(d);
 }
-function fmtHm(hour) {
-  const hh = Math.floor(hour);
-  const mm = Math.round((hour - hh) * 60) % 60;
-  const period = hh >= 12 ? 'PM' : 'AM';
-  const h12 = hh % 12 === 0 ? 12 : hh % 12;
-  return `${h12}:${pad2(mm)} ${period}`;
-}
-function hourToTsOnDay(dayStr, hour) {
-  const hh = Math.floor(hour);
-  const mm = Math.round((hour - hh) * 60);
-  const d = new Date(`${dayStr}T00:00:00`);
-  d.setMinutes(d.getMinutes() + hh * 60 + mm);
-  return d.toISOString();
-}
 function fmtDayLabel(dayStr) {
   const d = new Date(`${dayStr}T00:00:00`);
   return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
-function EmployeeDayLog({ onLogged, showToast }) {
+// One 24-hour day, one hour per cell. Each cell shows what the agent tracked
+// in that hour (a marker) and how much of it is already logged (a green
+// fill). Clicking an open hour lets the employee log it whole, or split it
+// into fixed clock-aligned parts (halves/thirds/quarters) and pick only the
+// parts they actually worked — a 45-minute hour is "quarters, pick 3".
+function EmployeeHourLog({ onLogged, showToast }) {
   const [day, setDay] = useState(() => isoDateOf(new Date()));
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [drag, setDrag] = useState(null); // { startHour, endHour } — live, while pointer is down
-  const [selection, setSelection] = useState(null); // { startHour, endHour } — committed, awaiting submit
-  const [splitMode, setSplitMode] = useState('single'); // 'single' | 'half' | 'quarter' | 'manual'
+  const [selectedHour, setSelectedHour] = useState(null);
+  const [splitN, setSplitN] = useState(1); // 1 (single) | 2 | 3 | 4
   const [singleProject, setSingleProject] = useState('');
-  const [splitRows, setSplitRows] = useState([]); // [{ projectId, minutes }]
+  const [singleMinutes, setSingleMinutes] = useState(60);
+  const [partProjects, setPartProjects] = useState({}); // { [partIndex]: projectId }
+  const [partChecked, setPartChecked] = useState({}); // { [partIndex]: bool }
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
-  const barRef = useRef(null);
-  const draggingRef = useRef(false);
 
   const isToday = day === isoDateOf(new Date());
   const nowHour = hourOfDay(new Date().toISOString());
-  const maxHour = isToday ? nowHour : 24;
 
   const load = async (d) => {
     setLoading(true);
@@ -528,8 +517,7 @@ function EmployeeDayLog({ onLogged, showToast }) {
     }
   };
   useEffect(() => {
-    setSelection(null);
-    setDrag(null);
+    setSelectedHour(null);
     load(day);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [day]);
@@ -538,128 +526,106 @@ function EmployeeDayLog({ onLogged, showToast }) {
   const entries = data?.entries || [];
   const projList = data?.projects || [];
   const summary = data?.summary || {};
+  const dayStartMs = new Date(`${day}T00:00:00`).getTime();
 
-  const xOf = (h) => (h / 24) * 100;
-  const wOf = (s, e) => Math.max(0.3, ((e - s) / 24) * 100);
+  const overlapMinutes = (aStart, aEnd, bStart, bEnd) =>
+    Math.max(0, Math.min(aEnd, bEnd) - Math.max(aStart, bStart)) / 60000;
 
-  const hourFromClientX = (clientX) => {
-    const rect = barRef.current.getBoundingClientRect();
-    const pct = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-    const snapped = Math.round(pct * 24 * 12) / 12; // snap to 5-minute increments
-    return Math.min(maxHour, snapped);
-  };
-
-  const resetForm = () => { setSplitMode('single'); setSingleProject(''); setSplitRows([]); setNote(''); };
-
-  const onPointerDown = (e) => {
-    if (saving) return;
-    e.preventDefault();
-    const h = hourFromClientX(e.clientX);
-    draggingRef.current = true;
-    setSelection(null);
-    setDrag({ startHour: h, endHour: h });
-    window.addEventListener('pointermove', onPointerMove);
-    window.addEventListener('pointerup', onPointerUp);
-  };
-  const onPointerMove = (e) => {
-    if (!draggingRef.current) return;
-    const h = hourFromClientX(e.clientX);
-    setDrag((d) => (d ? { ...d, endHour: h } : d));
-  };
-  const onPointerUp = (e) => {
-    if (!draggingRef.current) return;
-    draggingRef.current = false;
-    window.removeEventListener('pointermove', onPointerMove);
-    window.removeEventListener('pointerup', onPointerUp);
-    setDrag((d) => {
-      if (!d) return null;
-      const startHour = Math.min(d.startHour, d.endHour);
-      const endHour = Math.max(d.startHour, d.endHour);
-      if (endHour - startHour >= 5 / 60) {
-        setSelection({ startHour, endHour });
-        resetForm();
+  // Per-hour stats: how much of it is already logged, whether it was tracked
+  // at all, and a representative marker (first tracked timestamp + category).
+  const hourStats = Array.from({ length: 24 }, (_, h) => {
+    const cellStart = dayStartMs + h * 3600000;
+    const cellEnd = cellStart + 3600000;
+    let loggedMin = 0;
+    for (const e of entries) loggedMin += overlapMinutes(cellStart, cellEnd, new Date(e.start_ts).getTime(), new Date(e.end_ts).getTime());
+    let trackedMin = 0;
+    let marker = null;
+    let maxDensity = 0;
+    for (const b of blocks) {
+      const bStart = new Date(b.start_ts).getTime();
+      const bEnd = new Date(b.end_ts).getTime();
+      const ov = overlapMinutes(cellStart, cellEnd, bStart, bEnd);
+      if (ov > 0) {
+        trackedMin += ov;
+        if (!marker || bStart < marker.ts) marker = { ts: bStart, category: b.top_category };
+        maxDensity = Math.max(maxDensity, b.avg_density || 0);
       }
-      return null;
-    });
+    }
+    const future = isToday && h > nowHour;
+    return {
+      hour: h, loggedMin: Math.round(loggedMin * 10) / 10, trackedMin: Math.round(trackedMin * 10) / 10,
+      marker, maxDensity, future, full: loggedMin >= 59.5,
+    };
+  });
+
+  const openHour = (h) => {
+    const stat = hourStats[h];
+    if (stat.future || stat.full) return;
+    setSelectedHour(h);
+    setNote('');
+    setSingleProject('');
+    setSingleMinutes(Math.max(1, Math.round(60 - stat.loggedMin)));
+    setSplitN(stat.loggedMin > 0 ? 4 : 1);
+    setPartProjects({});
+    setPartChecked({});
   };
 
-  const activeRange = drag || selection;
-  const rangeStart = activeRange ? Math.min(activeRange.startHour, activeRange.endHour) : null;
-  const rangeEnd = activeRange ? Math.max(activeRange.startHour, activeRange.endHour) : null;
-  const selMinutes = activeRange ? Math.round((rangeEnd - rangeStart) * 60) : 0;
+  const selStat = selectedHour != null ? hourStats[selectedHour] : null;
+  const cellStart = selectedHour != null ? dayStartMs + selectedHour * 3600000 : null;
 
-  const applyPreset = (n) => {
-    const base = Math.floor(selMinutes / n);
-    const rows = Array.from({ length: n }, (_, i) => ({
-      projectId: '',
-      minutes: i === n - 1 ? selMinutes - base * (n - 1) : base,
-    }));
-    setSplitRows(rows);
-  };
-  const setSplit = (mode) => {
-    setSplitMode(mode);
-    if (mode === 'half') applyPreset(2);
-    else if (mode === 'quarter') applyPreset(4);
-    else if (mode === 'manual') setSplitRows([{ projectId: '', minutes: selMinutes }, { projectId: '', minutes: 0 }]);
-    else setSplitRows([]);
-  };
-  const updateSplitRow = (i, patch) => {
-    setSplitRows((rows) => rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
-  };
-  const addSplitRow = () => setSplitRows((rows) => [...rows, { projectId: '', minutes: 0 }]);
-  const removeSplitRow = (i) => setSplitRows((rows) => rows.filter((_, idx) => idx !== i));
+  // Fixed clock-aligned parts for the selected hour at the chosen split
+  // count — each part's own logged-overlap decides if it's selectable.
+  const parts = selectedHour != null && splitN > 1
+    ? Array.from({ length: splitN }, (_, i) => {
+        const partDur = 60 / splitN;
+        const partStart = cellStart + i * partDur * 60000;
+        const partEnd = partStart + partDur * 60000;
+        let loggedMin = 0;
+        for (const e of entries) loggedMin += overlapMinutes(partStart, partEnd, new Date(e.start_ts).getTime(), new Date(e.end_ts).getTime());
+        return { index: i, startMs: partStart, endMs: partEnd, minutes: Math.round(partDur), locked: loggedMin > 0.5 };
+      })
+    : [];
 
-  const splitSum = splitRows.reduce((s, r) => s + (Number(r.minutes) || 0), 0);
-  const isSplit = splitMode !== 'single';
-  const canSubmit = !selection
-    ? false
-    : isSplit
-      ? splitRows.length > 0 && splitSum === selMinutes && splitRows.every((r) => r.projectId && Number(r.minutes) > 0)
-      : !!singleProject;
+  const canSubmitSingle = selectedHour != null && splitN === 1 && !!singleProject
+    && Number(singleMinutes) > 0 && Number(singleMinutes) <= Math.round(60 - (selStat?.loggedMin || 0)) + 0.5;
+  const checkedParts = parts.filter((p) => !p.locked && partChecked[p.index]);
+  const canSubmitSplit = selectedHour != null && splitN > 1
+    && checkedParts.length > 0 && checkedParts.every((p) => partProjects[p.index]);
+  const canSubmit = splitN === 1 ? canSubmitSingle : canSubmitSplit;
 
   const submit = async () => {
-    if (!selection || !canSubmit) return;
+    if (!canSubmit) return;
     setSaving(true);
     try {
-      if (!isSplit) {
+      if (splitN === 1) {
+        const startTs = new Date(cellStart).toISOString();
+        const endTs = new Date(cellStart + Number(singleMinutes) * 60000).toISOString();
         await api.timeEntries.create({
-          project_id: singleProject,
-          start_ts: hourToTsOnDay(day, rangeStart),
-          end_ts: hourToTsOnDay(day, rangeEnd),
-          hours: Math.round((rangeEnd - rangeStart) * 100) / 100,
-          source: 'prompt',
-          note: note || null,
+          project_id: singleProject, start_ts: startTs, end_ts: endTs,
+          hours: Math.round((Number(singleMinutes) / 60) * 100) / 100,
+          source: 'prompt', note: note || null,
         });
       } else {
-        let cursor = rangeStart;
-        for (const row of splitRows) {
-          const rowHours = Number(row.minutes) / 60;
-          const rowStart = cursor;
-          const rowEnd = cursor + rowHours;
+        for (const p of checkedParts) {
           await api.timeEntries.create({
-            project_id: row.projectId,
-            start_ts: hourToTsOnDay(day, rowStart),
-            end_ts: hourToTsOnDay(day, rowEnd),
-            hours: Math.round(rowHours * 100) / 100,
-            source: 'prompt',
-            note: note || null,
+            project_id: partProjects[p.index],
+            start_ts: new Date(p.startMs).toISOString(),
+            end_ts: new Date(p.endMs).toISOString(),
+            hours: Math.round((p.minutes / 60) * 100) / 100,
+            source: 'prompt', note: note || null,
           });
-          cursor = rowEnd;
         }
       }
-      showToast('Hours logged.', 'success');
-      setSelection(null);
-      resetForm();
+      showToast('Hour logged.', 'success');
+      setSelectedHour(null);
       await load(day);
       onLogged && onLogged();
     } catch (err) {
-      showToast(err.message || 'Could not log these hours.', 'error');
+      showToast(err.message || 'Could not log this hour.', 'error');
     } finally {
       setSaving(false);
     }
   };
-
-  const gridHours = [0, 3, 6, 9, 12, 15, 18, 21, 24];
 
   return (
     <div className="p-6 rounded-xl bg-indigo-500/10 border border-indigo-500/30 space-y-4">
@@ -692,119 +658,108 @@ function EmployeeDayLog({ onLogged, showToast }) {
         </div>
       )}
       <p className="text-[11px] text-muted-foreground leading-relaxed">
-        Drag across the stretch of the day you worked, then tag it to a project. The shaded bars below
-        show what the agent actually tracked — use them as a guide, not a strict boundary.
+        Tap an hour to log it. Fully-logged hours turn green. If you only worked part of an hour, split
+        it into halves/thirds/quarters and pick just the parts you worked.
       </p>
 
       {loading ? (
         <div className="p-4 text-[11px] text-muted-foreground">Loading…</div>
       ) : (
         <>
-          <div
-            ref={barRef}
-            onPointerDown={onPointerDown}
-            className="relative h-16 rounded-xl bg-background/60 border border-border/60 select-none touch-none"
-            style={{ cursor: saving ? 'default' : 'crosshair' }}
-          >
-            {/* hour gridlines */}
-            {gridHours.map((h) => (
-              <div key={h} className="absolute top-0 bottom-0 w-px bg-border/50" style={{ left: `${xOf(h)}%` }} />
-            ))}
-            {/* future-hour shading, today only */}
-            {isToday && maxHour < 24 && (
-              <div className="absolute top-0 bottom-0 bg-muted/40" style={{ left: `${xOf(maxHour)}%`, right: 0 }} />
-            )}
-            {/* tracked activity, density-shaded */}
-            {blocks.map((b, i) => (
-              <div key={`b${i}`}
-                className="absolute top-2 h-4 rounded-sm bg-indigo-500 pointer-events-none"
-                style={{ left: `${xOf(hourOfDay(b.start_ts))}%`, width: `${wOf(hourOfDay(b.start_ts), hourOfDay(b.end_ts))}%`, opacity: 0.25 + Math.min(1, (b.avg_density || 0) / 100) * 0.55 }}
-                title={`${fmtClock(b.start_ts)}–${fmtClock(b.end_ts)} · ${b.top_category || 'activity'}`} />
-            ))}
-            {/* already-logged entries */}
-            {entries.map((e, i) => (
-              <div key={`e${i}`}
-                className="absolute bottom-2 h-3 rounded-sm bg-emerald-500/70 pointer-events-none"
-                style={{ left: `${xOf(hourOfDay(e.start_ts))}%`, width: `${wOf(hourOfDay(e.start_ts), hourOfDay(e.end_ts))}%` }}
-                title={`${e.project_name || 'Logged'}: ${fmtClock(e.start_ts)}–${fmtClock(e.end_ts)}`} />
-            ))}
-            {/* live drag / committed selection */}
-            {activeRange && (
-              <div
-                className="absolute top-0 bottom-0 bg-primary/25 border-x-2 border-primary pointer-events-none"
-                style={{ left: `${xOf(rangeStart)}%`, width: `${wOf(rangeStart, rangeEnd)}%` }}
-              />
-            )}
-          </div>
-          <div className="flex justify-between text-[8px] text-muted-foreground font-mono">
-            {gridHours.map((h) => <span key={h}>{pad2(h === 24 ? 0 : h)}:00</span>)}
+          <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-12 gap-1.5">
+            {hourStats.map((s) => {
+              const fillPct = Math.min(100, Math.round((s.loggedMin / 60) * 100));
+              const isSelected = selectedHour === s.hour;
+              return (
+                <button
+                  key={s.hour}
+                  type="button"
+                  disabled={s.future || s.full}
+                  onClick={() => openHour(s.hour)}
+                  title={s.marker ? `${new Date(s.marker.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · ${s.marker.category || 'activity'}` : s.future ? 'Not here yet' : 'No tracked activity'}
+                  className={`relative h-12 rounded-lg border overflow-hidden flex flex-col items-center justify-center text-[10px] font-mono font-bold transition-all
+                    ${s.future ? 'opacity-30 cursor-not-allowed border-border/40' : s.full ? 'cursor-default border-emerald-500/40' : 'border-border/60 hover:border-primary/50 cursor-pointer'}
+                    ${isSelected ? 'ring-2 ring-primary' : ''}`}
+                >
+                  <span className={`absolute inset-0 ${s.trackedMin > 0 ? 'bg-indigo-500' : 'bg-transparent'}`}
+                    style={{ opacity: s.trackedMin > 0 ? 0.12 + Math.min(1, s.maxDensity / 100) * 0.18 : 0 }} />
+                  <span className="absolute bottom-0 left-0 right-0 bg-emerald-500/70" style={{ height: `${fillPct}%` }} />
+                  <span className="relative text-foreground">{pad2(s.hour)}</span>
+                  {s.trackedMin > 0 && !s.full && (
+                    <span className="relative w-1 h-1 rounded-full bg-indigo-400 mt-0.5" />
+                  )}
+                </button>
+              );
+            })}
           </div>
           <div className="flex items-center gap-3 text-[8px] text-muted-foreground">
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-indigo-500/60 inline-block" />Tracked activity</span>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-emerald-500/70 inline-block" />Already logged</span>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-primary/40 border border-primary inline-block" />Your selection</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-indigo-500/30 inline-block" />Tracked</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-emerald-500/70 inline-block" />Logged</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-indigo-400 inline-block" />Activity present</span>
           </div>
 
-          {selection && (
+          {selStat && (
             <div className="space-y-3 rounded-xl bg-background/60 border border-primary/30 p-3">
               <div className="flex items-center justify-between">
                 <div className="text-[11px] text-foreground font-bold">
-                  {fmtHm(rangeStart)} – {fmtHm(rangeEnd)} · {Math.round((rangeEnd - rangeStart) * 100) / 100}h
+                  {pad2(selectedHour)}:00 – {pad2(selectedHour + 1 === 24 ? 0 : selectedHour + 1)}:00
+                  {selStat.loggedMin > 0 && <span className="text-muted-foreground font-normal"> · {selStat.loggedMin}m already logged</span>}
                 </div>
-                <button onClick={() => { setSelection(null); resetForm(); }}
-                  className="text-muted-foreground hover:text-foreground">
+                <button onClick={() => setSelectedHour(null)} className="text-muted-foreground hover:text-foreground">
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>
 
               <div className="flex gap-1.5">
-                {[['single', 'Single project'], ['half', 'Split in half'], ['quarter', 'Split in 4'], ['manual', 'Manual split']].map(([m, label]) => (
-                  <button key={m} onClick={() => setSplit(m)}
-                    className={`px-2.5 py-1 rounded-lg text-[9px] font-semibold uppercase tracking-wide border transition-colors ${splitMode === m ? 'bg-primary text-primary-foreground border-primary' : 'border-border/60 text-muted-foreground hover:text-foreground'}`}>
+                {[[1, 'Whole hour'], [2, 'Halves'], [3, 'Thirds'], [4, 'Quarters']].map(([n, label]) => (
+                  <button key={n} onClick={() => { setSplitN(n); setPartProjects({}); setPartChecked({}); }}
+                    disabled={n === 1 && selStat.loggedMin > 0}
+                    className={`px-2.5 py-1 rounded-lg text-[9px] font-semibold uppercase tracking-wide border transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${splitN === n ? 'bg-primary text-primary-foreground border-primary' : 'border-border/60 text-muted-foreground hover:text-foreground'}`}>
                     {label}
                   </button>
                 ))}
               </div>
 
-              {!isSplit ? (
-                <div className="space-y-1">
-                  <label className="text-[9px] uppercase font-semibold text-muted-foreground">Project</label>
-                  <select value={singleProject} onChange={(e) => setSingleProject(e.target.value)}
-                    className="w-full bg-background border border-border rounded-lg p-2 text-xs text-foreground outline-none">
-                    <option value="">Select project…</option>
-                    {projList.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
+              {splitN === 1 ? (
+                <div className="flex gap-2">
+                  <div className="flex-1 space-y-1">
+                    <label className="text-[9px] uppercase font-semibold text-muted-foreground">Project</label>
+                    <select value={singleProject} onChange={(e) => setSingleProject(e.target.value)}
+                      className="w-full bg-background border border-border rounded-lg p-2 text-xs text-foreground outline-none">
+                      <option value="">Select project…</option>
+                      {projList.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="w-20 space-y-1">
+                    <label className="text-[9px] uppercase font-semibold text-muted-foreground">Mins</label>
+                    <input type="number" min="1" max={Math.round(60 - selStat.loggedMin)} value={singleMinutes}
+                      onChange={(e) => setSingleMinutes(e.target.value === '' ? '' : Number(e.target.value))}
+                      className="w-full bg-background border border-border rounded-lg p-2 text-xs text-foreground outline-none" />
+                  </div>
                 </div>
               ) : (
-                <div className="space-y-2">
-                  {splitRows.map((row, i) => (
-                    <div key={i} className="flex items-center gap-1.5">
-                      <select value={row.projectId} onChange={(e) => updateSplitRow(i, { projectId: e.target.value })}
-                        className="flex-1 bg-background border border-border rounded-lg p-2 text-xs text-foreground outline-none">
-                        <option value="">Select project…</option>
-                        {projList.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                      </select>
-                      <input type="number" min="1" max={selMinutes} value={row.minutes}
-                        onChange={(e) => updateSplitRow(i, { minutes: e.target.value === '' ? '' : Number(e.target.value) })}
-                        disabled={splitMode !== 'manual'}
-                        className="w-16 bg-background border border-border rounded-lg p-2 text-xs text-foreground outline-none disabled:opacity-60" />
-                      <span className="text-[9px] text-muted-foreground w-6">min</span>
-                      {splitMode === 'manual' && splitRows.length > 2 && (
-                        <button onClick={() => removeSplitRow(i)} className="text-muted-foreground hover:text-red-400">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                <div className="space-y-1.5">
+                  {parts.map((p) => (
+                    <div key={p.index} className={`flex items-center gap-1.5 ${p.locked ? 'opacity-50' : ''}`}>
+                      <input type="checkbox" disabled={p.locked} checked={!!partChecked[p.index]}
+                        onChange={(e) => setPartChecked((c) => ({ ...c, [p.index]: e.target.checked }))}
+                        className="accent-primary" />
+                      <span className="text-[9px] text-muted-foreground w-24 font-mono">
+                        {new Date(p.startMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}–{new Date(p.endMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                      {p.locked ? (
+                        <span className="flex-1 text-[9px] text-emerald-400">Already logged</span>
+                      ) : (
+                        <select value={partProjects[p.index] || ''} disabled={!partChecked[p.index]}
+                          onChange={(e) => setPartProjects((pr) => ({ ...pr, [p.index]: e.target.value }))}
+                          className="flex-1 bg-background border border-border rounded-lg p-1.5 text-[10px] text-foreground outline-none disabled:opacity-50">
+                          <option value="">Select project…</option>
+                          {projList.map((pj) => <option key={pj.id} value={pj.id}>{pj.name}</option>)}
+                        </select>
                       )}
+                      <span className="text-[9px] text-muted-foreground w-10 text-right">{p.minutes}m</span>
                     </div>
                   ))}
-                  {splitMode === 'manual' && (
-                    <button onClick={addSplitRow}
-                      className="flex items-center gap-1 text-[9px] uppercase font-semibold text-primary hover:text-primary/80">
-                      <Plus className="w-3 h-3" /> Add split
-                    </button>
-                  )}
-                  <p className={`text-[9px] ${splitSum === selMinutes ? 'text-emerald-400' : 'text-amber-400'}`}>
-                    {splitSum} / {selMinutes} min allocated{splitSum !== selMinutes ? ' — must add up exactly' : ''}
-                  </p>
                 </div>
               )}
 
@@ -821,17 +776,17 @@ function EmployeeDayLog({ onLogged, showToast }) {
               <div className="flex gap-2">
                 <button onClick={submit} disabled={saving || !canSubmit}
                   className="flex-1 py-2 bg-primary hover:bg-primary/95 disabled:opacity-50 text-primary-foreground font-semibold text-[10px] uppercase tracking-widest rounded-xl transition-all">
-                  {saving ? 'Logging…' : 'Log Hours'}
+                  {saving ? 'Logging…' : 'Log Hour'}
                 </button>
-                <button onClick={() => { setSelection(null); resetForm(); }}
+                <button onClick={() => setSelectedHour(null)}
                   className="px-4 py-2 border border-border text-muted-foreground hover:text-foreground font-semibold text-[10px] uppercase tracking-widest rounded-xl">
                   Cancel
                 </button>
               </div>
             </div>
           )}
-          {!selection && !drag && (
-            <p className="text-[10px] text-muted-foreground text-center py-2">Drag across the bar above to select the hours you worked.</p>
+          {!selStat && (
+            <p className="text-[10px] text-muted-foreground text-center py-2">Tap an hour above to log it.</p>
           )}
         </>
       )}
@@ -855,7 +810,9 @@ export default function App() {
   const setActiveAdminTab = (tab) => { closeDetail(); setActiveAdminTabState(tab); localStorage.setItem('ct_admin_tab', tab); };
   const [activeTlTab, setActiveTlTabState] = useState(() => localStorage.getItem('ct_tl_tab') || 'overview'); // 'overview' | 'contribution' | 'members' | 'manage'
   const setActiveTlTab = (tab) => { closeDetail(); setActiveTlTabState(tab); localStorage.setItem('ct_tl_tab', tab); };
-  
+  const [activeEmployeeTab, setActiveEmployeeTabState] = useState(() => localStorage.getItem('ct_emp_tab') || 'dashboard'); // 'dashboard' | 'allocate' | 'profile'
+  const setActiveEmployeeTab = (tab) => { setActiveEmployeeTabState(tab); localStorage.setItem('ct_emp_tab', tab); };
+
   // Custom Analytics & Team Lead State Variables
   const [selectedAttributionProject, setSelectedAttributionProject] = useState('Project Alpha');
 
@@ -4900,45 +4857,32 @@ export default function App() {
                 </main>
               </div>
             ) : (
-              <div className="flex-grow flex flex-col">
-                {/* Header */}
-                <header className="px-6 h-16 border-b border-border bg-card flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <Laptop className="w-5 h-5 text-primary" />
-                    <div className="flex flex-col">
-                      <span className="font-extrabold text-xs text-foreground uppercase tracking-wider">ChronoTrack Desktop Agent</span>
-                      <span className="text-[8px] text-muted-foreground font-bold uppercase tracking-widest">Version {APP_VERSION}</span>
+              <div className="flex-grow flex flex-col md:h-screen md:overflow-hidden">
+                {/* Header — only shown pre-activation; once activated the sidebar
+                    below carries daemon status + Profile/Sign Out/Exit Agent. */}
+                {!desktopActivated && (
+                  <header className="px-6 h-16 border-b border-border bg-card flex items-center justify-between shrink-0">
+                    <div className="flex items-center space-x-3">
+                      <Laptop className="w-5 h-5 text-primary" />
+                      <div className="flex flex-col">
+                        <span className="font-extrabold text-xs text-foreground uppercase tracking-wider">ChronoTrack Desktop Agent</span>
+                        <span className="text-[8px] text-muted-foreground font-bold uppercase tracking-widest">Version {APP_VERSION}</span>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center space-x-3">
-                    <span className={`w-2 h-2 rounded-full ${localDaemonState.online ? 'bg-emerald-500' : 'bg-red-500 animate-pulse'}`}></span>
-                    <span className="text-[10px] uppercase font-bold text-muted-foreground">
-                      {localDaemonState.online ? 'Daemon Active (Port 5050)' : 'Daemon Offline'}
-                    </span>
-                    {desktopActivated && (
+                    <div className="flex items-center space-x-3">
+                      <span className={`w-2 h-2 rounded-full ${localDaemonState.online ? 'bg-emerald-500' : 'bg-red-500 animate-pulse'}`}></span>
+                      <span className="text-[10px] uppercase font-bold text-muted-foreground">
+                        {localDaemonState.online ? 'Daemon Active (Port 5050)' : 'Daemon Offline'}
+                      </span>
                       <button
-                        onClick={openProfile}
-                        className="px-3 py-1 bg-muted hover:bg-accent border border-border text-muted-foreground hover:text-foreground rounded-lg text-[9px] font-semibold uppercase tracking-wider transition-all flex items-center gap-1"
+                        onClick={handleExitAgent}
+                        className="px-3 py-1 bg-muted hover:bg-accent border border-border text-muted-foreground hover:text-foreground rounded-lg text-[9px] font-semibold uppercase tracking-wider transition-all"
                       >
-                        <User className="w-3 h-3" /> Profile
+                        Exit Agent
                       </button>
-                    )}
-                    {desktopActivated && (
-                      <button
-                        onClick={handleDesktopSignOut}
-                        className="px-3 py-1 bg-muted hover:bg-accent border border-border text-muted-foreground hover:text-foreground rounded-lg text-[9px] font-semibold uppercase tracking-wider transition-all flex items-center gap-1"
-                      >
-                        <LogOut className="w-3 h-3" /> Sign Out
-                      </button>
-                    )}
-                    <button
-                      onClick={handleExitAgent}
-                      className="px-3 py-1 bg-muted hover:bg-accent border border-border text-muted-foreground hover:text-foreground rounded-lg text-[9px] font-semibold uppercase tracking-wider transition-all"
-                    >
-                      Exit Agent
-                    </button>
-                  </div>
-                </header>
+                    </div>
+                  </header>
+                )}
 
           {!desktopActivated ? (
             /* ONBOARDING ACTIVATION CARD */
@@ -5016,213 +4960,328 @@ export default function App() {
               </div>
             </div>
           ) : (
-            /* ACTIVE WORKSPACE CLIENT CONSOLE */
-            <main className="flex-1 p-6 md:p-8 space-y-6 max-w-7xl mx-auto w-full overflow-y-auto">
-              
-              {/* Connected Banner */}
-              <div className="flex justify-between items-center border-b border-border pb-4 flex-wrap gap-4">
-                <div>
-                  <h2 className="text-xl font-semibold text-foreground uppercase tracking-wider">Active Workspace Telemetry</h2>
-                  <p className="text-xs text-muted-foreground mt-1">This node is verified and syncing logs securely with the Cloud Database.</p>
-                </div>
-                <span className="text-[10px] bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-semibold uppercase tracking-wider px-3.5 py-1.5 rounded-full flex items-center space-x-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                  <span>Syncing Live Logs</span>
-                </span>
-              </div>
-
-              {/* My Productivity — employee's own data (transparency self-view) */}
-              <div className="p-6 rounded-xl bg-card border border-border space-y-4">
-                <span className="text-xs font-semibold text-foreground uppercase tracking-wider flex items-center space-x-2">
-                  <TrendingUp className="w-4 h-4 text-primary" />
-                  <span>My Productivity (last 7 days) — your data, transparent</span>
-                </span>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div className="p-4 rounded-2xl bg-background border border-border">
-                    <span className="text-[9px] uppercase font-bold text-muted-foreground block">Active %</span>
-                    <span className="text-xl font-semibold text-emerald-400">{selfAnalytics?.rollup?.active_pct ?? '—'}%</span>
-                  </div>
-                  <div className="p-4 rounded-2xl bg-background border border-border">
-                    <span className="text-[9px] uppercase font-bold text-muted-foreground block">Active Hours</span>
-                    <span className="text-xl font-semibold text-foreground">{selfAnalytics?.rollup?.active_hours ?? '—'}h</span>
-                  </div>
-                  <div className="p-4 rounded-2xl bg-background border border-border">
-                    <span className="text-[9px] uppercase font-bold text-muted-foreground block">Samples</span>
-                    <span className="text-xl font-semibold text-foreground">{selfAnalytics?.rollup?.samples ?? '—'}</span>
-                  </div>
-                  <div className="p-4 rounded-2xl bg-background border border-border">
-                    <span className="text-[9px] uppercase font-bold text-muted-foreground block">Flagged</span>
-                    <span className="text-xl font-semibold text-amber-400">{selfAnalytics?.rollup?.anomalies ?? '—'}</span>
-                  </div>
-                </div>
-                <div className="h-44 w-full relative">
-                  {!selfAnalytics?.trend?.length && (
-                    <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground pointer-events-none">
-                      No activity data yet
+            /* ACTIVE WORKSPACE CLIENT CONSOLE — same fixed-sidebar shell as
+               admin/TL: three real pages instead of one long scroll. */
+            <div className="flex-1 min-h-screen md:h-full flex flex-col md:flex-row md:overflow-hidden">
+              <aside className="w-full md:w-64 bg-card border-r border-border flex flex-col shrink-0 md:h-full md:overflow-y-auto">
+                <div className="p-6 border-b border-border">
+                  <div className="flex items-center space-x-2">
+                    <Laptop className="w-5 h-5 text-primary" />
+                    <div className="flex flex-col min-w-0">
+                      <span className="font-extrabold text-xs text-foreground uppercase tracking-wider truncate">ChronoTrack Agent</span>
+                      <span className="text-[8px] text-muted-foreground font-bold uppercase tracking-widest">Version {APP_VERSION}</span>
                     </div>
-                  )}
-                  <SizedChart>
-                    <AreaChart data={selfAnalytics?.trend || []}>
-                      <defs>
-                        <linearGradient id="selfRev" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                          <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                      <XAxis dataKey="day" stroke="hsl(var(--muted-foreground))" fontSize={10} />
-                      <YAxis stroke="hsl(var(--muted-foreground))" fontSize={10} />
-                      <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--popover))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--popover-foreground))', borderRadius: '12px', fontSize: '10px' }} />
-                      <Area type="monotone" dataKey="active_hours" stroke="#10b981" fillOpacity={1} fill="url(#selfRev)" strokeWidth={2} name="Active Hours" />
-                    </AreaChart>
-                  </SizedChart>
+                  </div>
                 </div>
-              </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                
-                {/* Left Live Console Tracking Details */}
-                <div className="md:col-span-2 p-6 rounded-xl bg-card border border-border space-y-4">
-                  <span className="text-xs font-semibold text-foreground uppercase tracking-wider flex items-center space-x-2">
-                    <Activity className="w-4 h-4 text-primary animate-pulse" />
-                    <span>Real-Time Local Tracking Event Log</span>
-                  </span>
+                <nav className="flex-1 p-4 space-y-1">
+                  {[
+                    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+                    { id: 'allocate', label: 'Log Hours', icon: Clock },
+                    { id: 'profile', label: 'Profile', icon: User },
+                  ].map(tab => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveEmployeeTab(tab.id)}
+                      className={`w-full px-4 py-3 rounded-xl text-xs font-bold uppercase flex items-center space-x-3 transition-all ${
+                        activeEmployeeTab === tab.id
+                          ? 'bg-primary/10 border border-primary/20 text-primary'
+                          : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground border border-transparent'
+                      }`}
+                    >
+                      <tab.icon className="w-4 h-4" />
+                      <span>{tab.label}</span>
+                      {tab.id === 'allocate' && showVerificationPrompt && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse ml-auto" />
+                      )}
+                    </button>
+                  ))}
+                </nav>
 
-                  <div className="bg-background border border-border p-5 rounded-2xl font-mono text-[10px] text-muted-foreground space-y-2.5 max-h-48 overflow-y-auto">
-                    {telemetryTicker.map((t, idx) => (
-                      <div key={idx} className="flex justify-between border-b border-border/30 pb-2 last:border-0 last:pb-0">
-                        <span>[{t.time}] {t.event}</span>
-                        <span className="text-emerald-500">[encrypted]</span>
+                <div className="p-4 border-t border-border space-y-3 text-xs text-muted-foreground">
+                  <div className="flex items-center space-x-2 min-w-0">
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${localDaemonState.online ? 'bg-emerald-500 animate-pulse' : 'bg-red-500 animate-pulse'}`}></span>
+                    <span className="font-semibold uppercase tracking-wider truncate">{localDaemonState.online ? 'Daemon Active' : 'Daemon Offline'}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button onClick={handleDesktopSignOut}
+                      className="px-2.5 py-1.5 bg-muted hover:bg-muted border border-border hover:text-foreground rounded-lg transition-all flex items-center justify-center space-x-1 uppercase text-[10px] font-bold">
+                      <LogOut className="w-3 h-3 shrink-0" /><span>Sign Out</span>
+                    </button>
+                    <button onClick={handleExitAgent}
+                      className="px-2.5 py-1.5 bg-muted hover:bg-muted border border-border hover:text-foreground rounded-lg transition-all flex items-center justify-center space-x-1 uppercase text-[10px] font-bold">
+                      <span>Exit Agent</span>
+                    </button>
+                  </div>
+                </div>
+              </aside>
+
+              <main className="flex-1 p-6 md:p-8 space-y-6 md:h-full md:overflow-y-auto max-w-7xl mx-auto w-full">
+
+                {activeEmployeeTab === 'dashboard' && (
+                  <div className="space-y-6">
+                    {/* Connected Banner */}
+                    <div className="flex justify-between items-center border-b border-border pb-4 flex-wrap gap-4">
+                      <div>
+                        <h2 className="text-xl font-semibold text-foreground uppercase tracking-wider">Active Workspace Telemetry</h2>
+                        <p className="text-xs text-muted-foreground mt-1">This node is verified and syncing logs securely with the Cloud Database.</p>
                       </div>
-                    ))}
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-4 pt-2">
-                    <div className="p-4 bg-muted/50 border border-border/80 rounded-2xl text-center">
-                      <span className="text-[8px] uppercase font-bold text-muted-foreground block">Active App</span>
-                      <span className="text-xs font-extrabold text-foreground mt-1 block truncate">{localDaemonState.activeWindow}</span>
+                      <span className="text-[10px] bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-semibold uppercase tracking-wider px-3.5 py-1.5 rounded-full flex items-center space-x-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                        <span>Syncing Live Logs</span>
+                      </span>
                     </div>
-                    <div className="p-4 bg-muted/50 border border-border/80 rounded-2xl text-center">
-                      <span className="text-[8px] uppercase font-bold text-muted-foreground block">Keystroke Count</span>
-                      <span className="text-xs font-mono font-bold text-indigo-400 mt-1 block">{localDaemonState.keystrokes}</span>
-                    </div>
-                    <div className="p-4 bg-muted/50 border border-border/80 rounded-2xl text-center">
-                      <span className="text-[8px] uppercase font-bold text-muted-foreground block">Mouse Count</span>
-                      <span className="text-xs font-mono font-bold text-indigo-400 mt-1 block">{localDaemonState.mouseMovements}</span>
-                    </div>
-                  </div>
-                </div>
 
-                {/* Right Column: Validation & Cloud Sync */}
-                <div className="space-y-6">
-                  {/* Visual timeline allocation — assign real tracked blocks to projects. */}
-                  {showVerificationPrompt && (
-                    <div className="flex items-center justify-between px-1 text-[10px] text-indigo-300/80">
-                      <span className="flex items-center gap-1.5"><AlertTriangle className="w-3.5 h-3.5" /> Time to log your hours — allocate your tracked blocks below.</span>
-                      <button onClick={() => setShowVerificationPrompt(false)} className="text-muted-foreground hover:text-foreground uppercase font-semibold">Dismiss</button>
-                    </div>
-                  )}
-                  <EmployeeDayLog
-                    showToast={showToast}
-                    onLogged={async () => {
-                      try { setSelfAnalytics(await api.analytics.employee(null, 7)); } catch { /* non-fatal */ }
-                      reloadMyTimeEntries();
-                    }}
-                  />
-
-                  {/* Right Cloud Database Sync Log status — real, from the daemon's /api/status, never simulated */}
-                  <div className="p-6 rounded-xl bg-card border border-border space-y-4">
-                    <span className="text-xs font-semibold text-foreground uppercase tracking-wider flex items-center space-x-2">
-                      <Server className="w-4 h-4 text-indigo-400" />
-                      <span>Cloud Sync Status</span>
-                    </span>
-
-                    <div className="space-y-3">
-                      {!cloudSyncStatus.checked ? (
-                        <div className="p-3 bg-muted/50 border border-border/40 rounded-xl text-[10px] text-muted-foreground">
-                          Checking connection to the cloud database…
+                    {/* My Productivity — employee's own data (transparency self-view) */}
+                    <div className="p-6 rounded-xl bg-card border border-border space-y-4">
+                      <span className="text-xs font-semibold text-foreground uppercase tracking-wider flex items-center space-x-2">
+                        <TrendingUp className="w-4 h-4 text-primary" />
+                        <span>My Productivity (last 7 days) — your data, transparent</span>
+                      </span>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="p-4 rounded-2xl bg-background border border-border">
+                          <span className="text-[9px] uppercase font-bold text-muted-foreground block">Active %</span>
+                          <span className="text-xl font-semibold text-emerald-400">{selfAnalytics?.rollup?.active_pct ?? '—'}%</span>
                         </div>
-                      ) : cloudSyncStatus.lastError ? (
-                        <div className="p-3 bg-red-950/30 border border-red-900/50 rounded-xl space-y-1">
-                          <div className="flex justify-between font-bold text-[10px]">
-                            <span className="text-red-400">Not syncing</span>
+                        <div className="p-4 rounded-2xl bg-background border border-border">
+                          <span className="text-[9px] uppercase font-bold text-muted-foreground block">Active Hours</span>
+                          <span className="text-xl font-semibold text-foreground">{selfAnalytics?.rollup?.active_hours ?? '—'}h</span>
+                        </div>
+                        <div className="p-4 rounded-2xl bg-background border border-border">
+                          <span className="text-[9px] uppercase font-bold text-muted-foreground block">Samples</span>
+                          <span className="text-xl font-semibold text-foreground">{selfAnalytics?.rollup?.samples ?? '—'}</span>
+                        </div>
+                        <div className="p-4 rounded-2xl bg-background border border-border">
+                          <span className="text-[9px] uppercase font-bold text-muted-foreground block">Flagged</span>
+                          <span className="text-xl font-semibold text-amber-400">{selfAnalytics?.rollup?.anomalies ?? '—'}</span>
+                        </div>
+                      </div>
+                      <div className="h-44 w-full relative">
+                        {!selfAnalytics?.trend?.length && (
+                          <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground pointer-events-none">
+                            No activity data yet
                           </div>
-                          <p className="text-[10px] text-red-300/80">{cloudSyncStatus.lastError}</p>
-                          {cloudSyncStatus.pendingSync != null && cloudSyncStatus.pendingSync > 0 && (
-                            <p className="text-[9px] text-muted-foreground">{cloudSyncStatus.pendingSync} record(s) waiting to upload — kept safely on this device, not lost.</p>
+                        )}
+                        <SizedChart>
+                          <AreaChart data={selfAnalytics?.trend || []}>
+                            <defs>
+                              <linearGradient id="selfRev" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                                <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                            <XAxis dataKey="day" stroke="hsl(var(--muted-foreground))" fontSize={10} />
+                            <YAxis stroke="hsl(var(--muted-foreground))" fontSize={10} />
+                            <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--popover))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--popover-foreground))', borderRadius: '12px', fontSize: '10px' }} />
+                            <Area type="monotone" dataKey="active_hours" stroke="#10b981" fillOpacity={1} fill="url(#selfRev)" strokeWidth={2} name="Active Hours" />
+                          </AreaChart>
+                        </SizedChart>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="p-6 rounded-xl bg-card border border-border space-y-4">
+                        <span className="text-xs font-semibold text-foreground uppercase tracking-wider flex items-center space-x-2">
+                          <Activity className="w-4 h-4 text-primary animate-pulse" />
+                          <span>Real-Time Local Tracking Event Log</span>
+                        </span>
+
+                        <div className="bg-background border border-border p-5 rounded-2xl font-mono text-[10px] text-muted-foreground space-y-2.5 max-h-48 overflow-y-auto">
+                          {telemetryTicker.map((t, idx) => (
+                            <div key={idx} className="flex justify-between border-b border-border/30 pb-2 last:border-0 last:pb-0">
+                              <span>[{t.time}] {t.event}</span>
+                              <span className="text-emerald-500">[encrypted]</span>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-4 pt-2">
+                          <div className="p-4 bg-muted/50 border border-border/80 rounded-2xl text-center">
+                            <span className="text-[8px] uppercase font-bold text-muted-foreground block">Active App</span>
+                            <span className="text-xs font-extrabold text-foreground mt-1 block truncate">{localDaemonState.activeWindow}</span>
+                          </div>
+                          <div className="p-4 bg-muted/50 border border-border/80 rounded-2xl text-center">
+                            <span className="text-[8px] uppercase font-bold text-muted-foreground block">Keystroke Count</span>
+                            <span className="text-xs font-mono font-bold text-indigo-400 mt-1 block">{localDaemonState.keystrokes}</span>
+                          </div>
+                          <div className="p-4 bg-muted/50 border border-border/80 rounded-2xl text-center">
+                            <span className="text-[8px] uppercase font-bold text-muted-foreground block">Mouse Count</span>
+                            <span className="text-xs font-mono font-bold text-indigo-400 mt-1 block">{localDaemonState.mouseMovements}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Cloud Database Sync Log status — real, from the daemon's /api/status, never simulated */}
+                      <div className="p-6 rounded-xl bg-card border border-border space-y-4">
+                        <span className="text-xs font-semibold text-foreground uppercase tracking-wider flex items-center space-x-2">
+                          <Server className="w-4 h-4 text-indigo-400" />
+                          <span>Cloud Sync Status</span>
+                        </span>
+
+                        <div className="space-y-3">
+                          {!cloudSyncStatus.checked ? (
+                            <div className="p-3 bg-muted/50 border border-border/40 rounded-xl text-[10px] text-muted-foreground">
+                              Checking connection to the cloud database…
+                            </div>
+                          ) : cloudSyncStatus.lastError ? (
+                            <div className="p-3 bg-red-950/30 border border-red-900/50 rounded-xl space-y-1">
+                              <div className="flex justify-between font-bold text-[10px]">
+                                <span className="text-red-400">Not syncing</span>
+                              </div>
+                              <p className="text-[10px] text-red-300/80">{cloudSyncStatus.lastError}</p>
+                              {cloudSyncStatus.pendingSync != null && cloudSyncStatus.pendingSync > 0 && (
+                                <p className="text-[9px] text-muted-foreground">{cloudSyncStatus.pendingSync} record(s) waiting to upload — kept safely on this device, not lost.</p>
+                              )}
+                            </div>
+                          ) : cloudSyncStatus.lastSuccessAt ? (
+                            <div className="p-3 bg-emerald-950/20 border border-emerald-900/40 rounded-xl space-y-1">
+                              <div className="flex justify-between font-bold text-[10px]">
+                                <span className="text-emerald-400">Synced</span>
+                                <span className="text-muted-foreground">{new Date(cloudSyncStatus.lastSuccessAt * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                              </div>
+                              <p className="text-[10px] text-muted-foreground">
+                                {cloudSyncStatus.pendingSync ? `${cloudSyncStatus.pendingSync} record(s) queued for the next sync.` : 'All recorded activity is up to date in the cloud.'}
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="p-3 bg-muted/50 border border-border/40 rounded-xl text-[10px] text-muted-foreground">
+                              No successful sync yet on this device.
+                            </div>
                           )}
                         </div>
-                      ) : cloudSyncStatus.lastSuccessAt ? (
-                        <div className="p-3 bg-emerald-950/20 border border-emerald-900/40 rounded-xl space-y-1">
-                          <div className="flex justify-between font-bold text-[10px]">
-                            <span className="text-emerald-400">Synced</span>
-                            <span className="text-muted-foreground">{new Date(cloudSyncStatus.lastSuccessAt * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-                          </div>
-                          <p className="text-[10px] text-muted-foreground">
-                            {cloudSyncStatus.pendingSync ? `${cloudSyncStatus.pendingSync} record(s) queued for the next sync.` : 'All recorded activity is up to date in the cloud.'}
-                          </p>
-                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {activeEmployeeTab === 'allocate' && (
+                  <div className="space-y-6">
+                    <div className="border-b border-border pb-4">
+                      <h2 className="text-xl font-semibold text-foreground uppercase tracking-wider">Log Your Hours</h2>
+                      <p className="text-xs text-muted-foreground mt-1">Tap through today's hours (or a past day) and tag what you worked on.</p>
+                    </div>
+                    {showVerificationPrompt && (
+                      <div className="flex items-center justify-between px-1 text-[10px] text-indigo-300/80">
+                        <span className="flex items-center gap-1.5"><AlertTriangle className="w-3.5 h-3.5" /> Time to log your hours below.</span>
+                        <button onClick={() => setShowVerificationPrompt(false)} className="text-muted-foreground hover:text-foreground uppercase font-semibold">Dismiss</button>
+                      </div>
+                    )}
+                    <EmployeeHourLog
+                      showToast={showToast}
+                      onLogged={async () => {
+                        try { setSelfAnalytics(await api.analytics.employee(null, 7)); } catch { /* non-fatal */ }
+                        reloadMyTimeEntries();
+                      }}
+                    />
+
+                    {/* My Logged Time — historical entries, not just today's hours. */}
+                    <div className="p-6 rounded-xl bg-card border border-border space-y-4">
+                      <span className="text-xs font-semibold text-foreground uppercase tracking-wider flex items-center space-x-2">
+                        <History className="w-4 h-4 text-indigo-400" />
+                        <span>My Logged Time</span>
+                      </span>
+                      {myTimeEntries.length === 0 ? (
+                        <p className="text-[10px] text-muted-foreground">No logged time entries yet.</p>
                       ) : (
-                        <div className="p-3 bg-muted/50 border border-border/40 rounded-xl text-[10px] text-muted-foreground">
-                          No successful sync yet on this device.
+                        <div className="border border-border rounded-2xl overflow-hidden max-h-64 overflow-y-auto">
+                          <table className="w-full text-left border-collapse">
+                            <thead className="sticky top-0 bg-card">
+                              <tr className="border-b border-border bg-muted/30 text-[9px] uppercase font-semibold tracking-wider text-muted-foreground">
+                                <th className="p-2.5">Date</th>
+                                <th className="p-2.5">Project</th>
+                                <th className="p-2.5">Hours</th>
+                                <th className="p-2.5">Note</th>
+                              </tr>
+                            </thead>
+                            <tbody className="text-[10px] text-foreground/80 divide-y divide-border">
+                              {myTimeEntries.slice(0, 50).map(e => (
+                                <tr key={e.id}>
+                                  <td className="p-2.5 whitespace-nowrap">{new Date(e.start_ts).toLocaleDateString()}</td>
+                                  <td className="p-2.5">{myProjects.find(p => p.id === e.project_id)?.name || 'Unassigned'}</td>
+                                  <td className="p-2.5 font-semibold">{Number(e.hours).toFixed(1)}</td>
+                                  <td className="p-2.5 text-muted-foreground truncate max-w-[140px]">{e.note || ''}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
                         </div>
                       )}
                     </div>
                   </div>
+                )}
 
-                  {/* My Logged Time — historical entries, not just today's blocks. */}
-                  <div className="p-6 rounded-xl bg-card border border-border space-y-4">
-                    <span className="text-xs font-semibold text-foreground uppercase tracking-wider flex items-center space-x-2">
-                      <History className="w-4 h-4 text-indigo-400" />
-                      <span>My Logged Time</span>
-                    </span>
-                    {myTimeEntries.length === 0 ? (
-                      <p className="text-[10px] text-muted-foreground">No logged time entries yet.</p>
-                    ) : (
-                      <div className="border border-border rounded-2xl overflow-hidden max-h-64 overflow-y-auto">
-                        <table className="w-full text-left border-collapse">
-                          <thead className="sticky top-0 bg-card">
-                            <tr className="border-b border-border bg-muted/30 text-[9px] uppercase font-semibold tracking-wider text-muted-foreground">
-                              <th className="p-2.5">Date</th>
-                              <th className="p-2.5">Project</th>
-                              <th className="p-2.5">Hours</th>
-                              <th className="p-2.5">Note</th>
-                            </tr>
-                          </thead>
-                          <tbody className="text-[10px] text-foreground/80 divide-y divide-border">
-                            {myTimeEntries.slice(0, 50).map(e => (
-                              <tr key={e.id}>
-                                <td className="p-2.5 whitespace-nowrap">{new Date(e.start_ts).toLocaleDateString()}</td>
-                                <td className="p-2.5">{myProjects.find(p => p.id === e.project_id)?.name || 'Unassigned'}</td>
-                                <td className="p-2.5 font-semibold">{Number(e.hours).toFixed(1)}</td>
-                                <td className="p-2.5 text-muted-foreground truncate max-w-[140px]">{e.note || ''}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                {activeEmployeeTab === 'profile' && (() => {
+                  const u = api.getUser() || {};
+                  return (
+                    <div className="space-y-6 max-w-2xl">
+                      <div className="border-b border-border pb-4">
+                        <h2 className="text-xl font-semibold text-foreground uppercase tracking-wider">My Profile</h2>
+                        <p className="text-xs text-muted-foreground mt-1">Account details, password, and your privacy consent.</p>
                       </div>
-                    )}
-                  </div>
 
-                  {/* Privacy & Consent moved to the Profile page (top-right "Profile"
-                      button) — settings/account-level controls belong there, not
-                      mixed into the day's live telemetry view. */}
-                  <button
-                    type="button"
-                    onClick={openProfile}
-                    className="w-full p-4 rounded-xl bg-card border border-border hover:border-primary/40 transition-colors flex items-center justify-between text-left"
-                  >
-                    <span className="text-xs font-semibold text-foreground uppercase tracking-wider flex items-center gap-2">
-                      <ShieldOff className="w-4 h-4 text-indigo-400" />
-                      Privacy & Consent
-                    </span>
-                    <span className="text-[10px] text-muted-foreground uppercase tracking-wider">View in Profile →</span>
-                  </button>
-                </div>
+                      <div className="p-6 rounded-xl bg-card border border-border space-y-4">
+                        <span className="text-xs font-semibold text-foreground uppercase tracking-wider flex items-center space-x-2">
+                          <User className="w-4 h-4 text-primary" /><span>Account</span>
+                        </span>
+                        <div className="text-[11px] text-muted-foreground space-y-1">
+                          <div className="flex justify-between"><span>Email</span><span className="text-foreground">{u.email}</span></div>
+                          <div className="flex justify-between"><span>Role</span><span className="text-foreground uppercase">{u.role}</span></div>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[9px] uppercase font-semibold text-muted-foreground">Display Name</label>
+                          <div className="flex gap-2">
+                            <input value={profileName} onChange={(e) => setProfileName(e.target.value)}
+                              className="flex-1 bg-background border border-border focus:border-primary rounded-xl px-3 py-2 text-xs text-foreground outline-none" />
+                            <button onClick={saveProfileName} className="px-3 py-2 bg-primary text-primary-foreground rounded-xl text-[10px] font-semibold uppercase">Save</button>
+                          </div>
+                        </div>
+                      </div>
 
-              </div>
+                      <div className="p-6 rounded-xl bg-card border border-border space-y-3">
+                        <span className="text-xs font-semibold text-foreground uppercase tracking-wider flex items-center space-x-2">
+                          <Lock className="w-4 h-4 text-primary" /><span>Change Password</span>
+                        </span>
+                        <input type="password" value={pwCurrent} onChange={(e) => setPwCurrent(e.target.value)} placeholder="Current password"
+                          className="w-full bg-background border border-border focus:border-primary rounded-xl px-3 py-2 text-xs text-foreground outline-none" />
+                        <input type="password" value={pwNew} onChange={(e) => setPwNew(e.target.value)} placeholder="New password (8+ chars)"
+                          className="w-full bg-background border border-border focus:border-primary rounded-xl px-3 py-2 text-xs text-foreground outline-none" />
+                        <button onClick={changePassword} className="w-full py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl text-[10px] font-semibold uppercase tracking-widest">Update Password</button>
+                      </div>
 
-            </main>
+                      <div className="p-6 rounded-xl bg-card border border-border space-y-3">
+                        <span className="text-xs font-semibold text-foreground uppercase tracking-wider flex items-center gap-2">
+                          <ShieldOff className="w-4 h-4 text-indigo-400" /><span>Privacy & Consent</span>
+                        </span>
+                        {!myConsent ? (
+                          <p className="text-[10px] text-muted-foreground">No consent record found yet.</p>
+                        ) : myConsent.withdrawn_at ? (
+                          <div className="p-3 bg-red-950/30 border border-red-900/50 rounded-xl space-y-1">
+                            <span className="text-[10px] font-bold text-red-400">Consent withdrawn</span>
+                            <p className="text-[10px] text-red-300/80">Monitoring stopped on {new Date(myConsent.withdrawn_at).toLocaleString()}.</p>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="p-3 bg-emerald-950/20 border border-emerald-900/40 rounded-xl space-y-1">
+                              <span className="text-[10px] font-bold text-emerald-400">Consent granted (v{myConsent.consent_version})</span>
+                              <p className="text-[10px] text-muted-foreground">Since {new Date(myConsent.granted_at).toLocaleString()}. Only activity counts and window titles are recorded — never keystroke content or screen content.</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleWithdrawConsent}
+                              className="w-full py-2 bg-muted border border-red-500/20 text-red-400 hover:bg-red-500/10 text-[10px] font-semibold uppercase tracking-wider rounded-xl transition-all"
+                            >
+                              Withdraw Consent
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+              </main>
+            </div>
           )}
           </div>
           )}

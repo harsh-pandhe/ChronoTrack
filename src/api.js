@@ -212,9 +212,19 @@ export const analytics = {
     return request('GET', `/api/analytics?scope=employee&days=${days}${q}`);
   },
   // Day's tracked active blocks + already-allocated entries + assigned projects.
+  // `day` (YYYY-MM-DD) is interpreted as a LOCAL calendar day — from/to are
+  // computed here and sent as explicit UTC instants so the server never has
+  // to guess the caller's timezone from a bare date (that mismatch used to
+  // make entries near local midnight vanish from the day they were logged on).
   timeline(day, userId) {
     const q = new URLSearchParams({ scope: 'timeline' });
-    if (day) q.set('day', day);
+    if (day) {
+      q.set('day', day);
+      const from = new Date(`${day}T00:00:00`);
+      const to = new Date(from.getTime() + 24 * 3600 * 1000);
+      q.set('from', from.toISOString());
+      q.set('to', to.toISOString());
+    }
     if (userId) q.set('user_id', userId);
     return request('GET', `/api/analytics?${q.toString()}`);
   },

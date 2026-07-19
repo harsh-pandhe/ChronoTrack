@@ -164,12 +164,17 @@ async function projectRoi(companyId) {
 // afternoon away splits the day into the real "active blocks" an employee then
 // allocates to projects. seconds = samples * 10 to match active-hours math.
 const BLOCK_GAP_SECONDS = 120;
-async function timelineBlocks(companyId, userId, day) {
+// fromTs/toTs are explicit ISO instants (half-open range), not a bare calendar
+// date -- the caller (browser) computes local-midnight boundaries and converts
+// to UTC itself. Comparing on a server-side ::date used to silently disagree
+// with whatever the employee's local "today" was (Vercel runs in UTC), so
+// entries logged near local midnight could land outside the day being viewed.
+async function timelineBlocks(companyId, userId, fromTs, toTs) {
   const { rows } = await query(
     `WITH s AS (
         SELECT ts, app_category, input_density, LAG(ts) OVER (ORDER BY ts) AS prev_ts
           FROM telemetry_logs
-         WHERE company_id=$1 AND user_id=$2 AND NOT is_idle AND ts::date = $3::date
+         WHERE company_id=$1 AND user_id=$2 AND NOT is_idle AND ts >= $3 AND ts < $4
      ), grp AS (
         SELECT ts, app_category, input_density,
                SUM(CASE WHEN prev_ts IS NULL OR ts - prev_ts > interval '${BLOCK_GAP_SECONDS} seconds'
@@ -180,7 +185,7 @@ async function timelineBlocks(companyId, userId, day) {
             mode() WITHIN GROUP (ORDER BY app_category) AS top_category,
             round(avg(input_density))::int AS avg_density
        FROM grp GROUP BY block_id ORDER BY start_ts`,
-    [companyId, userId, day]
+    [companyId, userId, fromTs, toTs]
   );
   return rows.map((b) => ({
     start_ts: b.start_ts,
@@ -222,16 +227,26 @@ export default handler(async (req, res) => {
     await authorizeTarget(targetId);
     const dayParam = url.searchParams.get('day');
     const day = /^\d{4}-\d{2}-\d{2}$/.test(dayParam || '') ? dayParam : null;
-    const daySql = day ? `$3::date` : `current_date`;
+    // Preferred path: the browser sends explicit UTC instants bounding ITS
+    // local calendar day. Falls back to a server-side (UTC) calendar day only
+    // for older callers that don't pass from/to.
+    const fromParam = url.searchParams.get('from');
+    const toParam = url.searchParams.get('to');
+    const fromDate = fromParam && !isNaN(Date.parse(fromParam)) ? new Date(fromParam) : null;
+    const toDate = toParam && !isNaN(Date.parse(toParam)) ? new Date(toParam) : null;
+    const rangeFrom = fromDate ? fromDate.toISOString() : `${day || new Date().toISOString().slice(0, 10)}T00:00:00.000Z`;
+    const rangeTo = toDate ? toDate.toISOString()
+      : new Date(new Date(rangeFrom).getTime() + 24 * 3600 * 1000).toISOString();
     const [blocks, entriesQ, projQ, idleQ] = await Promise.all([
-      timelineBlocks(actor.company_id, targetId, day || new Date().toISOString().slice(0, 10)),
+      timelineBlocks(actor.company_id, targetId, rangeFrom, rangeTo),
       query(
         `SELECT te.id, te.project_id, p.name AS project_name, te.start_ts, te.end_ts,
                 te.hours, te.note
            FROM time_entries te LEFT JOIN projects p ON p.id = te.project_id
-          WHERE te.company_id=$1 AND te.user_id=$2 AND te.start_ts::date = ${daySql}
+          WHERE te.company_id=$1 AND te.user_id=$2
+            AND tstzrange(te.start_ts, te.end_ts) && tstzrange($3, $4)
           ORDER BY te.start_ts`,
-        day ? [actor.company_id, targetId, day] : [actor.company_id, targetId]
+        [actor.company_id, targetId, rangeFrom, rangeTo]
       ),
       query(
         `SELECT p.id, p.name FROM projects p
@@ -243,8 +258,8 @@ export default handler(async (req, res) => {
       query(
         `SELECT count(*) FILTER (WHERE is_idle)::int AS idle_samples, count(*)::int AS total_samples
            FROM telemetry_logs
-          WHERE company_id=$1 AND user_id=$2 AND ts::date = ${daySql}`,
-        day ? [actor.company_id, targetId, day] : [actor.company_id, targetId]
+          WHERE company_id=$1 AND user_id=$2 AND ts >= $3 AND ts < $4`,
+        [actor.company_id, targetId, rangeFrom, rangeTo]
       ),
     ]);
     const trackedHours = blocks.reduce((s, b) => s + b.hours, 0);
@@ -253,6 +268,7 @@ export default handler(async (req, res) => {
     const idlePct = total_samples > 0 ? Math.round((idle_samples / total_samples) * 1000) / 10 : 0;
     return send(res, 200, {
       scope, user_id: targetId, day: day || new Date().toISOString().slice(0, 10),
+      range: { from: rangeFrom, to: rangeTo },
       blocks, entries: entriesQ.rows, projects: projQ.rows,
       summary: {
         tracked_hours: Math.round(trackedHours * 10) / 10,
