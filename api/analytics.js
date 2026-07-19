@@ -167,17 +167,18 @@ const BLOCK_GAP_SECONDS = 120;
 async function timelineBlocks(companyId, userId, day) {
   const { rows } = await query(
     `WITH s AS (
-        SELECT ts, app_category, LAG(ts) OVER (ORDER BY ts) AS prev_ts
+        SELECT ts, app_category, input_density, LAG(ts) OVER (ORDER BY ts) AS prev_ts
           FROM telemetry_logs
          WHERE company_id=$1 AND user_id=$2 AND NOT is_idle AND ts::date = $3::date
      ), grp AS (
-        SELECT ts, app_category,
+        SELECT ts, app_category, input_density,
                SUM(CASE WHEN prev_ts IS NULL OR ts - prev_ts > interval '${BLOCK_GAP_SECONDS} seconds'
                         THEN 1 ELSE 0 END) OVER (ORDER BY ts) AS block_id
           FROM s
      )
      SELECT min(ts) AS start_ts, max(ts) AS end_ts, count(*)::int AS samples,
-            mode() WITHIN GROUP (ORDER BY app_category) AS top_category
+            mode() WITHIN GROUP (ORDER BY app_category) AS top_category,
+            round(avg(input_density))::int AS avg_density
        FROM grp GROUP BY block_id ORDER BY start_ts`,
     [companyId, userId, day]
   );
@@ -187,6 +188,11 @@ async function timelineBlocks(companyId, userId, day) {
     seconds: b.samples * SAMPLE_SECONDS,
     hours: Math.round((b.samples * SAMPLE_SECONDS) / 360) / 10,
     top_category: b.top_category,
+    // Not a literal keystroke/mouse count -- the daemon only ever reports a
+    // single combined activity-density score per sample, never raw counts.
+    // Shown to the employee as "Input Density" so the UI doesn't claim
+    // precision the underlying data doesn't have.
+    avg_density: b.avg_density,
   }));
 }
 
@@ -217,7 +223,7 @@ export default handler(async (req, res) => {
     const dayParam = url.searchParams.get('day');
     const day = /^\d{4}-\d{2}-\d{2}$/.test(dayParam || '') ? dayParam : null;
     const daySql = day ? `$3::date` : `current_date`;
-    const [blocks, entriesQ, projQ] = await Promise.all([
+    const [blocks, entriesQ, projQ, idleQ] = await Promise.all([
       timelineBlocks(actor.company_id, targetId, day || new Date().toISOString().slice(0, 10)),
       query(
         `SELECT te.id, te.project_id, p.name AS project_name, te.start_ts, te.end_ts,
@@ -234,9 +240,17 @@ export default handler(async (req, res) => {
           ORDER BY p.name`,
         [targetId, actor.company_id]
       ),
+      query(
+        `SELECT count(*) FILTER (WHERE is_idle)::int AS idle_samples, count(*)::int AS total_samples
+           FROM telemetry_logs
+          WHERE company_id=$1 AND user_id=$2 AND ts::date = ${daySql}`,
+        day ? [actor.company_id, targetId, day] : [actor.company_id, targetId]
+      ),
     ]);
     const trackedHours = blocks.reduce((s, b) => s + b.hours, 0);
     const allocatedHours = entriesQ.rows.reduce((s, e) => s + Number(e.hours), 0);
+    const { idle_samples, total_samples } = idleQ.rows[0] || { idle_samples: 0, total_samples: 0 };
+    const idlePct = total_samples > 0 ? Math.round((idle_samples / total_samples) * 1000) / 10 : 0;
     return send(res, 200, {
       scope, user_id: targetId, day: day || new Date().toISOString().slice(0, 10),
       blocks, entries: entriesQ.rows, projects: projQ.rows,
@@ -244,6 +258,7 @@ export default handler(async (req, res) => {
         tracked_hours: Math.round(trackedHours * 10) / 10,
         allocated_hours: Math.round(allocatedHours * 10) / 10,
         remaining_hours: Math.round(Math.max(0, trackedHours - allocatedHours) * 10) / 10,
+        idle_pct: idlePct,
       },
     });
   }

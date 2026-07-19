@@ -460,9 +460,11 @@ function MfaSection({ showToast }) {
   );
 }
 
-// Visual timeline allocation: shows the day's real tracked active blocks and lets
-// the employee assign each block to one of their projects. Hours are grounded in
-// tracked activity (the server enforces the same), so ROI reflects real work.
+// Visual day-log: a drag-selectable 24h bar. The employee drags across the
+// stretch of the day they worked, tags it to a project (or splits it across
+// several), and submits — even if the underlying tracked activity for that
+// stretch is thin. The bar's background layers (tracked density, idle %) are
+// context for the employee, not a per-minute gate on what they can log.
 function hourOfDay(ts) {
   const d = new Date(ts);
   return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
@@ -470,163 +472,346 @@ function hourOfDay(ts) {
 function fmtClock(ts) {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
-function rangesOverlap(aS, aE, bS, bE) {
-  return new Date(aS) < new Date(bE) && new Date(bS) < new Date(aE);
+function pad2(n) { return String(n).padStart(2, '0'); }
+function isoDateOf(d) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
+function addDaysToIso(dayStr, delta) {
+  const d = new Date(`${dayStr}T00:00:00`);
+  d.setDate(d.getDate() + delta);
+  return isoDateOf(d);
+}
+function fmtHm(hour) {
+  const hh = Math.floor(hour);
+  const mm = Math.round((hour - hh) * 60) % 60;
+  const period = hh >= 12 ? 'PM' : 'AM';
+  const h12 = hh % 12 === 0 ? 12 : hh % 12;
+  return `${h12}:${pad2(mm)} ${period}`;
+}
+function hourToTsOnDay(dayStr, hour) {
+  const hh = Math.floor(hour);
+  const mm = Math.round((hour - hh) * 60);
+  const d = new Date(`${dayStr}T00:00:00`);
+  d.setMinutes(d.getMinutes() + hh * 60 + mm);
+  return d.toISOString();
+}
+function fmtDayLabel(dayStr) {
+  const d = new Date(`${dayStr}T00:00:00`);
+  return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
-function TimelineAllocator({ onLogged, showToast }) {
+function EmployeeDayLog({ onLogged, showToast }) {
+  const [day, setDay] = useState(() => isoDateOf(new Date()));
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [selectedIdx, setSelectedIdx] = useState(null);
-  const [projectId, setProjectId] = useState('');
+  const [drag, setDrag] = useState(null); // { startHour, endHour } — live, while pointer is down
+  const [selection, setSelection] = useState(null); // { startHour, endHour } — committed, awaiting submit
+  const [splitMode, setSplitMode] = useState('single'); // 'single' | 'half' | 'quarter' | 'manual'
+  const [singleProject, setSingleProject] = useState('');
+  const [splitRows, setSplitRows] = useState([]); // [{ projectId, minutes }]
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
+  const barRef = useRef(null);
+  const draggingRef = useRef(false);
 
-  const load = async () => {
-    const d = await api.analytics.timeline();
-    setData(d);
-    return d;
+  const isToday = day === isoDateOf(new Date());
+  const nowHour = hourOfDay(new Date().toISOString());
+  const maxHour = isToday ? nowHour : 24;
+
+  const load = async (d) => {
+    setLoading(true);
+    try {
+      const res = await api.analytics.timeline(d);
+      setData(res);
+    } catch (err) {
+      showToast(err.message || 'Could not load your day.', 'error');
+    } finally {
+      setLoading(false);
+    }
   };
   useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const d = await api.analytics.timeline();
-        if (alive) setData(d);
-      } catch (err) {
-        if (alive) showToast(err.message || 'Could not load your timeline.', 'error');
-      } finally {
-        if (alive) setLoading(false);
-      }
-    })();
-    return () => { alive = false; };
+    setSelection(null);
+    setDrag(null);
+    load(day);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [day]);
 
   const blocks = data?.blocks || [];
   const entries = data?.entries || [];
   const projList = data?.projects || [];
+  const summary = data?.summary || {};
 
-  // Which tracked blocks are already covered by an allocation (so we grey them out).
-  const isAllocated = (b) => entries.some((e) => rangesOverlap(b.start_ts, b.end_ts, e.start_ts, e.end_ts));
+  const xOf = (h) => (h / 24) * 100;
+  const wOf = (s, e) => Math.max(0.3, ((e - s) / 24) * 100);
 
-  // Timeline domain (hours). Clamp to the data with a sensible workday fallback.
-  const allTs = [...blocks, ...entries].flatMap((x) => [hourOfDay(x.start_ts), hourOfDay(x.end_ts)]);
-  const domainStart = allTs.length ? Math.floor(Math.min(...allTs)) : 9;
-  const domainEnd = allTs.length ? Math.ceil(Math.max(...allTs)) : 18;
-  const span = Math.max(1, domainEnd - domainStart);
-  const xOf = (ts) => ((hourOfDay(ts) - domainStart) / span) * 100;
-  const wOf = (s, e) => Math.max(0.6, ((hourOfDay(e) - hourOfDay(s)) / span) * 100);
+  const hourFromClientX = (clientX) => {
+    const rect = barRef.current.getBoundingClientRect();
+    const pct = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    const snapped = Math.round(pct * 24 * 12) / 12; // snap to 5-minute increments
+    return Math.min(maxHour, snapped);
+  };
 
-  const selected = selectedIdx != null ? blocks[selectedIdx] : null;
+  const resetForm = () => { setSplitMode('single'); setSingleProject(''); setSplitRows([]); setNote(''); };
 
-  const allocate = async () => {
-    if (!selected) return;
-    if (!projectId) { showToast('Pick a project for this block.', 'error'); return; }
+  const onPointerDown = (e) => {
+    if (saving) return;
+    e.preventDefault();
+    const h = hourFromClientX(e.clientX);
+    draggingRef.current = true;
+    setSelection(null);
+    setDrag({ startHour: h, endHour: h });
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+  };
+  const onPointerMove = (e) => {
+    if (!draggingRef.current) return;
+    const h = hourFromClientX(e.clientX);
+    setDrag((d) => (d ? { ...d, endHour: h } : d));
+  };
+  const onPointerUp = (e) => {
+    if (!draggingRef.current) return;
+    draggingRef.current = false;
+    window.removeEventListener('pointermove', onPointerMove);
+    window.removeEventListener('pointerup', onPointerUp);
+    setDrag((d) => {
+      if (!d) return null;
+      const startHour = Math.min(d.startHour, d.endHour);
+      const endHour = Math.max(d.startHour, d.endHour);
+      if (endHour - startHour >= 5 / 60) {
+        setSelection({ startHour, endHour });
+        resetForm();
+      }
+      return null;
+    });
+  };
+
+  const activeRange = drag || selection;
+  const rangeStart = activeRange ? Math.min(activeRange.startHour, activeRange.endHour) : null;
+  const rangeEnd = activeRange ? Math.max(activeRange.startHour, activeRange.endHour) : null;
+  const selMinutes = activeRange ? Math.round((rangeEnd - rangeStart) * 60) : 0;
+
+  const applyPreset = (n) => {
+    const base = Math.floor(selMinutes / n);
+    const rows = Array.from({ length: n }, (_, i) => ({
+      projectId: '',
+      minutes: i === n - 1 ? selMinutes - base * (n - 1) : base,
+    }));
+    setSplitRows(rows);
+  };
+  const setSplit = (mode) => {
+    setSplitMode(mode);
+    if (mode === 'half') applyPreset(2);
+    else if (mode === 'quarter') applyPreset(4);
+    else if (mode === 'manual') setSplitRows([{ projectId: '', minutes: selMinutes }, { projectId: '', minutes: 0 }]);
+    else setSplitRows([]);
+  };
+  const updateSplitRow = (i, patch) => {
+    setSplitRows((rows) => rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  };
+  const addSplitRow = () => setSplitRows((rows) => [...rows, { projectId: '', minutes: 0 }]);
+  const removeSplitRow = (i) => setSplitRows((rows) => rows.filter((_, idx) => idx !== i));
+
+  const splitSum = splitRows.reduce((s, r) => s + (Number(r.minutes) || 0), 0);
+  const isSplit = splitMode !== 'single';
+  const canSubmit = !selection
+    ? false
+    : isSplit
+      ? splitRows.length > 0 && splitSum === selMinutes && splitRows.every((r) => r.projectId && Number(r.minutes) > 0)
+      : !!singleProject;
+
+  const submit = async () => {
+    if (!selection || !canSubmit) return;
     setSaving(true);
     try {
-      await api.timeEntries.create({
-        project_id: projectId,
-        start_ts: selected.start_ts,
-        end_ts: selected.end_ts,
-        hours: selected.hours,
-        source: 'prompt',
-        note: note || null,
-      });
-      showToast('Block allocated to project.', 'success');
-      setSelectedIdx(null);
-      setNote('');
-      setProjectId('');
-      await load();
+      if (!isSplit) {
+        await api.timeEntries.create({
+          project_id: singleProject,
+          start_ts: hourToTsOnDay(day, rangeStart),
+          end_ts: hourToTsOnDay(day, rangeEnd),
+          hours: Math.round((rangeEnd - rangeStart) * 100) / 100,
+          source: 'prompt',
+          note: note || null,
+        });
+      } else {
+        let cursor = rangeStart;
+        for (const row of splitRows) {
+          const rowHours = Number(row.minutes) / 60;
+          const rowStart = cursor;
+          const rowEnd = cursor + rowHours;
+          await api.timeEntries.create({
+            project_id: row.projectId,
+            start_ts: hourToTsOnDay(day, rowStart),
+            end_ts: hourToTsOnDay(day, rowEnd),
+            hours: Math.round(rowHours * 100) / 100,
+            source: 'prompt',
+            note: note || null,
+          });
+          cursor = rowEnd;
+        }
+      }
+      showToast('Hours logged.', 'success');
+      setSelection(null);
+      resetForm();
+      await load(day);
       onLogged && onLogged();
     } catch (err) {
-      showToast(err.message || 'Could not allocate this block.', 'error');
+      showToast(err.message || 'Could not log these hours.', 'error');
     } finally {
       setSaving(false);
     }
   };
+
+  const gridHours = [0, 3, 6, 9, 12, 15, 18, 21, 24];
 
   return (
     <div className="p-6 rounded-xl bg-indigo-500/10 border border-indigo-500/30 space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-2 text-indigo-400">
           <Clock className="w-4 h-4" />
-          <span className="text-xs font-semibold uppercase tracking-wider">Allocate Your Tracked Hours</span>
+          <span className="text-xs font-semibold uppercase tracking-wider">Log Your Hours</span>
         </div>
-        {data && (
-          <div className="text-[10px] text-muted-foreground">
-            <span className="text-foreground font-semibold">{data.summary.tracked_hours}h</span> tracked ·{' '}
-            <span className="text-emerald-400 font-semibold">{data.summary.allocated_hours}h</span> allocated ·{' '}
-            <span className="text-amber-400 font-semibold">{data.summary.remaining_hours}h</span> open
-          </div>
-        )}
+        <div className="flex items-center gap-1.5">
+          <button onClick={() => setDay((d) => addDaysToIso(d, -1))} disabled={loading}
+            className="p-1.5 rounded-lg border border-border/60 text-muted-foreground hover:text-foreground hover:border-primary/40 disabled:opacity-40 transition-colors">
+            <ChevronLeft className="w-3.5 h-3.5" />
+          </button>
+          <span className="text-[11px] font-semibold text-foreground w-28 text-center">
+            {isToday ? 'Today' : fmtDayLabel(day)}
+          </span>
+          <button onClick={() => setDay((d) => addDaysToIso(d, 1))} disabled={loading || isToday}
+            className="p-1.5 rounded-lg border border-border/60 text-muted-foreground hover:text-foreground hover:border-primary/40 disabled:opacity-40 transition-colors">
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
+
+      {data && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-muted-foreground">
+          <span><span className="text-foreground font-semibold">{summary.tracked_hours}h</span> tracked</span>
+          <span><span className="text-emerald-400 font-semibold">{summary.allocated_hours}h</span> logged</span>
+          <span><span className="text-amber-400 font-semibold">{summary.remaining_hours}h</span> unlogged</span>
+          <span><span className="text-sky-400 font-semibold">{summary.idle_pct}%</span> idle</span>
+        </div>
+      )}
       <p className="text-[11px] text-muted-foreground leading-relaxed">
-        These are the active blocks the agent recorded today. Click a block, then tag it to the
-        project you worked on. You can only allocate time you were actually active.
+        Drag across the stretch of the day you worked, then tag it to a project. The shaded bars below
+        show what the agent actually tracked — use them as a guide, not a strict boundary.
       </p>
 
       {loading ? (
-        <div className="p-4 text-[11px] text-muted-foreground">Loading your day…</div>
-      ) : blocks.length === 0 ? (
-        <div className="p-4 rounded-xl bg-muted/40 border border-border/60 text-[11px] text-muted-foreground text-center">
-          No tracked activity yet today. As you work, the agent records active blocks here for you to allocate.
-        </div>
+        <div className="p-4 text-[11px] text-muted-foreground">Loading…</div>
       ) : (
         <>
-          {/* SVG lane: tracked blocks (top) + existing allocations (bottom). */}
-          <div className="rounded-xl bg-background/60 border border-border/60 p-3 space-y-1">
-            <svg viewBox="0 0 100 16" preserveAspectRatio="none" className="w-full h-16">
-              {/* hour gridlines */}
-              {Array.from({ length: span + 1 }, (_, i) => (
-                <line key={i} x1={(i / span) * 100} y1="0" x2={(i / span) * 100} y2="16"
-                  stroke="currentColor" strokeWidth="0.1" className="text-border" />
-              ))}
-              {/* tracked blocks */}
-              {blocks.map((b, i) => {
-                const done = isAllocated(b);
-                const sel = i === selectedIdx;
-                return (
-                  <rect key={`b${i}`} x={xOf(b.start_ts)} y="1" width={wOf(b.start_ts, b.end_ts)} height="6"
-                    rx="0.6" style={{ cursor: done ? 'default' : 'pointer' }}
-                    onClick={() => !done && setSelectedIdx(i)}
-                    className={done ? 'text-emerald-500/40' : sel ? 'text-indigo-400' : 'text-indigo-500/60'}
-                    fill="currentColor" stroke={sel ? '#a5b4fc' : 'none'} strokeWidth={sel ? 0.4 : 0} />
-                );
-              })}
-              {/* existing allocations */}
-              {entries.map((e, i) => (
-                <rect key={`e${i}`} x={xOf(e.start_ts)} y="9" width={wOf(e.start_ts, e.end_ts)} height="5"
-                  rx="0.6" className="text-emerald-500/70" fill="currentColor" />
-              ))}
-            </svg>
-            <div className="flex justify-between text-[8px] text-muted-foreground font-mono">
-              <span>{String(domainStart).padStart(2, '0')}:00</span>
-              <span>{String(domainEnd).padStart(2, '0')}:00</span>
-            </div>
-            <div className="flex items-center gap-3 text-[8px] text-muted-foreground">
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-indigo-500/60 inline-block" />Tracked (click to allocate)</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-emerald-500/70 inline-block" />Already allocated</span>
-            </div>
+          <div
+            ref={barRef}
+            onPointerDown={onPointerDown}
+            className="relative h-16 rounded-xl bg-background/60 border border-border/60 select-none touch-none"
+            style={{ cursor: saving ? 'default' : 'crosshair' }}
+          >
+            {/* hour gridlines */}
+            {gridHours.map((h) => (
+              <div key={h} className="absolute top-0 bottom-0 w-px bg-border/50" style={{ left: `${xOf(h)}%` }} />
+            ))}
+            {/* future-hour shading, today only */}
+            {isToday && maxHour < 24 && (
+              <div className="absolute top-0 bottom-0 bg-muted/40" style={{ left: `${xOf(maxHour)}%`, right: 0 }} />
+            )}
+            {/* tracked activity, density-shaded */}
+            {blocks.map((b, i) => (
+              <div key={`b${i}`}
+                className="absolute top-2 h-4 rounded-sm bg-indigo-500 pointer-events-none"
+                style={{ left: `${xOf(hourOfDay(b.start_ts))}%`, width: `${wOf(hourOfDay(b.start_ts), hourOfDay(b.end_ts))}%`, opacity: 0.25 + Math.min(1, (b.avg_density || 0) / 100) * 0.55 }}
+                title={`${fmtClock(b.start_ts)}–${fmtClock(b.end_ts)} · ${b.top_category || 'activity'}`} />
+            ))}
+            {/* already-logged entries */}
+            {entries.map((e, i) => (
+              <div key={`e${i}`}
+                className="absolute bottom-2 h-3 rounded-sm bg-emerald-500/70 pointer-events-none"
+                style={{ left: `${xOf(hourOfDay(e.start_ts))}%`, width: `${wOf(hourOfDay(e.start_ts), hourOfDay(e.end_ts))}%` }}
+                title={`${e.project_name || 'Logged'}: ${fmtClock(e.start_ts)}–${fmtClock(e.end_ts)}`} />
+            ))}
+            {/* live drag / committed selection */}
+            {activeRange && (
+              <div
+                className="absolute top-0 bottom-0 bg-primary/25 border-x-2 border-primary pointer-events-none"
+                style={{ left: `${xOf(rangeStart)}%`, width: `${wOf(rangeStart, rangeEnd)}%` }}
+              />
+            )}
+          </div>
+          <div className="flex justify-between text-[8px] text-muted-foreground font-mono">
+            {gridHours.map((h) => <span key={h}>{pad2(h === 24 ? 0 : h)}:00</span>)}
+          </div>
+          <div className="flex items-center gap-3 text-[8px] text-muted-foreground">
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-indigo-500/60 inline-block" />Tracked activity</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-emerald-500/70 inline-block" />Already logged</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-primary/40 border border-primary inline-block" />Your selection</span>
           </div>
 
-          {selected ? (
-            <div className="space-y-3 rounded-xl bg-background/60 border border-indigo-500/30 p-3">
-              <div className="text-[11px] text-foreground font-bold">
-                {fmtClock(selected.start_ts)}–{fmtClock(selected.end_ts)} · {selected.hours}h
-                {selected.top_category && <span className="text-muted-foreground font-normal"> · mostly {selected.top_category}</span>}
+          {selection && (
+            <div className="space-y-3 rounded-xl bg-background/60 border border-primary/30 p-3">
+              <div className="flex items-center justify-between">
+                <div className="text-[11px] text-foreground font-bold">
+                  {fmtHm(rangeStart)} – {fmtHm(rangeEnd)} · {Math.round((rangeEnd - rangeStart) * 100) / 100}h
+                </div>
+                <button onClick={() => { setSelection(null); resetForm(); }}
+                  className="text-muted-foreground hover:text-foreground">
+                  <X className="w-3.5 h-3.5" />
+                </button>
               </div>
-              <div className="space-y-1">
-                <label className="text-[9px] uppercase font-semibold text-muted-foreground">Project</label>
-                <select value={projectId} onChange={(e) => setProjectId(e.target.value)}
-                  className="w-full bg-background border border-border rounded-lg p-2 text-xs text-foreground outline-none">
-                  <option value="">Select project…</option>
-                  {projList.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-                {projList.length === 0 && (
-                  <p className="text-[9px] text-amber-400">You have no assigned projects yet — ask your team lead to add you to one.</p>
-                )}
+
+              <div className="flex gap-1.5">
+                {[['single', 'Single project'], ['half', 'Split in half'], ['quarter', 'Split in 4'], ['manual', 'Manual split']].map(([m, label]) => (
+                  <button key={m} onClick={() => setSplit(m)}
+                    className={`px-2.5 py-1 rounded-lg text-[9px] font-semibold uppercase tracking-wide border transition-colors ${splitMode === m ? 'bg-primary text-primary-foreground border-primary' : 'border-border/60 text-muted-foreground hover:text-foreground'}`}>
+                    {label}
+                  </button>
+                ))}
               </div>
+
+              {!isSplit ? (
+                <div className="space-y-1">
+                  <label className="text-[9px] uppercase font-semibold text-muted-foreground">Project</label>
+                  <select value={singleProject} onChange={(e) => setSingleProject(e.target.value)}
+                    className="w-full bg-background border border-border rounded-lg p-2 text-xs text-foreground outline-none">
+                    <option value="">Select project…</option>
+                    {projList.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {splitRows.map((row, i) => (
+                    <div key={i} className="flex items-center gap-1.5">
+                      <select value={row.projectId} onChange={(e) => updateSplitRow(i, { projectId: e.target.value })}
+                        className="flex-1 bg-background border border-border rounded-lg p-2 text-xs text-foreground outline-none">
+                        <option value="">Select project…</option>
+                        {projList.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                      <input type="number" min="1" max={selMinutes} value={row.minutes}
+                        onChange={(e) => updateSplitRow(i, { minutes: e.target.value === '' ? '' : Number(e.target.value) })}
+                        disabled={splitMode !== 'manual'}
+                        className="w-16 bg-background border border-border rounded-lg p-2 text-xs text-foreground outline-none disabled:opacity-60" />
+                      <span className="text-[9px] text-muted-foreground w-6">min</span>
+                      {splitMode === 'manual' && splitRows.length > 2 && (
+                        <button onClick={() => removeSplitRow(i)} className="text-muted-foreground hover:text-red-400">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  {splitMode === 'manual' && (
+                    <button onClick={addSplitRow}
+                      className="flex items-center gap-1 text-[9px] uppercase font-semibold text-primary hover:text-primary/80">
+                      <Plus className="w-3 h-3" /> Add split
+                    </button>
+                  )}
+                  <p className={`text-[9px] ${splitSum === selMinutes ? 'text-emerald-400' : 'text-amber-400'}`}>
+                    {splitSum} / {selMinutes} min allocated{splitSum !== selMinutes ? ' — must add up exactly' : ''}
+                  </p>
+                </div>
+              )}
+
+              {projList.length === 0 && (
+                <p className="text-[9px] text-amber-400">You have no assigned projects yet — ask your team lead to add you to one.</p>
+              )}
+
               <div className="space-y-1">
                 <label className="text-[9px] uppercase font-semibold text-muted-foreground">Note (optional)</label>
                 <input value={note} onChange={(e) => setNote(e.target.value)}
@@ -634,18 +819,19 @@ function TimelineAllocator({ onLogged, showToast }) {
                   className="w-full bg-background border border-border rounded-lg p-2 text-xs text-foreground outline-none" />
               </div>
               <div className="flex gap-2">
-                <button onClick={allocate} disabled={saving || !projectId}
+                <button onClick={submit} disabled={saving || !canSubmit}
                   className="flex-1 py-2 bg-primary hover:bg-primary/95 disabled:opacity-50 text-primary-foreground font-semibold text-[10px] uppercase tracking-widest rounded-xl transition-all">
-                  {saving ? 'Allocating…' : 'Allocate to Project'}
+                  {saving ? 'Logging…' : 'Log Hours'}
                 </button>
-                <button onClick={() => { setSelectedIdx(null); setNote(''); }}
+                <button onClick={() => { setSelection(null); resetForm(); }}
                   className="px-4 py-2 border border-border text-muted-foreground hover:text-foreground font-semibold text-[10px] uppercase tracking-widest rounded-xl">
                   Cancel
                 </button>
               </div>
             </div>
-          ) : (
-            <p className="text-[10px] text-muted-foreground text-center py-2">Select a tracked block above to allocate it.</p>
+          )}
+          {!selection && !drag && (
+            <p className="text-[10px] text-muted-foreground text-center py-2">Drag across the bar above to select the hours you worked.</p>
           )}
         </>
       )}
@@ -4929,7 +5115,7 @@ export default function App() {
                       <button onClick={() => setShowVerificationPrompt(false)} className="text-muted-foreground hover:text-foreground uppercase font-semibold">Dismiss</button>
                     </div>
                   )}
-                  <TimelineAllocator
+                  <EmployeeDayLog
                     showToast={showToast}
                     onLogged={async () => {
                       try { setSelfAnalytics(await api.analytics.employee(null, 7)); } catch { /* non-fatal */ }
