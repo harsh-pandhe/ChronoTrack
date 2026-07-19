@@ -3302,9 +3302,9 @@ export default function App() {
 
       {/* ADMIN CONSOLE PORTAL (SIDEBAR LAYOUT) */}
       {currentRole === 'admin' && (
-        <div className="min-h-screen flex flex-col md:flex-row">
+        <div className="min-h-screen md:h-screen flex flex-col md:flex-row md:overflow-hidden">
           {/* Sidebar */}
-          <aside className="w-full md:w-64 bg-card border-r border-border flex flex-col shrink-0">
+          <aside className="w-full md:w-64 bg-card border-r border-border flex flex-col shrink-0 md:h-full md:overflow-y-auto">
             <div className="p-6 border-b border-border flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <Shield className="w-5 h-5 text-primary" />
@@ -3358,7 +3358,7 @@ export default function App() {
           </aside>
 
           {/* Main Content Area */}
-          <main className="flex-1 p-6 md:p-8 space-y-6 overflow-y-auto max-w-7xl 2xl:max-w-[96rem] mx-auto w-full">
+          <main className="flex-1 p-6 md:p-8 space-y-6 md:h-full md:overflow-y-auto max-w-7xl 2xl:max-w-[96rem] mx-auto w-full">
 
             {/* A detail drill-down takes over the content area as a real page —
                 the sidebar stays, so you keep your bearings and the Back button
@@ -4309,9 +4309,9 @@ export default function App() {
 
       {/* TEAM LEAD CONSOLE PORTAL */}
       {currentRole === 'tl' && (
-        <div className="min-h-screen flex flex-col md:flex-row">
+        <div className="min-h-screen md:h-screen flex flex-col md:flex-row md:overflow-hidden">
           {/* Sidebar */}
-          <aside className="w-full md:w-64 bg-card border-r border-border flex flex-col shrink-0">
+          <aside className="w-full md:w-64 bg-card border-r border-border flex flex-col shrink-0 md:h-full md:overflow-y-auto">
             <div className="p-6 border-b border-border flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <Users className="w-5 h-5 text-indigo-400" />
@@ -4344,19 +4344,26 @@ export default function App() {
               ))}
             </nav>
 
-            <div className="p-4 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
-              <span className="font-semibold uppercase tracking-wider">TL Mode active</span>
-              <button onClick={openProfile} className="px-2.5 py-1 bg-muted border border-border hover:text-foreground rounded-lg transition-all uppercase text-[10px] font-bold mr-2">
-                Profile
-              </button>
-              <button onClick={handleLogout} className="px-2.5 py-1 bg-muted border border-border hover:text-foreground rounded-lg transition-all uppercase text-[10px] font-bold">
-                Logout
-              </button>
+            <div className="p-4 border-t border-border space-y-3 text-xs text-muted-foreground">
+              <div className="flex items-center space-x-2 min-w-0">
+                <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse shrink-0"></span>
+                <span className="font-semibold uppercase tracking-wider truncate">TL Mode Active</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={openProfile}
+                  className="px-2.5 py-1.5 bg-muted hover:bg-muted border border-border hover:text-foreground rounded-lg transition-all flex items-center justify-center space-x-1 uppercase text-[10px] font-bold">
+                  <User className="w-3 h-3 shrink-0" /><span>Profile</span>
+                </button>
+                <button onClick={handleLogout}
+                  className="px-2.5 py-1.5 bg-muted hover:bg-muted border border-border hover:text-foreground rounded-lg transition-all flex items-center justify-center space-x-1 uppercase text-[10px] font-bold">
+                  <LogOut className="w-3 h-3 shrink-0" /><span>Logout</span>
+                </button>
+              </div>
             </div>
           </aside>
 
           {/* Main Content */}
-          <main className="flex-1 p-6 md:p-8 space-y-6 overflow-y-auto max-w-7xl 2xl:max-w-[96rem] mx-auto w-full">
+          <main className="flex-1 p-6 md:p-8 space-y-6 md:h-full md:overflow-y-auto max-w-7xl 2xl:max-w-[96rem] mx-auto w-full">
 
             {detailActive ? renderDetailPage() : (<>
 
